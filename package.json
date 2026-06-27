@@ -1,0 +1,13 @@
+{
+  "name": "muslim-travel-planner",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 5173 -d dist",
+    "build": "tsc -p tsconfig.json && cp index.html dist/index.html && cp src/styles.css dist/styles.css",
+    "lint": "eslint dist --ext .js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test dist/planner.test.js"
+  }
+}
