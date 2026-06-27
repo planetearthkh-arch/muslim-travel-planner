@@ -9,5 +9,10 @@
     "lint": "eslint dist --ext .js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test dist/planner.test.js"
+  },
+  "devDependencies": {
+    "eslint": "^10.6.0",
+    "serve": "^14.2.6",
+    "typescript": "^6.0.3"
   }
 }

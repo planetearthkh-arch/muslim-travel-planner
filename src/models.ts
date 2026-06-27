@@ -1,6 +1,7 @@
 export type VerificationStatus = 'Sample' | 'Unverified' | 'Verified';
 export type PrayerName = 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha';
 export type PrayerMethod = 'Muslim World League' | 'Egyptian General Authority' | 'Umm al-Qura' | 'ISNA' | 'Turkey Diyanet';
+export type Region = 'Europe' | 'Middle East' | 'Asia' | 'North America' | 'Africa' | 'Oceania';
 
 export interface FacilityNote {
   womenPrayerSpace: VerificationStatus;
@@ -29,9 +30,16 @@ export interface Place {
 export interface CityData {
   city: string;
   country: string;
+  region: Region;
   timezone: string;
   coordinates: { lat: number; lng: number };
   prayerWindows: Record<PrayerName, string>;
+  transportEstimates: {
+    walking: number;
+    publicTransport: number;
+    taxi: number;
+    notes: string;
+  };
   places: Place[];
 }
 

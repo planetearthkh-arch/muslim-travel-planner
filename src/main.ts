@@ -1,30 +1,20 @@
 import { cities } from './data.js';
 import { generateItinerary } from './planner.js';
-import type { PlannerPreferences, VerificationStatus } from './models.js';
+import {
+  labels,
+  languageDirection,
+  languages,
+  optionLabels,
+  prayerLabels,
+  regionLabels,
+  statusLabels,
+  type Language,
+} from './i18n.js';
+import type { PlannerPreferences, Region, VerificationStatus } from './models.js';
 
-const labels = {
-  en: {
-    title: 'Muslim Travel Planner',
-    subtitle: 'Sample worldwide, prayer-aware itineraries — no precise location collected.',
-    city: 'City',
-    plan: 'Generate itinerary',
-    replan: 'Replan From Here',
-    sample: 'Sample data only. Verify prayer times, mosque facilities, opening hours, and halal claims before travel.',
-    legend: 'Information labels',
-  },
-  ar: {
-    title: 'مخطط سفر للمسلمين',
-    subtitle: 'مسارات سفر تجريبية تراعي الصلاة — لا نجمع الموقع الدقيق.',
-    city: 'المدينة',
-    plan: 'إنشاء الخطة',
-    replan: 'إعادة التخطيط من هنا',
-    sample: 'بيانات تجريبية فقط. تحقق من أوقات الصلاة والمرافق وساعات العمل ومعلومات الحلال قبل السفر.',
-    legend: 'تصنيفات المعلومات',
-  },
-};
-
-let lang: 'en' | 'ar' = 'en';
+let lang: Language = 'en';
 let replan = 0;
+let selectedRegion: Region | '' = '';
 let prefs: PlannerPreferences = {
   city: 'London',
   startDate: '2026-07-01',
@@ -46,62 +36,86 @@ let prefs: PlannerPreferences = {
 };
 
 const root = document.querySelector<HTMLDivElement>('#root');
-const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
-const statusBadge = (status: VerificationStatus) => `<span class="badge ${status.toLowerCase()}">${status}</span>`;
+const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America', 'Africa', 'Oceania'];
+const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const;
 
-function field(name: keyof PlannerPreferences, value: string, label: string, type = 'text') {
-  return `<label>${label}<input data-field="${String(name)}" type="${type}" value="${esc(value)}" /></label>`;
+const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
+
+const statusBadge = (status: VerificationStatus) => `<span class="badge ${status.toLowerCase()}">${statusLabels[lang][status]}</span>`;
+
+function field(name: keyof PlannerPreferences, value: string, label: string, type = 'text', placeholder = '') {
+  return `<label>${label}<input data-field="${String(name)}" type="${type}" value="${esc(value)}" ${placeholder ? `placeholder="${esc(placeholder)}"` : ''} /></label>`;
 }
 
-function select(name: keyof PlannerPreferences, label: string, options: string[]) {
-  return `<label>${label}<select data-field="${String(name)}">${options.map((option) => `<option ${prefs[name] === option ? 'selected' : ''}>${option}</option>`).join('')}</select></label>`;
+function choiceSelect<T extends string>(name: keyof PlannerPreferences, label: string, options: readonly T[], display: Record<T, string>) {
+  const currentValue = String(prefs[name]);
+  return `<label>${label}<select data-field="${String(name)}">${options.map((option) => `<option value="${esc(option)}" ${currentValue === option ? 'selected' : ''}>${display[option]}</option>`).join('')}</select></label>`;
+}
+
+function languageSelector() {
+  return `<label class="lang">${labels[lang].language}<select id="lang">${languages.map((language) => `<option value="${language.code}" ${language.code === lang ? 'selected' : ''}>${language.label}</option>`).join('')}</select></label>`;
 }
 
 function render() {
   if (!root) return;
   const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const visibleCities = selectedRegion ? cities.filter((candidate) => candidate.region === selectedRegion) : cities;
+  if (!visibleCities.some((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase())) {
+    prefs = { ...prefs, city: visibleCities[0]?.city ?? cities[0].city };
+  }
   const city = cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
-  const items = generateItinerary(prefs, replan);
+  const items = generateItinerary(prefs, replan, lang);
   document.documentElement.lang = lang;
-  document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  document.documentElement.dir = dir;
   root.innerHTML = `
-    <main dir="${document.documentElement.dir}" class="app">
+    <main dir="${dir}" class="app">
       <section class="hero">
-        <button id="lang" class="lang">${lang === 'en' ? 'العربية' : 'English'}</button>
-        <p class="eyebrow">Prototype v1 · privacy-first · no paid APIs</p>
+        ${languageSelector()}
+        <p class="eyebrow">${copy.prototype}</p>
         <h1>${copy.title}</h1>
         <p>${copy.subtitle}</p>
         <p class="notice">${copy.sample}</p>
       </section>
-      <section class="panel form" aria-label="Planner preferences">
-        <label>${copy.city}<input data-field="city" list="cities" value="${esc(prefs.city)}" placeholder="Any city" /></label>
-        <datalist id="cities">${cities.map((candidate) => `<option value="${candidate.city}">${candidate.country}</option>`).join('')}</datalist>
-        <div class="grid">${field('startDate', prefs.startDate, 'Start date', 'date')}${field('endDate', prefs.endDate, 'End date', 'date')}</div>
-        <div class="grid">${field('startHour', prefs.startHour, 'Available from', 'time')}${field('endHour', prefs.endHour, 'Until', 'time')}</div>
-        <div class="grid">${field('groupSize', String(prefs.groupSize), 'Group size', 'number')}${select('budget', 'Budget', ['low', 'mid', 'high'])}</div>
-        ${field('interests', prefs.interests.join(', '), 'Interests')}
-        <div class="grid">${select('walkingAbility', 'Walking ability', ['low', 'medium', 'high'])}${select('transportation', 'Transportation', ['walking', 'public transport', 'taxi'])}</div>
-        ${select('prayerMethod', 'Prayer calculation method', ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'])}
-        ${select('prayerPreference', 'Prayer preference', ['mosque', 'quiet prayer space', 'flexible'])}
-        <div class="checks"><label><input data-field="children" type="checkbox" ${prefs.children ? 'checked' : ''}/> Children</label><label><input data-field="womenPrayerRequired" type="checkbox" ${prefs.womenPrayerRequired ? 'checked' : ''}/> Women’s prayer space required</label><label><input data-field="wuduRequired" type="checkbox" ${prefs.wuduRequired ? 'checked' : ''}/> Wudu required</label></div>
-        ${field('accessibilityNeeds', prefs.accessibilityNeeds, 'Accessibility needs')}
-        ${select('halalPreference', 'Halal-food preference', ['strictly labelled', 'vegetarian/seafood options', 'flexible'])}
+      <section class="panel form" aria-label="${copy.formAria}">
+        <div class="grid">
+          <label>${copy.region}<select data-region="filter"><option value="">${copy.allRegions}</option>${regionOptions.map((region) => `<option value="${region}" ${selectedRegion === region ? 'selected' : ''}>${regionLabels[lang][region]}</option>`).join('')}</select></label>
+          <label>${copy.city}<select data-field="city">${visibleCities.map((candidate) => `<option value="${candidate.city}" ${candidate.city === city.city ? 'selected' : ''}>${candidate.city}, ${candidate.country}</option>`).join('')}</select></label>
+        </div>
+        <label class="compact">${copy.cityAutocomplete}<input data-field="city" list="cities" value="${esc(prefs.city)}" placeholder="${copy.cityPlaceholder}" /></label>
+        <datalist id="cities">${visibleCities.map((candidate) => `<option value="${candidate.city}">${candidate.country}</option>`).join('')}</datalist>
+        <div class="grid">${field('startDate', prefs.startDate, copy.startDate, 'date')}${field('endDate', prefs.endDate, copy.endDate, 'date')}</div>
+        <div class="grid">${field('startHour', prefs.startHour, copy.startHour, 'time')}${field('endHour', prefs.endHour, copy.endHour, 'time')}</div>
+        <div class="grid">${field('groupSize', String(prefs.groupSize), copy.groupSize, 'number')}${choiceSelect('budget', copy.budget, ['low', 'mid', 'high'], optionLabels.budget[lang])}</div>
+        ${field('interests', prefs.interests.join(', '), copy.interests)}
+        <div class="grid">${choiceSelect('walkingAbility', copy.walkingAbility, ['low', 'medium', 'high'], optionLabels.walkingAbility[lang])}${choiceSelect('transportation', copy.transportation, ['walking', 'public transport', 'taxi'], optionLabels.transportation[lang])}</div>
+        ${choiceSelect('prayerMethod', copy.prayerMethod, prayerMethods, Object.fromEntries(prayerMethods.map((method) => [method, method])) as Record<(typeof prayerMethods)[number], string>)}
+        ${choiceSelect('prayerPreference', copy.prayerPreference, ['mosque', 'quiet prayer space', 'flexible'], optionLabels.prayerPreference[lang])}
+        <div class="checks"><label><input data-field="children" type="checkbox" ${prefs.children ? 'checked' : ''}/> ${copy.children}</label><label><input data-field="womenPrayerRequired" type="checkbox" ${prefs.womenPrayerRequired ? 'checked' : ''}/> ${copy.womenPrayerRequired}</label><label><input data-field="wuduRequired" type="checkbox" ${prefs.wuduRequired ? 'checked' : ''}/> ${copy.wuduRequired}</label></div>
+        ${field('accessibilityNeeds', prefs.accessibilityNeeds, copy.accessibilityNeeds)}
+        ${choiceSelect('halalPreference', copy.halalPreference, ['strictly labelled', 'vegetarian/seafood options', 'flexible'], optionLabels.halalPreference[lang])}
         <button id="plan">${copy.plan}</button>
       </section>
       <section class="panel results" aria-live="polite">
-        <div class="result-header"><div><h2>${city.city}, ${city.country}</h2><p>Prayer windows are <strong>Sample</strong>: ${Object.entries(city.prayerWindows).map(([name, window]) => `${name} ${window}`).join(' · ')}</p></div><div class="legend"><strong>${copy.legend}</strong>${statusBadge('Sample')}${statusBadge('Unverified')}${statusBadge('Verified')}</div></div>
-        ${items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} min</span>${statusBadge(item.status)}</div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.evidence ? `<p class="evidence">Evidence note: ${item.place.evidence}</p>` : ''}${item.place?.facility ? `<p>Women: ${statusBadge(item.place.facility.womenPrayerSpace)} Wudu: ${statusBadge(item.place.facility.wudu)} Accessibility: ${statusBadge(item.place.facility.accessibility)}</p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('')}
+        <div class="result-header"><div><h2>${city.city}, ${city.country}</h2><p>${regionLabels[lang][city.region]} · ${city.timezone}</p><p>${copy.prayerWindowsAre} <strong>${statusLabels[lang].Sample}</strong>: ${Object.entries(city.prayerWindows).map(([name, window]) => `${prayerLabels[lang][name as keyof typeof city.prayerWindows]} ${window}`).join(' · ')}</p><p>${copy.transportEstimatesAre} <strong>${statusLabels[lang].Sample}</strong>: ${copy.walking} ${city.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${city.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${city.transportEstimates.taxi} ${copy.minutesShort}.</p></div><div class="legend"><strong>${copy.legend}</strong>${statusBadge('Sample')}${statusBadge('Unverified')}${statusBadge('Verified')}</div></div>
+        ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span>${statusBadge(item.status)}</div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.evidence ? `<p class="evidence">${copy.evidenceNote}: ${item.place.evidence}</p>` : ''}${item.place?.facility ? `<p>${copy.women}: ${statusBadge(item.place.facility.womenPrayerSpace)} ${copy.wudu}: ${statusBadge(item.place.facility.wudu)} ${copy.accessibility}: ${statusBadge(item.place.facility.accessibility)}</p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${visibleCities.length ? copy.emptyState : copy.noCities}</p>`}
       </section>
     </main>`;
   bind();
 }
 
 function bind() {
-  document.querySelector('#lang')?.addEventListener('click', () => {
-    lang = lang === 'en' ? 'ar' : 'en';
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
+    lang = (event.target as HTMLSelectElement).value as Language;
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
+    replan = 0;
+    render();
+  });
+  document.querySelector<HTMLSelectElement>('[data-region="filter"]')?.addEventListener('change', (event) => {
+    const filter = event.target as HTMLSelectElement;
+    selectedRegion = filter.value as Region | '';
     replan = 0;
     render();
   });
@@ -109,6 +123,10 @@ function bind() {
     const key = element.dataset.field as keyof PlannerPreferences;
     const value = element instanceof HTMLInputElement && element.type === 'checkbox' ? element.checked : element.value;
     prefs = { ...prefs, [key]: key === 'groupSize' ? Number(value) : key === 'interests' ? String(value).split(',').map((interest) => interest.trim()).filter(Boolean) : value } as PlannerPreferences;
+    if (key === 'city') {
+      replan = 0;
+      render();
+    }
   }));
   document.querySelectorAll<HTMLButtonElement>('[data-replan]').forEach((button) => button.addEventListener('click', () => {
     replan = Number(button.dataset.replan);
