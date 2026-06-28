@@ -1,6 +1,7 @@
 import { cities } from './data.js';
 import { generateItinerary } from './planner.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
+import { buildOverpassQuery, isReliablyOpenNow, normalizePrayerPlace, type PrayerPlace, type PrayerPlaceType } from './prayer-spaces.js';
 import {
   labels,
   languageDirection,
@@ -24,14 +25,14 @@ import {
 import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla';
+type View = 'planner' | 'qibla' | 'prayer-spaces';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-let view: View = window.location.hash === '#qibla' ? 'qibla' : 'planner';
+let view: View = window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : 'planner';
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
 let qiblaLocation: QiblaLocation | undefined;
@@ -76,6 +77,7 @@ type MapLibreMap = {
   setLayoutProperty: (layerId: string, property: string, value: unknown) => void;
   addControl: (control: unknown, position?: string) => MapLibreMap;
   resize: () => void;
+  getCenter?: () => { lat: number; lng: number };
 };
 type MapLibrePopup = { setText: (text: string) => MapLibrePopup };
 type MapLibreMarker = {
@@ -99,6 +101,7 @@ type MapLibreGlobal = {
 declare global { interface Window { maplibregl?: MapLibreGlobal } }
 
 let cityMap: MapLibreMap | undefined;
+let prayerMap: MapLibreMap | undefined;
 const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
 const englishMapNameExpression = [
@@ -384,6 +387,284 @@ function bindQibla() {
   document.querySelector<HTMLButtonElement>('#request-motion')?.addEventListener('click', () => void requestQiblaMotion());
 }
 
+
+type PrayerLocationStatus = 'idle' | 'requesting' | 'ready' | 'denied' | 'unavailable' | 'searching' | 'service-unavailable' | 'empty';
+type PrayerMode = 'map' | 'list';
+type PrayerFilter = 'all' | PrayerPlaceType;
+type PrayerSort = 'distance' | 'name' | 'open';
+type PrayerCenter = { latitude: number; longitude: number; label: string };
+
+type OverpassResponse = { elements?: Array<{ type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> }> };
+type NominatimResult = { lat: string; lon: string; display_name: string };
+
+const prayerRadii = [5, 10, 25, 50] as const;
+let prayerStatus: PrayerLocationStatus = 'idle';
+let prayerMode: PrayerMode = 'map';
+let prayerCenter: PrayerCenter | undefined;
+let prayerRadiusKm: typeof prayerRadii[number] = 10;
+let prayerManualQuery = '';
+let prayerResults: PrayerPlace[] = [];
+let prayerFilter: PrayerFilter = 'all';
+let prayerSort: PrayerSort = 'distance';
+let prayerOpenOnly = false;
+let prayerWomenOnly = false;
+let prayerWuduOnly = false;
+let prayerWheelchairOnly = false;
+let prayerMapMoved = false;
+let prayerError = '';
+let prayerSearchTimer: number | undefined;
+const prayerCache = new Map<string, { expires: number; results: PrayerPlace[] }>();
+
+function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), milliseconds);
+  return fetch(url, { ...options, signal: controller.signal })
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json() as Promise<T>;
+    })
+    .finally(() => window.clearTimeout(timeout));
+}
+
+function prayerTypeLabel(type: PrayerPlaceType, copy: typeof labels[Language]) {
+  if (type === 'mosque') return copy.prayerTypeMosque;
+  if (type === 'prayer-room') return copy.prayerTypeRoom;
+  return copy.prayerTypeQuiet;
+}
+
+function prayerStatusMessage(copy: typeof labels[Language]) {
+  if (prayerStatus === 'requesting') return copy.prayerRequestingLocation;
+  if (prayerStatus === 'searching') return copy.prayerSearching;
+  if (prayerStatus === 'denied') return copy.prayerLocationDenied;
+  if (prayerStatus === 'unavailable') return copy.prayerLocationUnavailable;
+  if (prayerStatus === 'service-unavailable') return prayerError || copy.prayerServiceUnavailable;
+  if (prayerStatus === 'empty') return copy.prayerNoResults;
+  return copy.prayerNotice;
+}
+
+function filteredPrayerResults() {
+  let results = [...prayerResults];
+  if (prayerFilter !== 'all') results = results.filter((place) => place.type === prayerFilter);
+  if (prayerOpenOnly) results = results.filter((place) => place.openingHours && isReliablyOpenNow({ opening_hours: place.openingHours }) === true);
+  if (prayerWomenOnly) results = results.filter((place) => place.womenPrayerArea === 'Verified');
+  if (prayerWuduOnly) results = results.filter((place) => place.wudu === 'Verified');
+  if (prayerWheelchairOnly) results = results.filter((place) => place.wheelchair === 'Verified');
+  results.sort((a, b) => {
+    if (prayerSort === 'name') return a.name.localeCompare(b.name);
+    if (prayerSort === 'open') return Number(isReliablyOpenNow({ opening_hours: b.openingHours }) === true) - Number(isReliablyOpenNow({ opening_hours: a.openingHours }) === true) || a.distanceKm - b.distanceKm;
+    return a.distanceKm - b.distanceKm;
+  });
+  return results;
+}
+
+function appleMapsUrl(place: PrayerPlace) {
+  return `https://maps.apple.com/?daddr=${place.latitude},${place.longitude}&q=${encodeURIComponent(place.name)}`;
+}
+
+function browserDirectionsUrl(place: PrayerPlace) {
+  return `https://www.openstreetmap.org/directions?to=${place.latitude},${place.longitude}#map=17/${place.latitude}/${place.longitude}`;
+}
+
+function overpassUrl() { return 'https://overpass-api.de/api/interpreter'; }
+
+async function searchPrayerPlaces(center: PrayerCenter) {
+  prayerCenter = center;
+  prayerMapMoved = false;
+  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${prayerRadiusKm}`;
+  const cached = prayerCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    prayerResults = cached.results;
+    prayerStatus = prayerResults.length ? 'ready' : 'empty';
+    prayerPage();
+    return;
+  }
+  prayerStatus = 'searching';
+  prayerError = '';
+  prayerPage();
+  try {
+    const body = buildOverpassQuery(center.latitude, center.longitude, prayerRadiusKm);
+    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 18000);
+    const deduped = new Map<string, PrayerPlace>();
+    for (const element of data.elements ?? []) {
+      const place = normalizePrayerPlace(element, center);
+      if (place) deduped.set(place.id, place);
+    }
+    prayerResults = [...deduped.values()].sort((a, b) => a.distanceKm - b.distanceKm);
+    prayerCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: prayerResults });
+    prayerStatus = prayerResults.length ? 'ready' : 'empty';
+  } catch (error) {
+    console.error(error);
+    prayerStatus = 'service-unavailable';
+    prayerError = labels[lang].prayerServiceUnavailable;
+  }
+  prayerPage();
+}
+
+function requestPrayerLocation() {
+  if (!navigator.geolocation) {
+    prayerStatus = 'unavailable';
+    prayerPage();
+    return;
+  }
+  prayerStatus = 'requesting';
+  prayerPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => void searchPrayerPlaces({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (error) => {
+      prayerStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      prayerPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+async function searchPrayerDestination() {
+  const query = prayerManualQuery.trim();
+  if (!query) return;
+  prayerStatus = 'searching';
+  prayerPage();
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+    const data = await requestJson<NominatimResult[]>(url, { headers: { Accept: 'application/json' } }, 12000);
+    const first = data[0];
+    if (!first) {
+      prayerStatus = 'empty';
+      prayerResults = [];
+      prayerPage();
+      return;
+    }
+    await searchPrayerPlaces({ latitude: Number(first.lat), longitude: Number(first.lon), label: first.display_name });
+  } catch (error) {
+    console.error(error);
+    prayerStatus = 'service-unavailable';
+    prayerError = labels[lang].prayerServiceUnavailable;
+    prayerPage();
+  }
+}
+
+function debouncedPrayerSearch(center: PrayerCenter) {
+  if (prayerSearchTimer) window.clearTimeout(prayerSearchTimer);
+  prayerSearchTimer = window.setTimeout(() => void searchPrayerPlaces(center), 450);
+}
+
+function initializePrayerMap() {
+  prayerMap?.remove();
+  prayerMap = undefined;
+  const element = document.querySelector<HTMLElement>('#prayer-map');
+  if (!element || !prayerCenter || !window.maplibregl) return;
+  try {
+    element.replaceChildren();
+    prayerMap = new window.maplibregl.Map({
+      container: element,
+      style: openFreeMapStyle,
+      center: [prayerCenter.longitude, prayerCenter.latitude],
+      zoom: prayerRadiusKm <= 5 ? 12 : prayerRadiusKm <= 10 ? 11 : 9,
+      attributionControl: true,
+    });
+    prayerMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
+    new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([prayerCenter.longitude, prayerCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(prayerCenter.label)).addTo(prayerMap);
+    for (const place of filteredPrayerResults()) {
+      new window.maplibregl.Marker({ color: place.type === 'mosque' ? '#0f766e' : '#2563eb' }).setLngLat([place.longitude, place.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(place.name)).addTo(prayerMap);
+    }
+    prayerMap.on('moveend', () => {
+      prayerMapMoved = true;
+      const button = document.querySelector<HTMLButtonElement>('#search-this-area');
+      if (button) button.hidden = false;
+    });
+  } catch {
+    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+  }
+}
+
+function prayerResultCard(place: PrayerPlace, copy: typeof labels[Language]) {
+  const verified = (value: string) => value === 'Verified' ? copy.prayerVerified : copy.prayerUnverified;
+  const missing = (value: string) => value || copy.prayerUnknown;
+  return `<article class="card prayer-place-card" aria-label="${esc(place.name)}">
+    <div class="card-top"><span>${place.distanceKm.toFixed(1)} km · ${prayerTypeLabel(place.type, copy)}</span><span class="badge ${place.verification === 'Verified' ? 'verified' : 'unverified'}">${verified(place.verification)}</span></div>
+    <h3>${esc(place.name)}</h3>
+    <dl class="place-details">
+      <div><dt>${copy.prayerAddress}</dt><dd>${esc(missing(place.address))}</dd></div>
+      <div><dt>${copy.prayerOpeningHours}</dt><dd>${esc(missing(place.openingHours))}</dd></div>
+      <div><dt>${copy.prayerWomen}</dt><dd>${verified(place.womenPrayerArea)}</dd></div>
+      <div><dt>${copy.prayerWudu}</dt><dd>${verified(place.wudu)}</dd></div>
+      <div><dt>${copy.prayerWheelchair}</dt><dd>${verified(place.wheelchair)}</dd></div>
+      <div><dt>${copy.prayerWebsite}</dt><dd>${place.website ? `<a href="${esc(place.website)}" target="_blank" rel="noopener noreferrer">${esc(place.website)}</a>` : copy.prayerUnknown}</dd></div>
+      <div><dt>${copy.prayerTelephone}</dt><dd>${esc(missing(place.telephone))}</dd></div>
+    </dl>
+    <div class="place-actions">
+      <a class="map-link" href="${place.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
+      <a class="map-link" href="${appleMapsUrl(place)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
+      <a class="map-link" href="${browserDirectionsUrl(place)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+    </div>
+  </article>`;
+}
+
+function prayerPage() {
+  if (!root) return;
+  cityMap?.remove();
+  cityMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const results = filteredPrayerResults();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `
+    <main dir="${dir}" class="app prayer-app">
+      <section class="hero prayer-hero">
+        ${languageSelector()}
+        <p class="eyebrow">${copy.prayerSpacesOpen}</p>
+        <h1>${copy.prayerSpacesTitle}</h1>
+        <p>${copy.prayerSpacesSubtitle}</p>
+        <button type="button" class="ghost hero-action" id="back-from-prayer">${copy.prayerSpacesBack}</button>
+      </section>
+      <section class="panel prayer-panel" aria-live="polite">
+        <p class="notice prayer-notice">${copy.prayerNotice}</p>
+        <div class="prayer-actions">
+          <button type="button" id="use-prayer-location">${copy.prayerUseLocation}</button>
+          <label>${copy.prayerRadius}<select id="prayer-radius">${prayerRadii.map((radius) => `<option value="${radius}" ${radius === prayerRadiusKm ? 'selected' : ''}>${radius} km</option>`).join('')}</select></label>
+          <form id="manual-prayer-search" class="manual-search"><label>${copy.prayerManualSearch}<input id="prayer-manual-query" value="${esc(prayerManualQuery)}" placeholder="${copy.prayerManualPlaceholder}" /></label><button type="submit">${copy.prayerSearch}</button></form>
+        </div>
+        <p class="prayer-status ${prayerStatus}" role="status">${prayerStatusMessage(copy)}</p>
+        <div class="segmented" role="tablist" aria-label="${copy.prayerSpacesTitle}">
+          <button type="button" class="${prayerMode === 'map' ? 'active' : 'ghost'}" data-prayer-mode="map">${copy.prayerMapView}</button>
+          <button type="button" class="${prayerMode === 'list' ? 'active' : 'ghost'}" data-prayer-mode="list">${copy.prayerListView}</button>
+        </div>
+        <div class="prayer-filters" aria-label="${copy.prayerSpacesTitle}">
+          <select id="prayer-filter"><option value="all">${copy.prayerAllPlaces}</option><option value="mosque" ${prayerFilter === 'mosque' ? 'selected' : ''}>${copy.prayerMosques}</option><option value="prayer-room" ${prayerFilter === 'prayer-room' ? 'selected' : ''}>${copy.prayerRooms}</option><option value="quiet-space" ${prayerFilter === 'quiet-space' ? 'selected' : ''}>${copy.prayerQuietSpaces}</option></select>
+          <label class="inline-check"><input type="checkbox" id="filter-open" ${prayerOpenOnly ? 'checked' : ''}/> ${copy.prayerOpenNow}</label>
+          <label class="inline-check"><input type="checkbox" id="filter-women" ${prayerWomenOnly ? 'checked' : ''}/> ${copy.prayerWomenArea}</label>
+          <label class="inline-check"><input type="checkbox" id="filter-wudu" ${prayerWuduOnly ? 'checked' : ''}/> ${copy.prayerWuduAvailable}</label>
+          <label class="inline-check"><input type="checkbox" id="filter-wheelchair" ${prayerWheelchairOnly ? 'checked' : ''}/> ${copy.prayerWheelchairAccessible}</label>
+          <label>${copy.prayerSort}<select id="prayer-sort"><option value="distance" ${prayerSort === 'distance' ? 'selected' : ''}>${copy.prayerNearest}</option><option value="name" ${prayerSort === 'name' ? 'selected' : ''}>${copy.prayerName}</option><option value="open" ${prayerSort === 'open' ? 'selected' : ''}>${copy.prayerOpenNowSort}</option></select></label>
+        </div>
+        <button type="button" id="search-this-area" class="ghost" ${prayerMapMoved ? '' : 'hidden'}>${copy.prayerSearchThisArea}</button>
+        ${prayerMode === 'map' ? `<div id="prayer-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
+        ${prayerStatus === 'empty' ? `<div class="empty-actions"><button type="button" id="retry-prayer" class="ghost">${copy.prayerRetry}</button><button type="button" id="increase-radius">${copy.prayerIncreaseRadius}</button></div>` : ''}
+        <div class="place-list">${results.length ? results.map((place) => prayerResultCard(place, copy)).join('') : prayerStatus === 'ready' ? `<p>${copy.prayerNoResults}</p>` : ''}</div>
+      </section>
+    </main>`;
+  bindPrayerPage();
+  if (prayerMode === 'map') initializePrayerMap();
+}
+
+function bindPrayerPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; prayerPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-prayer')?.addEventListener('click', () => { view = 'planner'; prayerMap?.remove(); prayerMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#use-prayer-location')?.addEventListener('click', requestPrayerLocation);
+  document.querySelector<HTMLSelectElement>('#prayer-radius')?.addEventListener('change', (event) => { prayerRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof prayerRadii[number]; if (prayerCenter) void searchPrayerPlaces(prayerCenter); });
+  document.querySelector<HTMLFormElement>('#manual-prayer-search')?.addEventListener('submit', (event) => { event.preventDefault(); prayerManualQuery = document.querySelector<HTMLInputElement>('#prayer-manual-query')?.value ?? ''; void searchPrayerDestination(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-prayer-mode]').forEach((button) => button.addEventListener('click', () => { prayerMode = button.dataset.prayerMode as PrayerMode; prayerPage(); }));
+  document.querySelector<HTMLSelectElement>('#prayer-filter')?.addEventListener('change', (event) => { prayerFilter = (event.target as HTMLSelectElement).value as PrayerFilter; prayerPage(); });
+  document.querySelector<HTMLSelectElement>('#prayer-sort')?.addEventListener('change', (event) => { prayerSort = (event.target as HTMLSelectElement).value as PrayerSort; prayerPage(); });
+  document.querySelector<HTMLInputElement>('#filter-open')?.addEventListener('change', (event) => { prayerOpenOnly = (event.target as HTMLInputElement).checked; prayerPage(); });
+  document.querySelector<HTMLInputElement>('#filter-women')?.addEventListener('change', (event) => { prayerWomenOnly = (event.target as HTMLInputElement).checked; prayerPage(); });
+  document.querySelector<HTMLInputElement>('#filter-wudu')?.addEventListener('change', (event) => { prayerWuduOnly = (event.target as HTMLInputElement).checked; prayerPage(); });
+  document.querySelector<HTMLInputElement>('#filter-wheelchair')?.addEventListener('change', (event) => { prayerWheelchairOnly = (event.target as HTMLInputElement).checked; prayerPage(); });
+  document.querySelector<HTMLButtonElement>('#retry-prayer')?.addEventListener('click', () => { if (prayerCenter) void searchPrayerPlaces(prayerCenter); else requestPrayerLocation(); });
+  document.querySelector<HTMLButtonElement>('#increase-radius')?.addEventListener('click', () => { const next = prayerRadii.find((radius) => radius > prayerRadiusKm); if (next) prayerRadiusKm = next; if (prayerCenter) void searchPrayerPlaces(prayerCenter); });
+  document.querySelector<HTMLButtonElement>('#search-this-area')?.addEventListener('click', () => { const center = prayerMap?.getCenter?.(); if (!center) return; debouncedPrayerSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].prayerSearchThisArea }); });
+}
+
 function selectedCity() {
   return cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
 }
@@ -392,6 +673,10 @@ function render() {
   if (!root) return;
   if (view === 'qibla') {
     qiblaPage();
+    return;
+  }
+  if (view === 'prayer-spaces') {
+    prayerPage();
     return;
   }
   document.body.classList.remove('map-expanded');
@@ -414,9 +699,9 @@ function render() {
         <p>${copy.subtitle}</p>
         <p class="notice">${copy.sample}</p>
       </section>
-      <section class="panel qibla-entry">
-        <div><h2>${copy.qiblaTitle}</h2><p>${copy.qiblaSubtitle}</p></div>
-        <button type="button" id="open-qibla">${copy.qiblaOpen}</button>
+      <section class="panel quick-actions">
+        <article class="quick-action"><div><h2>${copy.qiblaTitle}</h2><p>${copy.qiblaSubtitle}</p></div><button type="button" id="open-qibla">${copy.qiblaOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.prayerSpacesTitle}</h2><p>${copy.prayerSpacesSubtitle}</p></div><button type="button" id="open-prayer-spaces">${copy.prayerSpacesOpen}</button></article>
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
@@ -457,6 +742,11 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#open-qibla')?.addEventListener('click', () => {
     view = 'qibla';
     if (window.location.hash !== '#qibla') window.location.hash = 'qibla';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-prayer-spaces')?.addEventListener('click', () => {
+    view = 'prayer-spaces';
+    if (window.location.hash !== '#prayer-spaces') window.location.hash = 'prayer-spaces';
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
@@ -528,8 +818,8 @@ function bind() {
 }
 
 window.addEventListener('hashchange', () => {
-  view = window.location.hash === '#qibla' ? 'qibla' : 'planner';
-  if (view === 'planner') stopQiblaOrientation();
+  view = window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : 'planner';
+  if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; }
   render();
 });
 

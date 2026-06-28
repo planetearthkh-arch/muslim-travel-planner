@@ -4,6 +4,7 @@ import { cities } from './data.js';
 import { labels, languageDirection, languages, nextLanguage, regionLabels } from './i18n.js';
 import { generateItinerary } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
+import { classifyPrayerPlace, distanceKm, normalizePrayerPlace } from './prayer-spaces.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -123,4 +124,40 @@ test('calculates Qibla bearings for major cities', () => {
   for (const [name, latitude, longitude, expected] of cases) {
     assert.deepEqual({ name, bearing: Number(calculateQiblaBearing(latitude, longitude).toFixed(2)) }, { name, bearing: expected });
   }
+});
+
+
+test('calculates distance between nearby coordinates', () => {
+  const distance = distanceKm(51.5074, -0.1278, 51.5033, -0.1195);
+  assert.equal(Number(distance.toFixed(2)), 0.73);
+});
+
+test('classifies OpenStreetMap prayer place results', () => {
+  assert.equal(classifyPrayerPlace({ amenity: 'place_of_worship', religion: 'muslim' }), 'mosque');
+  assert.equal(classifyPrayerPlace({ amenity: 'prayer_room' }), 'prayer-room');
+  assert.equal(classifyPrayerPlace({ name: 'Airport quiet prayer room' }), 'quiet-space');
+  assert.equal(classifyPrayerPlace({ amenity: 'place_of_worship', religion: 'christian' }), undefined);
+});
+
+test('marks incomplete prayer place information as unverified', () => {
+  const place = normalizePrayerPlace({
+    type: 'node',
+    id: 1,
+    lat: 51.5,
+    lon: -0.1,
+    tags: { amenity: 'prayer_room', name: 'Station prayer room' },
+  }, { latitude: 51.5074, longitude: -0.1278 });
+
+  assert.equal(place?.verification, 'Verified');
+  assert.equal(place?.womenPrayerArea, 'Unverified');
+  assert.equal(place?.wudu, 'Unverified');
+  assert.equal(place?.wheelchair, 'Unverified');
+  assert.equal(place?.address, '');
+});
+
+test('includes translated prayer-space denied and empty states', () => {
+  assert.equal(labels.en.prayerLocationDenied.includes('denied'), true);
+  assert.equal(labels.ar.prayerNoResults.length > 0, true);
+  assert.equal(labels.id.prayerNoResults.length > 0, true);
+  assert.equal(labels.en.prayerNoResults, 'No places found nearby.');
 });
