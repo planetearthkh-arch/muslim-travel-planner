@@ -39,28 +39,48 @@ const root = document.querySelector<HTMLDivElement>('#root');
 const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America', 'Africa', 'Oceania'];
 const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const;
 
-type LeafletMap = {
+type MapLibreStyleLayer = { id: string; type?: string };
+type MapLibreMap = {
   remove: () => void;
-  setView: (center: [number, number], zoom: number) => LeafletMap;
-  invalidateSize: () => LeafletMap;
+  on: (event: string, handler: () => void) => MapLibreMap;
+  getStyle: () => { layers?: MapLibreStyleLayer[] };
+  getLayoutProperty: (layerId: string, property: string) => unknown;
+  setLayoutProperty: (layerId: string, property: string, value: unknown) => void;
+  addControl: (control: unknown, position?: string) => MapLibreMap;
+  resize: () => void;
 };
-type LeafletGlobal = {
-  map: (element: HTMLElement, options?: { zoomControl?: boolean; attributionControl?: boolean }) => LeafletMap;
-  tileLayer: (url: string, options: { attribution: string; maxZoom: number }) => {
-    addTo: (map: LeafletMap) => void;
-    on: (event: string, handler: () => void) => void;
-  };
-  marker: (center: [number, number]) => { addTo: (map: LeafletMap) => { bindPopup: (content: string) => void } };
-  control: { zoom: (options: { position: string }) => { addTo: (map: LeafletMap) => void } };
+type MapLibrePopup = { setText: (text: string) => MapLibrePopup };
+type MapLibreMarker = {
+  setLngLat: (center: [number, number]) => MapLibreMarker;
+  setPopup: (popup: MapLibrePopup) => MapLibreMarker;
+  addTo: (map: MapLibreMap) => MapLibreMarker;
+};
+type MapLibreGlobal = {
+  Map: new (options: {
+    container: HTMLElement;
+    style: string;
+    center: [number, number];
+    zoom: number;
+    attributionControl?: boolean;
+  }) => MapLibreMap;
+  Popup: new (options?: { offset?: number }) => MapLibrePopup;
+  Marker: new (options?: { color?: string }) => MapLibreMarker;
+  NavigationControl: new (options?: { showCompass?: boolean }) => unknown;
 };
 
-declare global { interface Window { L?: LeafletGlobal } }
+declare global { interface Window { maplibregl?: MapLibreGlobal } }
 
-let cityMap: LeafletMap | undefined;
-const osmTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const osmAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-const osmCityUrl = (lat: number, lng: number) => `https://www.openstreetmap.org/#map=13/${lat}/${lng}`;
+let cityMap: MapLibreMap | undefined;
+const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
+const englishMapNameExpression = [
+  'coalesce',
+  ['get', 'name:en'],
+  ['get', 'name_en'],
+  ['get', 'name:latin'],
+  ['get', 'name'],
+  ['get', 'ref'],
+];
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
 
@@ -80,7 +100,7 @@ function mapSection(city: (typeof cities)[number], copy: typeof labels[Language]
   return `<section class="panel map-panel" aria-label="${copy.cityStreetMap}">
     <div class="map-heading">
       <div><h2>${copy.cityStreetMap}</h2><p>${city.city}, ${city.country}</p></div>
-      <a class="button-link" href="${osmCityUrl(lat, lng)}" target="_blank" rel="noopener noreferrer">${copy.openFullMap}</a>
+      <button type="button" class="button-link" id="toggle-map-size">${copy.openFullMap}</button>
     </div>
     <div id="city-map" class="city-map" data-lat="${lat}" data-lng="${lng}" data-title="${esc(`${city.city}, ${city.country}`)}">
       <p class="map-fallback">${copy.mapUnavailable}</p>
@@ -94,6 +114,20 @@ function showMapFallback(element: HTMLElement, status: HTMLElement, message: str
   status.textContent = message;
 }
 
+function applyEnglishMapLabels(map: MapLibreMap) {
+  const layers = map.getStyle().layers ?? [];
+  for (const layer of layers) {
+    if (layer.type !== 'symbol') continue;
+    try {
+      const textField = map.getLayoutProperty(layer.id, 'text-field');
+      if (typeof textField === 'undefined' || !JSON.stringify(textField).includes('name')) continue;
+      map.setLayoutProperty(layer.id, 'text-field', englishMapNameExpression);
+    } catch {
+      // Some symbol layers contain icons or special text expressions and should remain unchanged.
+    }
+  }
+}
+
 function initializeMap(copy: typeof labels[Language]) {
   cityMap?.remove();
   cityMap = undefined;
@@ -103,20 +137,34 @@ function initializeMap(copy: typeof labels[Language]) {
   const lat = Number(element.dataset.lat);
   const lng = Number(element.dataset.lng);
   const title = element.dataset.title ?? '';
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !window.L) {
+  const maplibre = window.maplibregl;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !maplibre) {
     showMapFallback(element, status, copy.mapUnavailable);
     return;
   }
   try {
     element.replaceChildren();
     status.textContent = '';
-    cityMap = window.L.map(element, { zoomControl: false, attributionControl: true }).setView([lat, lng], 13);
-    window.L.control.zoom({ position: document.documentElement.dir === 'rtl' ? 'topright' : 'topleft' }).addTo(cityMap);
-    const tiles = window.L.tileLayer(osmTileUrl, { attribution: osmAttribution, maxZoom: 19 });
-    tiles.on('tileerror', () => { status.textContent = copy.mapUnavailable; });
-    tiles.addTo(cityMap);
-    window.L.marker([lat, lng]).addTo(cityMap).bindPopup(title);
-    window.requestAnimationFrame(() => cityMap?.invalidateSize());
+    cityMap = new maplibre.Map({
+      container: element,
+      style: openFreeMapStyle,
+      center: [lng, lat],
+      zoom: 13,
+      attributionControl: true,
+    });
+    cityMap.addControl(
+      new maplibre.NavigationControl({ showCompass: false }),
+      document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left',
+    );
+    new maplibre.Marker({ color: '#0f766e' })
+      .setLngLat([lng, lat])
+      .setPopup(new maplibre.Popup({ offset: 22 }).setText(title))
+      .addTo(cityMap);
+    cityMap.on('load', () => {
+      if (!cityMap) return;
+      applyEnglishMapLabels(cityMap);
+      window.requestAnimationFrame(() => cityMap?.resize());
+    });
   } catch {
     cityMap?.remove();
     cityMap = undefined;
@@ -130,6 +178,7 @@ function languageSelector() {
 
 function render() {
   if (!root) return;
+  document.body.classList.remove('map-expanded');
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const visibleCities = selectedRegion ? cities.filter((candidate) => candidate.region === selectedRegion) : cities;
@@ -186,6 +235,13 @@ function bind() {
   document.querySelector('#plan')?.addEventListener('click', () => {
     replan = 0;
     render();
+  });
+  document.querySelector<HTMLButtonElement>('#toggle-map-size')?.addEventListener('click', () => {
+    const panel = document.querySelector<HTMLElement>('.map-panel');
+    if (!panel) return;
+    const expanded = panel.classList.toggle('map-panel--expanded');
+    document.body.classList.toggle('map-expanded', expanded);
+    window.setTimeout(() => cityMap?.resize(), 0);
   });
   document.querySelector<HTMLSelectElement>('[data-region="filter"]')?.addEventListener('change', (event) => {
     const filter = event.target as HTMLSelectElement;
