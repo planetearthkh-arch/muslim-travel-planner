@@ -10,11 +10,23 @@ import {
   statusLabels,
   type Language,
 } from './i18n.js';
-import type { PlannerPreferences, Region, VerificationStatus } from './models.js';
+import { athanLabels } from './athan-i18n.js';
+import {
+  calculatePrayerAlarms,
+  calculatePrayerDisplay,
+  disableAthanAlarms,
+  enableAthanAlarms,
+  isNativeAthanAvailable,
+  playTestAthan,
+  stopAthan,
+} from './athan.js';
+import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
 let replan = 0;
 let selectedRegion: Region | '' = '';
+let athanEnabled = localStorage.getItem('athanEnabled') === 'true';
+let athanStatus = '';
 let prefs: PlannerPreferences = {
   city: 'London',
   startDate: '2026-07-01',
@@ -38,6 +50,9 @@ let prefs: PlannerPreferences = {
 const root = document.querySelector<HTMLDivElement>('#root');
 const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America', 'Africa', 'Oceania'];
 const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const;
+const prayerOrder: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+const localeForLanguage = (language: Language) => language === 'ar' ? 'ar' : language === 'id' ? 'id-ID' : 'en-US';
 
 type MapLibreStyleLayer = { id: string; type?: string };
 type MapLibreMap = {
@@ -82,8 +97,7 @@ const englishMapNameExpression = [
   ['get', 'ref'],
 ];
 
-const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
-
+const esc = (value: string) => value.replace(/[&<>\"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[character] ?? character);
 const statusBadge = (status: VerificationStatus) => `<span class="badge ${status.toLowerCase()}">${statusLabels[lang][status]}</span>`;
 
 function field(name: keyof PlannerPreferences, value: string, label: string, type = 'text', placeholder = '') {
@@ -106,6 +120,34 @@ function mapSection(city: (typeof cities)[number], copy: typeof labels[Language]
       <p class="map-fallback">${copy.mapUnavailable}</p>
     </div>
     <p id="map-status" class="map-status" role="status" aria-live="polite"></p>
+  </section>`;
+}
+
+function athanSection(city: (typeof cities)[number]) {
+  const copy = athanLabels[lang];
+  const locale = localeForLanguage(lang);
+  const times = calculatePrayerDisplay(city, prefs.prayerMethod, prefs.startDate, locale);
+  const prayerRows = prayerOrder.map((prayer) => `<div class="prayer-time"><strong>${prayerLabels[lang][prayer]}</strong><span>${times[prayer]}</span></div>`).join('');
+  const deviceNotice = isNativeAthanAvailable() ? copy.androidNotice : copy.browserNotice;
+  return `<section class="panel athan-panel" aria-label="${copy.title}">
+    <div class="athan-heading">
+      <div><h2>${copy.title}</h2><p>${copy.description}</p></div>
+      <span class="athan-state ${athanEnabled ? 'enabled' : ''}">${athanEnabled ? '●' : '○'}</span>
+    </div>
+    <h3>${copy.calculated}</h3>
+    <div class="prayer-times">
+      ${prayerRows}
+      <div class="prayer-time sunrise"><strong>${copy.sunrise}</strong><span>${times.Sunrise}</span></div>
+    </div>
+    <div class="athan-actions">
+      <button id="enable-athan">${athanEnabled ? copy.reschedule : copy.enable}</button>
+      <button id="disable-athan" class="ghost">${copy.disable}</button>
+      <button id="test-athan" class="ghost">${copy.test}</button>
+      <button id="stop-athan" class="ghost">${copy.stop}</button>
+    </div>
+    <p class="athan-device-note">${deviceNotice}</p>
+    <p class="athan-permission-note">${copy.permissionNote}</p>
+    <p id="athan-status" class="athan-status" role="status" aria-live="polite">${esc(athanStatus)}</p>
   </section>`;
 }
 
@@ -176,6 +218,10 @@ function languageSelector() {
   return `<label class="lang">${labels[lang].language}<select id="lang">${languages.map((language) => `<option value="${language.code}" ${language.code === lang ? 'selected' : ''}>${language.label}</option>`).join('')}</select></label>`;
 }
 
+function selectedCity() {
+  return cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
+}
+
 function render() {
   if (!root) return;
   document.body.classList.remove('map-expanded');
@@ -185,7 +231,7 @@ function render() {
   if (!visibleCities.some((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase())) {
     prefs = { ...prefs, city: visibleCities[0]?.city ?? cities[0].city };
   }
-  const city = cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
+  const city = selectedCity();
   const items = generateItinerary(prefs, replan, lang);
   document.documentElement.lang = lang;
   document.documentElement.dir = dir;
@@ -218,7 +264,8 @@ function render() {
         <button id="plan">${copy.plan}</button>
       </section>
       <section class="panel results" aria-live="polite">
-        <div class="result-header"><div><h2>${city.city}, ${city.country}</h2><p>${regionLabels[lang][city.region]} · ${city.timezone}</p><p>${copy.prayerWindowsAre} <strong>${statusLabels[lang].Sample}</strong>: ${Object.entries(city.prayerWindows).map(([name, window]) => `${prayerLabels[lang][name as keyof typeof city.prayerWindows]} ${window}`).join(' · ')}</p><p>${copy.transportEstimatesAre} <strong>${statusLabels[lang].Sample}</strong>: ${copy.walking} ${city.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${city.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${city.transportEstimates.taxi} ${copy.minutesShort}.</p></div><div class="legend"><strong>${copy.legend}</strong>${statusBadge('Sample')}${statusBadge('Unverified')}${statusBadge('Verified')}</div></div>
+        <div class="result-header"><div><h2>${city.city}, ${city.country}</h2><p>${regionLabels[lang][city.region]} · ${city.timezone}</p><p>${copy.transportEstimatesAre} <strong>${statusLabels[lang].Sample}</strong>: ${copy.walking} ${city.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${city.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${city.transportEstimates.taxi} ${copy.minutesShort}.</p></div><div class="legend"><strong>${copy.legend}</strong>${statusBadge('Sample')}${statusBadge('Unverified')}${statusBadge('Verified')}</div></div>
+        ${athanSection(city)}
         ${mapSection(city, copy)}
         ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span>${statusBadge(item.status)}</div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.evidence ? `<p class="evidence">${copy.evidenceNote}: ${item.place.evidence}</p>` : ''}${item.place?.facility ? `<p>${copy.women}: ${statusBadge(item.place.facility.womenPrayerSpace)} ${copy.wudu}: ${statusBadge(item.place.facility.wudu)} ${copy.accessibility}: ${statusBadge(item.place.facility.accessibility)}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, city.city, city.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${visibleCities.length ? copy.emptyState : copy.noCities}</p>`}
       </section>
@@ -230,12 +277,48 @@ function render() {
 function bind() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
     lang = (event.target as HTMLSelectElement).value as Language;
+    athanStatus = '';
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
     replan = 0;
     render();
   });
+  document.querySelector<HTMLButtonElement>('#enable-athan')?.addEventListener('click', async () => {
+    const copy = athanLabels[lang];
+    athanStatus = copy.preparing;
+    render();
+    try {
+      const city = selectedCity();
+      const alarms = calculatePrayerAlarms(city, prefs.prayerMethod, prefs.startDate, localeForLanguage(lang), 7);
+      if (!alarms.length) {
+        athanStatus = copy.noFuture;
+        render();
+        return;
+      }
+      const result = await enableAthanAlarms(alarms);
+      athanEnabled = true;
+      localStorage.setItem('athanEnabled', 'true');
+      athanStatus = `${copy.scheduled}: ${result.scheduled}`;
+    } catch (error) {
+      console.error(error);
+      athanStatus = copy.failed;
+    }
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#disable-athan')?.addEventListener('click', async () => {
+    await disableAthanAlarms();
+    athanEnabled = false;
+    localStorage.setItem('athanEnabled', 'false');
+    athanStatus = athanLabels[lang].disabled;
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#test-athan')?.addEventListener('click', () => void playTestAthan().catch((error) => {
+    console.error(error);
+    athanStatus = athanLabels[lang].failed;
+    render();
+  }));
+  document.querySelector<HTMLButtonElement>('#stop-athan')?.addEventListener('click', () => void stopAthan());
   document.querySelector<HTMLButtonElement>('#toggle-map-size')?.addEventListener('click', () => {
     const panel = document.querySelector<HTMLElement>('.map-panel');
     if (!panel) return;
@@ -253,8 +336,9 @@ function bind() {
     const key = element.dataset.field as keyof PlannerPreferences;
     const value = element instanceof HTMLInputElement && element.type === 'checkbox' ? element.checked : element.value;
     prefs = { ...prefs, [key]: key === 'groupSize' ? Number(value) : key === 'interests' ? String(value).split(',').map((interest) => interest.trim()).filter(Boolean) : value } as PlannerPreferences;
-    if (key === 'city') {
+    if (key === 'city' || key === 'prayerMethod' || key === 'startDate') {
       replan = 0;
+      athanStatus = '';
       render();
     }
   }));

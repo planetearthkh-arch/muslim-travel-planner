@@ -1,16 +1,26 @@
 {
   "name": "muslim-travel-planner",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "python3 -m http.server 5173 -d dist",
-    "build": "tsc -p tsconfig.json && cp index.html dist/index.html && cp src/styles.css dist/styles.css && cp src/maplibre.css dist/maplibre.css",
+    "build": "npm run typecheck && rm -rf dist && mkdir -p dist && esbuild src/main.ts --bundle --format=esm --target=es2020 --outfile=dist/main.js && cp index.html dist/index.html && cp src/styles.css dist/styles.css && cp src/maplibre.css dist/maplibre.css && cp src/athan.css dist/athan.css",
     "lint": "eslint dist --ext .js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test dist/planner.test.js"
+    "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node --test dist-test/planner.test.js",
+    "android:setup": "npm run build && node scripts/setup-android.mjs",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "adhan": "^4.4.4"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "esbuild": "^0.25.12",
     "eslint": "^10.6.0",
     "serve": "^14.2.6",
     "typescript": "^6.0.3"
