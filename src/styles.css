@@ -372,3 +372,165 @@ main[dir="rtl"] .leaflet-popup-content {
     width: 100%;
   }
 }
+
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.hero-action {
+  margin-top: 8px;
+  background: #ffffff;
+  color: #0f766e;
+}
+
+.qibla-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: #f4fffb;
+}
+
+.qibla-entry h2 { margin-bottom: 6px; }
+.qibla-entry p { margin-bottom: 0; color: #31534c; }
+
+.qibla-app {
+  max-width: 860px;
+}
+
+.qibla-hero,
+.qibla-panel {
+  grid-column: 1 / -1;
+}
+
+.qibla-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.qibla-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.qibla-status {
+  min-height: 1.4em;
+  color: #31534c;
+  font-weight: 800;
+}
+
+.qibla-status.denied,
+.qibla-status.unavailable { color: #92400e; }
+.qibla-status.ready { color: #166534; }
+
+.qibla-compass-wrap {
+  display: grid;
+  place-items: center;
+  padding-block: 12px;
+}
+
+.qibla-compass {
+  --compass-rotation: 0deg;
+  --qibla-rotation: 0deg;
+  position: relative;
+  width: min(76vw, 360px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 12px solid #e8f7f1;
+  background: radial-gradient(circle at center, #ffffff 0 44%, #f8fcfa 45% 100%);
+  box-shadow: inset 0 0 0 1px #b9d6ce, 0 18px 50px #0b3b3514;
+}
+
+.compass-face {
+  position: absolute;
+  inset: 22px;
+  border-radius: 50%;
+  transform: rotate(var(--compass-rotation));
+  background:
+    linear-gradient(90deg, transparent 49.5%, #b9d6ce 50%, transparent 50.5%),
+    linear-gradient(0deg, transparent 49.5%, #b9d6ce 50%, transparent 50.5%);
+}
+
+.qibla-cardinal {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #0b3b35;
+  font-weight: 900;
+  box-shadow: 0 6px 18px #0b3b3514;
+}
+
+.qibla-cardinal.north { top: 10px; left: 50%; transform: translateX(-50%); }
+.qibla-cardinal.east { right: 10px; top: 50%; transform: translateY(-50%); }
+.qibla-cardinal.south { bottom: 10px; left: 50%; transform: translateX(-50%); }
+.qibla-cardinal.west { left: 10px; top: 50%; transform: translateY(-50%); }
+
+.qibla-arrow {
+  position: absolute;
+  inset: 40px;
+  z-index: 3;
+  display: grid;
+  place-items: start center;
+  transform: rotate(var(--qibla-rotation));
+  transform-origin: center;
+  color: #0f766e;
+  font-weight: 900;
+}
+
+.qibla-arrow::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-inline: 18px solid transparent;
+  border-bottom: 120px solid #0f766e;
+  filter: drop-shadow(0 8px 12px #0b3b3524);
+}
+
+.qibla-arrow span {
+  position: absolute;
+  top: 126px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #e8f7f1;
+  color: #0f766e;
+  transform: rotate(calc(-1 * var(--qibla-rotation)));
+}
+
+.qibla-readouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.qibla-readouts div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #d9eee7;
+  border-radius: 16px;
+  padding: 12px;
+  background: #fbfffd;
+}
+
+.qibla-readouts span,
+.qibla-readouts small { color: #5a786f; font-weight: 800; }
+.qibla-readouts strong { color: #17322d; overflow-wrap: anywhere; }
+
+@media (min-width: 800px) {
+  .qibla-entry { grid-column: 1 / -1; }
+}
+
+@media (max-width: 620px) {
+  .qibla-entry,
+  .qibla-toolbar,
+  .qibla-toolbar button { width: 100%; }
+  .qibla-entry { align-items: stretch; flex-direction: column; }
+  .qibla-readouts { grid-template-columns: 1fr; }
+}

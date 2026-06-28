@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { cities } from './data.js';
 import { labels, languageDirection, languages, nextLanguage, regionLabels } from './i18n.js';
 import { generateItinerary } from './planner.js';
+import { calculateQiblaBearing } from './qibla.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -108,4 +109,18 @@ test('exposes Sample, Unverified, and Verified labels in prototype data', () => 
   assert.equal(statuses.has('Sample'), true);
   assert.equal(statuses.has('Unverified'), true);
   assert.equal(statuses.has('Verified'), true);
+});
+
+test('calculates Qibla bearings for major cities', () => {
+  const cases = [
+    ['London', 51.5074, -0.1278, 118.99],
+    ['New York', 40.7128, -74.0060, 58.48],
+    ['Jerusalem', 31.7683, 35.2137, 157.19],
+    ['Jakarta', -6.2088, 106.8456, 295.15],
+    ['Sydney', -33.8688, 151.2093, 277.50],
+  ] as const;
+
+  for (const [name, latitude, longitude, expected] of cases) {
+    assert.deepEqual({ name, bearing: Number(calculateQiblaBearing(latitude, longitude).toFixed(2)) }, { name, bearing: expected });
+  }
 });

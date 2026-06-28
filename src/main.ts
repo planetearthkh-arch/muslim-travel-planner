@@ -1,5 +1,6 @@
 import { cities } from './data.js';
 import { generateItinerary } from './planner.js';
+import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
 import {
   labels,
   languageDirection,
@@ -23,6 +24,18 @@ import {
 import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
+type View = 'planner' | 'qibla';
+type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
+type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
+type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
+type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
+type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
+
+let view: View = window.location.hash === '#qibla' ? 'qibla' : 'planner';
+let qiblaLocationStatus: QiblaLocationStatus = 'idle';
+let qiblaMotionStatus: QiblaMotionStatus = 'idle';
+let qiblaLocation: QiblaLocation | undefined;
+let qiblaHeading: number | undefined;
 let replan = 0;
 let selectedRegion: Region | '' = '';
 let athanEnabled = localStorage.getItem('athanEnabled') === 'true';
@@ -218,12 +231,169 @@ function languageSelector() {
   return `<label class="lang">${labels[lang].language}<select id="lang">${languages.map((language) => `<option value="${language.code}" ${language.code === lang ? 'selected' : ''}>${language.label}</option>`).join('')}</select></label>`;
 }
 
+
+function qiblaStatusMessage(copy: typeof labels[Language]) {
+  if (qiblaLocationStatus === 'loading') return copy.qiblaLoadingLocation;
+  if (qiblaLocationStatus === 'denied') return copy.qiblaLocationDenied;
+  if (qiblaLocationStatus === 'unavailable') return copy.qiblaLocationUnavailable;
+  if (qiblaMotionStatus === 'active') return copy.qiblaLiveCompass;
+  if (qiblaMotionStatus === 'denied') return copy.qiblaMotionDenied;
+  if (qiblaMotionStatus === 'unavailable') return copy.qiblaMotionUnavailable;
+  return copy.qiblaFixedBearing;
+}
+
+function qiblaPage() {
+  if (!root) return;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const bearing = qiblaLocation ? calculateQiblaBearing(qiblaLocation.latitude, qiblaLocation.longitude) : 0;
+  const qiblaRotation = normalizeDegrees(bearing - (qiblaHeading ?? 0));
+  const compassRotation = qiblaHeading ? -qiblaHeading : 0;
+  const locationText = qiblaLocation
+    ? `${formatCoordinate(qiblaLocation.latitude, copy.qiblaNorth, copy.qiblaSouth)} · ${formatCoordinate(qiblaLocation.longitude, copy.qiblaEast, copy.qiblaWest)}`
+    : copy.qiblaLocationUnavailable;
+  const bearingText = qiblaLocation ? `${bearing.toFixed(1)}°` : '--°';
+  const canShowCompass = qiblaLocationStatus === 'ready';
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `
+    <main dir="${dir}" class="app qibla-app">
+      <section class="hero qibla-hero">
+        ${languageSelector()}
+        <p class="eyebrow">${copy.qibla}</p>
+        <h1>${copy.qiblaTitle}</h1>
+        <p>${copy.qiblaSubtitle}</p>
+        <button type="button" class="ghost hero-action" id="back-to-planner">${copy.qiblaBack}</button>
+      </section>
+      <section class="panel qibla-panel" aria-live="polite">
+        <div class="qibla-toolbar">
+          <button type="button" id="request-location">${qiblaLocationStatus === 'denied' || qiblaLocationStatus === 'unavailable' ? copy.qiblaRetry : copy.qiblaRequestLocation}</button>
+          <button type="button" class="ghost" id="request-motion" ${canShowCompass ? '' : 'disabled'}>${copy.qiblaRequestMotion}</button>
+        </div>
+        <div class="qibla-status ${qiblaLocationStatus}">${qiblaStatusMessage(copy)}</div>
+        <div class="qibla-compass-wrap">
+          <div class="qibla-compass" style="--compass-rotation: ${compassRotation}deg; --qibla-rotation: ${qiblaRotation}deg;">
+            <span class="qibla-cardinal north">${copy.qiblaNorth}</span>
+            <span class="qibla-cardinal east">${copy.qiblaEast}</span>
+            <span class="qibla-cardinal south">${copy.qiblaSouth}</span>
+            <span class="qibla-cardinal west">${copy.qiblaWest}</span>
+            <div class="compass-face"></div>
+            <div class="qibla-arrow"><span>${copy.qiblaKaaba}</span></div>
+          </div>
+        </div>
+        <div class="qibla-readouts">
+          <div><span>${copy.qiblaBearing}</span><strong>${bearingText}</strong><small>${copy.qiblaDegrees}</small></div>
+          <div><span>${copy.qiblaLocation}</span><strong>${locationText}</strong>${qiblaLocation?.accuracy ? `<small>±${Math.round(qiblaLocation.accuracy)} m</small>` : ''}</div>
+          <div><span>${copy.qibla}</span><strong>${qiblaMotionStatus === 'active' ? copy.qiblaLiveCompass : copy.qiblaFixedBearing}</strong></div>
+        </div>
+      </section>
+    </main>`;
+  bindQibla();
+}
+
+function stopQiblaOrientation() {
+  window.removeEventListener('deviceorientation', handleQiblaOrientation);
+  window.removeEventListener('deviceorientationabsolute', handleQiblaOrientation);
+}
+
+function handleQiblaOrientation(event: CompassOrientationEvent) {
+  const heading = typeof event.webkitCompassHeading === 'number'
+    ? event.webkitCompassHeading
+    : typeof event.alpha === 'number'
+      ? normalizeDegrees(360 - event.alpha)
+      : undefined;
+  if (typeof heading !== 'number') return;
+  qiblaHeading = heading;
+  qiblaMotionStatus = 'active';
+  qiblaPage();
+}
+
+function startQiblaOrientation() {
+  stopQiblaOrientation();
+  window.addEventListener('deviceorientation', handleQiblaOrientation);
+  window.addEventListener('deviceorientationabsolute', handleQiblaOrientation);
+}
+
+async function requestQiblaMotion() {
+  if (!('DeviceOrientationEvent' in window)) {
+    qiblaMotionStatus = 'unavailable';
+    qiblaPage();
+    return;
+  }
+  const OrientationEvent = window.DeviceOrientationEvent as DeviceOrientationEventWithPermission;
+  if (typeof OrientationEvent.requestPermission === 'function') {
+    try {
+      const permission = await OrientationEvent.requestPermission();
+      if (permission !== 'granted') {
+        qiblaMotionStatus = 'denied';
+        qiblaPage();
+        return;
+      }
+    } catch {
+      qiblaMotionStatus = 'denied';
+      qiblaPage();
+      return;
+    }
+  }
+  qiblaMotionStatus = 'unavailable';
+  startQiblaOrientation();
+  qiblaPage();
+}
+
+function requestQiblaLocation() {
+  if (!navigator.geolocation) {
+    qiblaLocationStatus = 'unavailable';
+    qiblaPage();
+    return;
+  }
+  qiblaLocationStatus = 'loading';
+  qiblaPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      qiblaLocation = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      };
+      qiblaLocationStatus = 'ready';
+      qiblaMotionStatus = qiblaMotionStatus === 'idle' ? 'unavailable' : qiblaMotionStatus;
+      qiblaPage();
+    },
+    (error) => {
+      qiblaLocationStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      qiblaPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+function bindQibla() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
+    lang = (event.target as HTMLSelectElement).value as Language;
+    qiblaPage();
+  });
+  document.querySelector<HTMLButtonElement>('#back-to-planner')?.addEventListener('click', () => {
+    view = 'planner';
+    stopQiblaOrientation();
+    if (window.location.hash) {
+      history.pushState(null, '', window.location.pathname + window.location.search);
+    }
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#request-location')?.addEventListener('click', requestQiblaLocation);
+  document.querySelector<HTMLButtonElement>('#request-motion')?.addEventListener('click', () => void requestQiblaMotion());
+}
+
 function selectedCity() {
   return cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
 }
 
 function render() {
   if (!root) return;
+  if (view === 'qibla') {
+    qiblaPage();
+    return;
+  }
   document.body.classList.remove('map-expanded');
   const copy = labels[lang];
   const dir = languageDirection(lang);
@@ -243,6 +413,10 @@ function render() {
         <h1>${copy.title}</h1>
         <p>${copy.subtitle}</p>
         <p class="notice">${copy.sample}</p>
+      </section>
+      <section class="panel qibla-entry">
+        <div><h2>${copy.qiblaTitle}</h2><p>${copy.qiblaSubtitle}</p></div>
+        <button type="button" id="open-qibla">${copy.qiblaOpen}</button>
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
@@ -278,6 +452,11 @@ function bind() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
     lang = (event.target as HTMLSelectElement).value as Language;
     athanStatus = '';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-qibla')?.addEventListener('click', () => {
+    view = 'qibla';
+    if (window.location.hash !== '#qibla') window.location.hash = 'qibla';
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
@@ -347,5 +526,11 @@ function bind() {
     render();
   }));
 }
+
+window.addEventListener('hashchange', () => {
+  view = window.location.hash === '#qibla' ? 'qibla' : 'planner';
+  if (view === 'planner') stopQiblaOrientation();
+  render();
+});
 
 render();
