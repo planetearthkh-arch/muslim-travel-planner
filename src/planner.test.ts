@@ -4,7 +4,7 @@ import { cities } from './data.js';
 import { labels, languageDirection, languages, nextLanguage, regionLabels } from './i18n.js';
 import { generateItinerary } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
-import { classifyPrayerPlace, distanceKm, normalizePrayerPlace } from './prayer-spaces.js';
+import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace } from './prayer-spaces.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -163,37 +163,63 @@ test('includes translated prayer-space denied and empty states', () => {
 });
 
 
-test('uses name:en before local OpenStreetMap names', () => {
-  const place = normalizePrayerPlace({ type: 'node', id: 20, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'مسجد الاختبار', 'name:en': 'Test Mosque' } }, { latitude: 1, longitude: 1 });
-  assert.equal(place?.name, 'Test Mosque');
-  assert.equal(place?.originalName, 'مسجد الاختبار');
-  assert.equal(place?.type, 'mosque');
+
+const latinOnly = (value: string) => !/[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(value);
+const namedPlace = (tags: Record<string, string>, type: 'mosque' | 'prayer-room' | 'quiet-space' | 'islamic-centre' = 'mosque') => getEnglishPlaceName({ tags, type });
+
+test('english place names prefer name:en', () => {
+  assert.equal(namedPlace({ name: 'مسجد الاختبار', 'name:en': 'Test Mosque' }), 'Test Mosque');
 });
 
-test('renders Arabic mosque names as English-readable names', () => {
+test('english place names convert Arabic without name:en', () => {
+  assert.equal(namedPlace({ name: 'مسجد التقوى' }), 'Al-Taqwa Mosque');
+  assert.equal(namedPlace({ name: 'مسجد عمر بن الخطاب' }), 'Omar ibn Al-Khattab Mosque');
+  assert.equal(namedPlace({ name: 'مصلى المطار' }, 'prayer-room'), 'Airport Prayer Room');
+});
+
+test('english place names transliterate Persian and Urdu names', () => {
+  assert.equal(latinOnly(namedPlace({ name: 'مسجد نور' })), true);
+  assert.equal(latinOnly(namedPlace({ name: 'مسجد جامع کراچی' })), true);
+});
+
+test('english place names transliterate Hebrew, Cyrillic, and Greek names', () => {
+  assert.equal(latinOnly(namedPlace({ name: 'מסגד עומר' })), true);
+  assert.equal(latinOnly(namedPlace({ name: 'Мечеть Нур' })), true);
+  assert.equal(latinOnly(namedPlace({ name: 'Τζαμί Ομάρ' })), true);
+});
+
+test('english place names transliterate Chinese, Japanese, and Korean names', () => {
+  assert.equal(latinOnly(namedPlace({ name: '东京清真寺' })), true);
+  assert.equal(latinOnly(namedPlace({ name: '東京ジャーミイ' })), true);
+  assert.equal(latinOnly(namedPlace({ name: '서울 중앙 모스크' })), true);
+});
+
+test('english place names handle mixed Arabic and English plus numbers', () => {
+  assert.equal(latinOnly(namedPlace({ name: 'مسجد Omar 2' })), true);
+  assert.equal(ensureLatinDisplayName('Prayer Room 24', 'prayer-room'), 'Prayer Room 24');
+});
+
+test('english place names use int_name and fallbacks', () => {
+  assert.equal(namedPlace({ name: 'غرفة صلاة', int_name: 'Airport Prayer Room' }, 'prayer-room'), 'Airport Prayer Room');
+  assert.equal(namedPlace({}, 'mosque'), 'Unnamed Mosque');
+  assert.equal(namedPlace({}, 'prayer-room'), 'Unnamed Prayer Room');
+});
+
+test('normalization keeps original name internally but displays Latin only', () => {
   const place = normalizePrayerPlace({ type: 'node', id: 21, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'مسجد الأقصى' } }, { latitude: 1, longitude: 1 });
   assert.equal(place?.name, 'Al-Aqsa Mosque');
   assert.equal(place?.originalName, 'مسجد الأقصى');
-  assert.equal(place?.type, 'mosque');
+  assert.equal(latinOnly(place?.name ?? ''), true);
 });
 
-test('transliterates non-Arabic non-Latin names', () => {
-  const place = normalizePrayerPlace({ type: 'node', id: 22, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'Мечеть Нур' } }, { latitude: 1, longitude: 1 });
-  assert.equal(place?.name, 'Mechet Nur');
-  assert.equal(place?.originalName, 'Мечеть Нур');
-  assert.equal(place?.type, 'mosque');
-});
-
-test('uses int_name before local names', () => {
-  const place = normalizePrayerPlace({ type: 'node', id: 23, lat: 1, lon: 1, tags: { amenity: 'prayer_room', name: 'غرفة صلاة', int_name: 'Airport Prayer Room' } }, { latitude: 1, longitude: 1 });
-  assert.equal(place?.name, 'Airport Prayer Room');
-  assert.equal(place?.originalName, 'غرفة صلاة');
-  assert.equal(place?.type, 'prayer-room');
-});
-
-test('uses unnamed fallbacks only when no name exists', () => {
-  const mosque = normalizePrayerPlace({ type: 'node', id: 24, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim' } }, { latitude: 1, longitude: 1 });
-  const room = normalizePrayerPlace({ type: 'node', id: 25, lat: 1, lon: 1, tags: { amenity: 'prayer_room' } }, { latitude: 1, longitude: 1 });
-  assert.equal(mosque?.name, 'Unnamed Mosque');
-  assert.equal(room?.name, 'Unnamed Prayer Space');
+test('rendered prayer-place titles use the shared English-name safety function', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes('tags.name'), false);
+  assert.equal(source.includes('place.originalName ?'), false);
+  assert.equal(source.includes('<h3>${esc(place.name)}</h3>'), false);
+  assert.equal(source.includes('aria-label="${esc(place.name)}"'), false);
+  assert.equal(source.includes('setText(place.name)'), false);
+  assert.equal(source.includes('encodeURIComponent(place.name)'), false);
+  assert.equal(source.includes('ensureLatinDisplayName(getEnglishPlaceName(place), place.type)'), true);
 });

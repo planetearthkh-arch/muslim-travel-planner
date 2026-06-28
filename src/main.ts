@@ -1,7 +1,7 @@
 import { cities } from './data.js';
 import { generateItinerary } from './planner.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
-import { buildOverpassQuery, isReliablyOpenNow, normalizePrayerPlace, type PrayerPlace, type PrayerPlaceType } from './prayer-spaces.js';
+import { buildOverpassQuery, ensureLatinDisplayName, getEnglishPlaceName, isReliablyOpenNow, normalizePrayerPlace, type PrayerPlace, type PrayerPlaceType } from './prayer-spaces.js';
 import {
   labels,
   languageDirection,
@@ -458,7 +458,7 @@ function filteredPrayerResults() {
 }
 
 function appleMapsUrl(place: PrayerPlace) {
-  return `https://maps.apple.com/?daddr=${place.latitude},${place.longitude}&q=${encodeURIComponent(place.name)}`;
+  return `https://maps.apple.com/?daddr=${place.latitude},${place.longitude}&q=${encodeURIComponent(ensureLatinDisplayName(getEnglishPlaceName(place), place.type))}`;
 }
 
 function browserDirectionsUrl(place: PrayerPlace) {
@@ -564,7 +564,8 @@ function initializePrayerMap() {
     prayerMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
     new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([prayerCenter.longitude, prayerCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(prayerCenter.label)).addTo(prayerMap);
     for (const place of filteredPrayerResults()) {
-      new window.maplibregl.Marker({ color: place.type === 'mosque' ? '#0f766e' : '#2563eb' }).setLngLat([place.longitude, place.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(place.originalName ? `${place.name} (${place.originalName})` : place.name)).addTo(prayerMap);
+      const displayName = ensureLatinDisplayName(getEnglishPlaceName(place), place.type);
+      new window.maplibregl.Marker({ color: place.type === 'mosque' ? '#0f766e' : '#2563eb' }).setLngLat([place.longitude, place.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(displayName)).addTo(prayerMap);
     }
     prayerMap.on('moveend', () => {
       prayerMapMoved = true;
@@ -579,10 +580,10 @@ function initializePrayerMap() {
 function prayerResultCard(place: PrayerPlace, copy: typeof labels[Language]) {
   const verified = (value: string) => value === 'Verified' ? copy.prayerVerified : copy.prayerUnverified;
   const missing = (value: string) => value || copy.prayerUnknown;
-  return `<article class="card prayer-place-card" aria-label="${esc(place.name)}">
+  const displayName = ensureLatinDisplayName(getEnglishPlaceName(place), place.type);
+  return `<article class="card prayer-place-card" aria-label="${esc(displayName)}">
     <div class="card-top"><span>${place.distanceKm.toFixed(1)} km · ${prayerTypeLabel(place.type, copy)}</span><span class="badge ${place.verification === 'Verified' ? 'verified' : 'unverified'}">${verified(place.verification)}</span></div>
-    <h3>${esc(place.name)}</h3>
-    ${place.originalName ? `<p class="local-name">${esc(place.originalName)}</p>` : ''}
+    <h3>${esc(displayName)}</h3>
     <dl class="place-details">
       <div><dt>${copy.prayerAddress}</dt><dd>${esc(missing(place.address))}</dd></div>
       <div><dt>${copy.prayerOpeningHours}</dt><dd>${esc(missing(place.openingHours))}</dd></div>
