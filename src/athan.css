@@ -1,0 +1,14 @@
+.athan-panel { margin-block: 16px; background: linear-gradient(180deg, #f4fffb, #fff); }
+.athan-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.athan-heading h2 { margin-bottom: 6px; }
+.athan-state { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 999px; color: #64748b; background: #f1f5f9; font-size: 1.4rem; }
+.athan-state.enabled { color: #166534; background: #dcfce7; }
+.prayer-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-block: 12px 16px; }
+.prayer-time { display: flex; justify-content: space-between; gap: 10px; padding: 11px 12px; border: 1px solid #d9eee7; border-radius: 14px; background: #fff; }
+.prayer-time span { font-variant-numeric: tabular-nums; color: #31534c; font-weight: 800; }
+.prayer-time.sunrise { border-style: dashed; background: #fffaf0; }
+.athan-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.athan-device-note, .athan-permission-note, .athan-status { margin-top: 12px; color: #31534c; }
+.athan-permission-note { font-size: .9rem; }
+.athan-status { min-height: 1.4em; font-weight: 800; }
+@media (max-width: 520px) { .prayer-times { grid-template-columns: 1fr; } .athan-actions button { width: 100%; } }
