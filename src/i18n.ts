@@ -59,6 +59,10 @@ export const labels = {
     accessibility: 'Accessibility',
     emptyState: 'No itinerary items yet. Choose preferences and generate an itinerary.',
     noCities: 'No cities match this region yet.',
+    cityStreetMap: 'City street map',
+    openFullMap: 'Open full map',
+    findOnMap: 'Find on map',
+    mapUnavailable: 'Map unavailable',
   },
   ar: {
     title: 'مخطط سفر للمسلمين',
@@ -103,6 +107,10 @@ export const labels = {
     accessibility: 'سهولة الوصول',
     emptyState: 'لا توجد عناصر في الخطة بعد. اختر التفضيلات وأنشئ خطة سفر.',
     noCities: 'لا توجد مدن مطابقة لهذه المنطقة بعد.',
+    cityStreetMap: 'خريطة شوارع المدينة',
+    openFullMap: 'افتح الخريطة الكاملة',
+    findOnMap: 'ابحث على الخريطة',
+    mapUnavailable: 'الخريطة غير متاحة',
   },
   id: {
     title: 'Perencana Perjalanan Muslim',
@@ -147,6 +155,10 @@ export const labels = {
     accessibility: 'Aksesibilitas',
     emptyState: 'Belum ada item rencana. Pilih preferensi dan buat rencana perjalanan.',
     noCities: 'Belum ada kota yang cocok dengan wilayah ini.',
+    cityStreetMap: 'Peta jalan kota',
+    openFullMap: 'Buka peta lengkap',
+    findOnMap: 'Temukan di peta',
+    mapUnavailable: 'Peta tidak tersedia',
   },
 } satisfies Record<Language, Record<string, string>>;
 
