@@ -39,10 +39,17 @@ const root = document.querySelector<HTMLDivElement>('#root');
 const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America', 'Africa', 'Oceania'];
 const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const;
 
-type LeafletMap = { remove: () => void; setView: (center: [number, number], zoom: number) => LeafletMap };
+type LeafletMap = {
+  remove: () => void;
+  setView: (center: [number, number], zoom: number) => LeafletMap;
+  invalidateSize: () => LeafletMap;
+};
 type LeafletGlobal = {
   map: (element: HTMLElement, options?: { zoomControl?: boolean; attributionControl?: boolean }) => LeafletMap;
-  tileLayer: (url: string, options: { attribution: string; maxZoom: number }) => { addTo: (map: LeafletMap) => void; on: (event: string, handler: () => void) => void };
+  tileLayer: (url: string, options: { attribution: string; maxZoom: number }) => {
+    addTo: (map: LeafletMap) => void;
+    on: (event: string, handler: () => void) => void;
+  };
   marker: (center: [number, number]) => { addTo: (map: LeafletMap) => { bindPopup: (content: string) => void } };
   control: { zoom: (options: { position: string }) => { addTo: (map: LeafletMap) => void } };
 };
@@ -68,7 +75,6 @@ function choiceSelect<T extends string>(name: keyof PlannerPreferences, label: s
   return `<label>${label}<select data-field="${String(name)}">${options.map((option) => `<option value="${esc(option)}" ${currentValue === option ? 'selected' : ''}>${display[option]}</option>`).join('')}</select></label>`;
 }
 
-
 function mapSection(city: (typeof cities)[number], copy: typeof labels[Language]) {
   const { lat, lng } = city.coordinates;
   return `<section class="panel map-panel" aria-label="${copy.cityStreetMap}">
@@ -83,6 +89,11 @@ function mapSection(city: (typeof cities)[number], copy: typeof labels[Language]
   </section>`;
 }
 
+function showMapFallback(element: HTMLElement, status: HTMLElement, message: string) {
+  element.innerHTML = `<p class="map-fallback">${esc(message)}</p>`;
+  status.textContent = message;
+}
+
 function initializeMap(copy: typeof labels[Language]) {
   cityMap?.remove();
   cityMap = undefined;
@@ -93,18 +104,23 @@ function initializeMap(copy: typeof labels[Language]) {
   const lng = Number(element.dataset.lng);
   const title = element.dataset.title ?? '';
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || !window.L) {
-    status.textContent = copy.mapUnavailable;
+    showMapFallback(element, status, copy.mapUnavailable);
     return;
   }
   try {
+    element.replaceChildren();
+    status.textContent = '';
     cityMap = window.L.map(element, { zoomControl: false, attributionControl: true }).setView([lat, lng], 13);
     window.L.control.zoom({ position: document.documentElement.dir === 'rtl' ? 'topright' : 'topleft' }).addTo(cityMap);
     const tiles = window.L.tileLayer(osmTileUrl, { attribution: osmAttribution, maxZoom: 19 });
     tiles.on('tileerror', () => { status.textContent = copy.mapUnavailable; });
     tiles.addTo(cityMap);
     window.L.marker([lat, lng]).addTo(cityMap).bindPopup(title);
+    window.requestAnimationFrame(() => cityMap?.invalidateSize());
   } catch {
-    status.textContent = copy.mapUnavailable;
+    cityMap?.remove();
+    cityMap = undefined;
+    showMapFallback(element, status, copy.mapUnavailable);
   }
 }
 
