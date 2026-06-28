@@ -1,7 +1,7 @@
 {
   "name": "muslim-travel-planner",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "python3 -m http.server 5173 -d dist",
@@ -11,11 +11,15 @@
     "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node --test dist-test/planner.test.js",
     "android:setup": "npm run build && node scripts/setup-android.mjs",
     "android:sync": "npm run build && npx cap sync android",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "ios:setup": "npm run build && node scripts/setup-ios.mjs",
+    "ios:sync": "npm run build && node scripts/setup-ios.mjs",
+    "ios:open": "npx cap open ios"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
     "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1",
     "adhan": "^4.4.4"
   },
   "devDependencies": {
