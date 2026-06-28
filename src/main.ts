@@ -564,7 +564,7 @@ function initializePrayerMap() {
     prayerMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
     new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([prayerCenter.longitude, prayerCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(prayerCenter.label)).addTo(prayerMap);
     for (const place of filteredPrayerResults()) {
-      new window.maplibregl.Marker({ color: place.type === 'mosque' ? '#0f766e' : '#2563eb' }).setLngLat([place.longitude, place.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(place.name)).addTo(prayerMap);
+      new window.maplibregl.Marker({ color: place.type === 'mosque' ? '#0f766e' : '#2563eb' }).setLngLat([place.longitude, place.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(place.originalName ? `${place.name} (${place.originalName})` : place.name)).addTo(prayerMap);
     }
     prayerMap.on('moveend', () => {
       prayerMapMoved = true;
@@ -582,6 +582,7 @@ function prayerResultCard(place: PrayerPlace, copy: typeof labels[Language]) {
   return `<article class="card prayer-place-card" aria-label="${esc(place.name)}">
     <div class="card-top"><span>${place.distanceKm.toFixed(1)} km · ${prayerTypeLabel(place.type, copy)}</span><span class="badge ${place.verification === 'Verified' ? 'verified' : 'unverified'}">${verified(place.verification)}</span></div>
     <h3>${esc(place.name)}</h3>
+    ${place.originalName ? `<p class="local-name">${esc(place.originalName)}</p>` : ''}
     <dl class="place-details">
       <div><dt>${copy.prayerAddress}</dt><dd>${esc(missing(place.address))}</dd></div>
       <div><dt>${copy.prayerOpeningHours}</dt><dd>${esc(missing(place.openingHours))}</dd></div>

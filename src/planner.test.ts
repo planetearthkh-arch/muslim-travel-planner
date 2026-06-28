@@ -161,3 +161,39 @@ test('includes translated prayer-space denied and empty states', () => {
   assert.equal(labels.id.prayerNoResults.length > 0, true);
   assert.equal(labels.en.prayerNoResults, 'No places found nearby.');
 });
+
+
+test('uses name:en before local OpenStreetMap names', () => {
+  const place = normalizePrayerPlace({ type: 'node', id: 20, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'مسجد الاختبار', 'name:en': 'Test Mosque' } }, { latitude: 1, longitude: 1 });
+  assert.equal(place?.name, 'Test Mosque');
+  assert.equal(place?.originalName, 'مسجد الاختبار');
+  assert.equal(place?.type, 'mosque');
+});
+
+test('renders Arabic mosque names as English-readable names', () => {
+  const place = normalizePrayerPlace({ type: 'node', id: 21, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'مسجد الأقصى' } }, { latitude: 1, longitude: 1 });
+  assert.equal(place?.name, 'Al-Aqsa Mosque');
+  assert.equal(place?.originalName, 'مسجد الأقصى');
+  assert.equal(place?.type, 'mosque');
+});
+
+test('transliterates non-Arabic non-Latin names', () => {
+  const place = normalizePrayerPlace({ type: 'node', id: 22, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'Мечеть Нур' } }, { latitude: 1, longitude: 1 });
+  assert.equal(place?.name, 'Mechet Nur');
+  assert.equal(place?.originalName, 'Мечеть Нур');
+  assert.equal(place?.type, 'mosque');
+});
+
+test('uses int_name before local names', () => {
+  const place = normalizePrayerPlace({ type: 'node', id: 23, lat: 1, lon: 1, tags: { amenity: 'prayer_room', name: 'غرفة صلاة', int_name: 'Airport Prayer Room' } }, { latitude: 1, longitude: 1 });
+  assert.equal(place?.name, 'Airport Prayer Room');
+  assert.equal(place?.originalName, 'غرفة صلاة');
+  assert.equal(place?.type, 'prayer-room');
+});
+
+test('uses unnamed fallbacks only when no name exists', () => {
+  const mosque = normalizePrayerPlace({ type: 'node', id: 24, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim' } }, { latitude: 1, longitude: 1 });
+  const room = normalizePrayerPlace({ type: 'node', id: 25, lat: 1, lon: 1, tags: { amenity: 'prayer_room' } }, { latitude: 1, longitude: 1 });
+  assert.equal(mosque?.name, 'Unnamed Mosque');
+  assert.equal(room?.name, 'Unnamed Prayer Space');
+});
