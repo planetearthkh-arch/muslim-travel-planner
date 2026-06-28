@@ -39,6 +39,22 @@ const root = document.querySelector<HTMLDivElement>('#root');
 const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America', 'Africa', 'Oceania'];
 const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const;
 
+type LeafletMap = { remove: () => void; setView: (center: [number, number], zoom: number) => LeafletMap };
+type LeafletGlobal = {
+  map: (element: HTMLElement, options?: { zoomControl?: boolean; attributionControl?: boolean }) => LeafletMap;
+  tileLayer: (url: string, options: { attribution: string; maxZoom: number }) => { addTo: (map: LeafletMap) => void; on: (event: string, handler: () => void) => void };
+  marker: (center: [number, number]) => { addTo: (map: LeafletMap) => { bindPopup: (content: string) => void } };
+  control: { zoom: (options: { position: string }) => { addTo: (map: LeafletMap) => void } };
+};
+
+declare global { interface Window { L?: LeafletGlobal } }
+
+let cityMap: LeafletMap | undefined;
+const osmTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const osmAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const osmCityUrl = (lat: number, lng: number) => `https://www.openstreetmap.org/#map=13/${lat}/${lng}`;
+const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
+
 const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
 
 const statusBadge = (status: VerificationStatus) => `<span class="badge ${status.toLowerCase()}">${statusLabels[lang][status]}</span>`;
@@ -50,6 +66,46 @@ function field(name: keyof PlannerPreferences, value: string, label: string, typ
 function choiceSelect<T extends string>(name: keyof PlannerPreferences, label: string, options: readonly T[], display: Record<T, string>) {
   const currentValue = String(prefs[name]);
   return `<label>${label}<select data-field="${String(name)}">${options.map((option) => `<option value="${esc(option)}" ${currentValue === option ? 'selected' : ''}>${display[option]}</option>`).join('')}</select></label>`;
+}
+
+
+function mapSection(city: (typeof cities)[number], copy: typeof labels[Language]) {
+  const { lat, lng } = city.coordinates;
+  return `<section class="panel map-panel" aria-label="${copy.cityStreetMap}">
+    <div class="map-heading">
+      <div><h2>${copy.cityStreetMap}</h2><p>${city.city}, ${city.country}</p></div>
+      <a class="button-link" href="${osmCityUrl(lat, lng)}" target="_blank" rel="noopener noreferrer">${copy.openFullMap}</a>
+    </div>
+    <div id="city-map" class="city-map" data-lat="${lat}" data-lng="${lng}" data-title="${esc(`${city.city}, ${city.country}`)}">
+      <p class="map-fallback">${copy.mapUnavailable}</p>
+    </div>
+    <p id="map-status" class="map-status" role="status" aria-live="polite"></p>
+  </section>`;
+}
+
+function initializeMap(copy: typeof labels[Language]) {
+  cityMap?.remove();
+  cityMap = undefined;
+  const element = document.querySelector<HTMLElement>('#city-map');
+  const status = document.querySelector<HTMLElement>('#map-status');
+  if (!element || !status) return;
+  const lat = Number(element.dataset.lat);
+  const lng = Number(element.dataset.lng);
+  const title = element.dataset.title ?? '';
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !window.L) {
+    status.textContent = copy.mapUnavailable;
+    return;
+  }
+  try {
+    cityMap = window.L.map(element, { zoomControl: false, attributionControl: true }).setView([lat, lng], 13);
+    window.L.control.zoom({ position: document.documentElement.dir === 'rtl' ? 'topright' : 'topleft' }).addTo(cityMap);
+    const tiles = window.L.tileLayer(osmTileUrl, { attribution: osmAttribution, maxZoom: 19 });
+    tiles.on('tileerror', () => { status.textContent = copy.mapUnavailable; });
+    tiles.addTo(cityMap);
+    window.L.marker([lat, lng]).addTo(cityMap).bindPopup(title);
+  } catch {
+    status.textContent = copy.mapUnavailable;
+  }
 }
 
 function languageSelector() {
@@ -98,10 +154,12 @@ function render() {
       </section>
       <section class="panel results" aria-live="polite">
         <div class="result-header"><div><h2>${city.city}, ${city.country}</h2><p>${regionLabels[lang][city.region]} · ${city.timezone}</p><p>${copy.prayerWindowsAre} <strong>${statusLabels[lang].Sample}</strong>: ${Object.entries(city.prayerWindows).map(([name, window]) => `${prayerLabels[lang][name as keyof typeof city.prayerWindows]} ${window}`).join(' · ')}</p><p>${copy.transportEstimatesAre} <strong>${statusLabels[lang].Sample}</strong>: ${copy.walking} ${city.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${city.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${city.transportEstimates.taxi} ${copy.minutesShort}.</p></div><div class="legend"><strong>${copy.legend}</strong>${statusBadge('Sample')}${statusBadge('Unverified')}${statusBadge('Verified')}</div></div>
-        ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span>${statusBadge(item.status)}</div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.evidence ? `<p class="evidence">${copy.evidenceNote}: ${item.place.evidence}</p>` : ''}${item.place?.facility ? `<p>${copy.women}: ${statusBadge(item.place.facility.womenPrayerSpace)} ${copy.wudu}: ${statusBadge(item.place.facility.wudu)} ${copy.accessibility}: ${statusBadge(item.place.facility.accessibility)}</p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${visibleCities.length ? copy.emptyState : copy.noCities}</p>`}
+        ${mapSection(city, copy)}
+        ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span>${statusBadge(item.status)}</div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.evidence ? `<p class="evidence">${copy.evidenceNote}: ${item.place.evidence}</p>` : ''}${item.place?.facility ? `<p>${copy.women}: ${statusBadge(item.place.facility.womenPrayerSpace)} ${copy.wudu}: ${statusBadge(item.place.facility.wudu)} ${copy.accessibility}: ${statusBadge(item.place.facility.accessibility)}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, city.city, city.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${visibleCities.length ? copy.emptyState : copy.noCities}</p>`}
       </section>
     </main>`;
   bind();
+  initializeMap(copy);
 }
 
 function bind() {
