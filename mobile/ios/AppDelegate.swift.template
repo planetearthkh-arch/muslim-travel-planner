@@ -1,0 +1,298 @@
+import UIKit
+import Capacitor
+import UserNotifications
+import AVFoundation
+
+@UIApplicationMain
+class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+
+    var window: UIWindow?
+    private var athanPluginRegistered = false
+    private var athanPlugin: AthanAlarmPlugin?
+
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        registerAthanPluginWhenReady()
+        return true
+    }
+
+    private func findBridgeViewController(_ viewController: UIViewController?) -> CAPBridgeViewController? {
+        guard let viewController else { return nil }
+        if let bridgeViewController = viewController as? CAPBridgeViewController { return bridgeViewController }
+        if let navigationController = viewController as? UINavigationController {
+            return findBridgeViewController(navigationController.visibleViewController)
+        }
+        if let tabController = viewController as? UITabBarController {
+            return findBridgeViewController(tabController.selectedViewController)
+        }
+        if let presented = viewController.presentedViewController,
+           let bridgeViewController = findBridgeViewController(presented) {
+            return bridgeViewController
+        }
+        for child in viewController.children {
+            if let bridgeViewController = findBridgeViewController(child) { return bridgeViewController }
+        }
+        return nil
+    }
+
+    private func registerAthanPluginWhenReady(attempt: Int = 0) {
+        guard !athanPluginRegistered else { return }
+        if let bridgeViewController = findBridgeViewController(window?.rootViewController),
+           let bridge = bridgeViewController.bridge {
+            let plugin = AthanAlarmPlugin()
+            bridge.registerPluginInstance(plugin)
+            athanPlugin = plugin
+            athanPluginRegistered = true
+            return
+        }
+        guard attempt < 50 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.registerAthanPluginWhenReady(attempt: attempt + 1)
+        }
+    }
+
+    func applicationWillResignActive(_ application: UIApplication) {}
+    func applicationDidEnterBackground(_ application: UIApplication) {}
+    func applicationWillEnterForeground(_ application: UIApplication) {}
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        registerAthanPluginWhenReady()
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {}
+
+    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+    }
+
+    func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+        return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
+    }
+}
+
+@objc(AthanAlarmPlugin)
+public class AthanAlarmPlugin: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate {
+    public let identifier = "AthanAlarmPlugin"
+    public let jsName = "AthanAlarm"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "prepare", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestPermissions", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "schedule", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelAll", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "test", returnType: CAPPluginReturnPromise)
+    ]
+
+    private let notificationPrefix = "athan-prayer-"
+    private let alertSoundName = "athan_alert.caf"
+    private var player: AVAudioPlayer?
+
+    private var applicationSupportURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    }
+
+    private var fullAthanURL: URL {
+        applicationSupportURL.appendingPathComponent("athan.mp3")
+    }
+
+    private var soundsDirectoryURL: URL {
+        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Sounds", isDirectory: true)
+    }
+
+    private var alertSoundURL: URL {
+        soundsDirectoryURL.appendingPathComponent(alertSoundName)
+    }
+
+    private func installAlertSound() throws {
+        try FileManager.default.createDirectory(at: soundsDirectoryURL, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: alertSoundURL.path) { return }
+        guard let data = Data(base64Encoded: athanAlertBase64) else {
+            throw NSError(domain: "AthanAlarm", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid Athan alert audio data."])
+        }
+        try data.write(to: alertSoundURL, options: .atomic)
+    }
+
+    private func ensureFullAthan(from address: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        do {
+            try FileManager.default.createDirectory(at: applicationSupportURL, withIntermediateDirectories: true)
+            try installAlertSound()
+            if FileManager.default.fileExists(atPath: fullAthanURL.path) {
+                completion(.success(()))
+                return
+            }
+            guard let url = URL(string: address) else {
+                throw NSError(domain: "AthanAlarm", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid Athan audio URL."])
+            }
+            URLSession.shared.downloadTask(with: url) { [weak self] temporaryURL, _, error in
+                guard let self else { return }
+                if let error {
+                    completion(.failure(error))
+                    return
+                }
+                guard let temporaryURL else {
+                    completion(.failure(NSError(domain: "AthanAlarm", code: 3, userInfo: [NSLocalizedDescriptionKey: "Athan download returned no file."])))
+                    return
+                }
+                do {
+                    if FileManager.default.fileExists(atPath: self.fullAthanURL.path) {
+                        try FileManager.default.removeItem(at: self.fullAthanURL)
+                    }
+                    try FileManager.default.moveItem(at: temporaryURL, to: self.fullAthanURL)
+                    completion(.success(()))
+                } catch {
+                    completion(.failure(error))
+                }
+            }.resume()
+        } catch {
+            completion(.failure(error))
+        }
+    }
+
+    @objc public func prepare(_ call: CAPPluginCall) {
+        guard let audioURL = call.getString("audioUrl"), !audioURL.isEmpty else {
+            call.reject("An Athan audio URL is required.")
+            return
+        }
+        ensureFullAthan(from: audioURL) { result in
+            switch result {
+            case .success:
+                call.resolve(["ready": true])
+            case .failure(let error):
+                call.reject("Could not prepare Athan audio.", nil, error)
+            }
+        }
+    }
+
+    @objc public func requestPermissions(_ call: CAPPluginCall) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error {
+                call.reject("Could not request notification permission.", nil, error)
+                return
+            }
+            call.resolve([
+                "exactAlarmAllowed": granted,
+                "notificationsAllowed": granted
+            ])
+        }
+    }
+
+    @objc public func schedule(_ call: CAPPluginCall) {
+        guard let alarms = call.getArray("alarms", JSObject.self) else {
+            call.reject("No prayer alarms were supplied.")
+            return
+        }
+        do {
+            try installAlertSound()
+        } catch {
+            call.reject("Could not install the Athan alert sound.", nil, error)
+            return
+        }
+
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { [weak self] pending in
+            guard let self else { return }
+            let existing = pending.map(\.identifier).filter { $0.hasPrefix(self.notificationPrefix) }
+            center.removePendingNotificationRequests(withIdentifiers: existing)
+
+            let group = DispatchGroup()
+            let lock = NSLock()
+            var scheduled = 0
+            let now = Date().timeIntervalSince1970
+
+            for alarm in alarms.prefix(60) {
+                guard let id = alarm["id"] as? NSNumber,
+                      let timestamp = alarm["timestamp"] as? NSNumber,
+                      let prayer = alarm["prayer"] as? String,
+                      let city = alarm["city"] as? String else { continue }
+
+                let interval = timestamp.doubleValue / 1000 - now
+                guard interval > 1 else { continue }
+
+                let content = UNMutableNotificationContent()
+                content.title = "\(prayer) prayer"
+                content.body = city
+                content.sound = UNNotificationSound(named: UNNotificationSoundName(self.alertSoundName))
+                content.userInfo = ["prayer": prayer, "city": city]
+
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+                let request = UNNotificationRequest(
+                    identifier: "\(self.notificationPrefix)\(id.stringValue)",
+                    content: content,
+                    trigger: trigger
+                )
+
+                group.enter()
+                center.add(request) { error in
+                    if error == nil {
+                        lock.lock()
+                        scheduled += 1
+                        lock.unlock()
+                    }
+                    group.leave()
+                }
+            }
+
+            group.notify(queue: .main) {
+                call.resolve(["scheduled": scheduled])
+            }
+        }
+    }
+
+    @objc public func cancelAll(_ call: CAPPluginCall) {
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { [weak self] pending in
+            guard let self else { return }
+            let identifiers = pending.map(\.identifier).filter { $0.hasPrefix(self.notificationPrefix) }
+            center.removePendingNotificationRequests(withIdentifiers: identifiers)
+            call.resolve()
+        }
+    }
+
+    @objc public func test(_ call: CAPPluginCall) {
+        guard FileManager.default.fileExists(atPath: fullAthanURL.path) else {
+            call.reject("Athan audio is not ready yet.")
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .default, options: [.duckOthers])
+                try session.setActive(true)
+                self.player?.stop()
+                self.player = try AVAudioPlayer(contentsOf: self.fullAthanURL)
+                self.player?.delegate = self
+                self.player?.prepareToPlay()
+                self.player?.play()
+                call.resolve()
+            } catch {
+                call.reject("Could not play the Athan.", nil, error)
+            }
+        }
+    }
+
+    @objc public func stop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.player?.stop()
+            self?.player = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            call.resolve()
+        }
+    }
+
+    public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        self.player = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    }
+}
+
+private let athanAlertBase64 = "__ATHAN_ALERT_BASE64__"
