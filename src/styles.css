@@ -647,6 +647,14 @@ button:disabled {
 .badge.toilet-customers { background: #dbeafe; color: #1e3a8a; }
 .badge.toilet-restricted { background: #fef3c7; color: #78350f; }
 .badge.toilet-unknown { background: #e2e8f0; color: #334155; }
+.badge.car-airport { background: #ede9fe; color: #4c1d95; }
+.badge.car-city { background: #ccfbf1; color: #134e4a; }
+.badge.car-railway, .badge.car-bus { background: #dbeafe; color: #1e3a8a; }
+.badge.car-hotel { background: #fef3c7; color: #78350f; }
+.badge.car-independent { background: #dcfce7; color: #14532d; }
+.badge.car-unknown { background: #e2e8f0; color: #334155; }
+.compact-list { margin: 8px 0 0; padding-inline-start: 20px; color: #31534c; }
+.compact-list li { margin: 4px 0; }
 
 @media (min-width: 800px) {
   .quick-actions { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }

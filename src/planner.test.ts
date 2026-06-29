@@ -43,6 +43,18 @@ import {
   type PublicToilet,
   type ToiletFilters,
 } from './public-toilets.js';
+import {
+  buildCarRentalOverpassQuery,
+  classifyCarRentalLocation,
+  dedupeCarRentalOffices,
+  filterCarRentalOffices,
+  isCarRentalOffice,
+  normalizeCarRentalOffice,
+  safeRentalUrl,
+  sortCarRentalOffices,
+  type CarRentalFilters,
+  type CarRentalOffice,
+} from './car-rental.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -498,6 +510,94 @@ test('builds bounded toilet Overpass queries and includes toilet language states
   assert.equal(labels.en.toiletsNoResults, 'No mapped public toilets were found in this area. This does not necessarily mean that none exist.');
   assert.equal(labels.ar.toiletsTitle.length > 0, true);
   assert.equal(labels.id.toiletsTitle.length > 0, true);
+});
+
+test('classifies structured car-rental office tags and excludes other vehicle services', () => {
+  assert.equal(isCarRentalOffice({ amenity: 'car_rental' }), true);
+  assert.equal(isCarRentalOffice({ shop: 'car_rental' }), true);
+  assert.equal(isCarRentalOffice({ rental: 'car' }), true);
+  assert.equal(isCarRentalOffice({ 'vehicle:rental': 'motorcar' }), true);
+  assert.equal(isCarRentalOffice({ amenity: 'car_sharing' }), false);
+  assert.equal(isCarRentalOffice({ amenity: 'bicycle_rental' }), false);
+  assert.equal(isCarRentalOffice({ amenity: 'taxi' }), false);
+  assert.equal(isCarRentalOffice({ shop: 'car' }), false);
+});
+
+test('normalizes car-rental offices from node, area centre, and multipolygon centre coordinates', () => {
+  const origin = { latitude: 51.5, longitude: -0.1, label: 'London Heathrow Airport' };
+  const node = normalizeCarRentalOffice({ type: 'node', id: 1, lat: 51.501, lon: -0.101, tags: { amenity: 'car_rental', name: 'Airport Cars', opening_hours: '24/7', website: 'https://example.com', phone: '+44123', wheelchair: 'yes' } }, origin);
+  const way = normalizeCarRentalOffice({ type: 'way', id: 2, center: { lat: 51.502, lon: -0.102 }, tags: { amenity: 'car_rental', brand: 'Brand Rent', operator: 'Local Operator', opening_hours: 'not real hours' } }, origin);
+  const relation = normalizeCarRentalOffice({ type: 'relation', id: 3, center: { lat: 51.503, lon: -0.103 }, tags: { type: 'multipolygon', amenity: 'car_rental', 'operator:en': 'Rail Rent', railway: 'station' } }, { latitude: 51.5, longitude: -0.1, label: 'Central Station' });
+  assert.equal(node?.latitude, 51.501);
+  assert.equal(way?.longitude, -0.102);
+  assert.equal(relation?.locationType, 'railway');
+  assert.equal(node?.locationType, 'airport');
+  assert.equal(node?.website, 'https://example.com/');
+  assert.equal(node?.phone, '+44123');
+  assert.equal(node?.wheelchair, 'yes');
+  assert.equal(way?.brand, 'Brand Rent');
+  assert.equal(way?.operator, 'Local Operator');
+  assert.equal(openingState(way?.openingHours ?? ''), 'unknown');
+  assert.equal(Number((node?.distanceKm ?? 0).toFixed(2)) > 0, true);
+});
+
+test('uses safe car-rental names, brand/operator fallbacks, and missing-name fallback', () => {
+  const origin = { latitude: 0, longitude: 0, label: 'City Centre' };
+  const fallback = normalizeCarRentalOffice({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'car_rental' } }, origin);
+  const brand = normalizeCarRentalOffice({ type: 'node', id: 2, lat: 0, lon: 0, tags: { amenity: 'car_rental', brand: 'RentCo' } }, origin);
+  const operator = normalizeCarRentalOffice({ type: 'node', id: 3, lat: 0, lon: 0, tags: { amenity: 'car_rental', operator: 'Operator Cars' } }, origin);
+  const transliterated = normalizeCarRentalOffice({ type: 'node', id: 4, lat: 0, lon: 0, tags: { amenity: 'car_rental', name: 'تأجير سيارات' } }, origin);
+  assert.equal(fallback?.name, 'City Car Rental Office');
+  assert.equal(brand?.name, 'RentCo');
+  assert.equal(operator?.name, 'Operator Cars');
+  assert.equal(latinOnly(transliterated?.name ?? ''), true);
+});
+
+test('classifies car-rental office context without broad assumptions', () => {
+  assert.equal(classifyCarRentalLocation({ amenity: 'car_rental' }, 'Queen Alia Airport'), 'airport');
+  assert.equal(classifyCarRentalLocation({ amenity: 'car_rental', railway: 'station' }), 'railway');
+  assert.equal(classifyCarRentalLocation({ amenity: 'car_rental', bus: 'yes' }), 'bus');
+  assert.equal(classifyCarRentalLocation({ amenity: 'car_rental', tourism: 'hotel' }), 'hotel');
+  assert.equal(classifyCarRentalLocation({ amenity: 'car_rental' }, 'Downtown'), 'city');
+});
+
+test('deduplicates, filters, and sorts car-rental offices', () => {
+  const origin = { latitude: 0, longitude: 0, label: 'Airport' };
+  const offices = [
+    normalizeCarRentalOffice({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { amenity: 'car_rental', name: 'Far Airport', website: 'https://rent.example', opening_hours: '24/7' } }, origin),
+    normalizeCarRentalOffice({ type: 'way', id: 2, center: { lat: 0.01, lon: 0 }, tags: { amenity: 'car_rental', name: 'Near City', phone: '+1', wheelchair: 'yes' } }, { ...origin, label: 'City Centre' }),
+    normalizeCarRentalOffice({ type: 'relation', id: 3, center: { lat: 0.010004, lon: 0.000004 }, tags: { amenity: 'car_rental', name: 'Near City', website: 'https://near.example' } }, { ...origin, label: 'City Centre' }),
+  ].filter((office): office is CarRentalOffice => Boolean(office));
+  const deduped = dedupeCarRentalOffices(offices);
+  assert.equal(deduped.length, 2);
+  assert.equal(sortCarRentalOffices(deduped, 'distance')[0]?.name, 'Near City');
+  assert.equal(sortCarRentalOffices(deduped, 'airport')[0]?.locationType, 'airport');
+  assert.equal(sortCarRentalOffices(deduped, 'website')[0]?.website.length > 0, true);
+
+  const filters: CarRentalFilters = { type: 'airport', openNow: true, open24: true, website: true, phone: false, wheelchair: false, atAirport: true };
+  const filtered = filterCarRentalOffices(deduped, filters);
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0]?.name, 'Far Airport');
+});
+
+test('validates car-rental official website URLs safely', () => {
+  assert.equal(safeRentalUrl('example.com'), 'https://example.com/');
+  assert.equal(safeRentalUrl('https://example.com/booking'), 'https://example.com/booking');
+  assert.equal(safeRentalUrl('javascript:alert(1)'), '');
+  assert.equal(safeRentalUrl('ftp://example.com'), '');
+});
+
+test('builds bounded car-rental Overpass queries and includes language states', () => {
+  const query = buildCarRentalOverpassQuery(51.5, -0.1, 250);
+  assert.equal(query.includes('around:100000,51.5,-0.1'), true);
+  assert.equal(query.includes('["amenity"="car_rental"]'), true);
+  assert.equal(query.includes('["vehicle:rental"~"^(car|motorcar)$"]'), true);
+  assert.equal(labels.en.carRentalLocationDenied.includes('denied'), true);
+  assert.equal(labels.en.carRentalTimedOut.includes('timed out'), true);
+  assert.equal(labels.en.carRentalCached.includes('cached'), true);
+  assert.equal(labels.en.carRentalNoResults, 'No mapped car-rental offices were found in this area. This does not necessarily mean that none exist.');
+  assert.equal(labels.ar.carRentalTitle.length > 0, true);
+  assert.equal(labels.id.carRentalTitle.length > 0, true);
 });
 
 test('rendered prayer-place titles use the shared English-name safety function', async () => {

@@ -26,6 +26,17 @@ import {
   type ToiletSort,
 } from './public-toilets.js';
 import {
+  buildCarRentalOverpassQuery,
+  dedupeCarRentalOffices,
+  filterCarRentalOffices,
+  normalizeCarRentalOffice,
+  sortCarRentalOffices,
+  type CarRentalFilters,
+  type CarRentalLocationType,
+  type CarRentalOffice,
+  type CarRentalSort,
+} from './car-rental.js';
+import {
   CURRENCY_CACHE_MS,
   FRANKFURTER_BASE_URL,
   RATE_CACHE_MS,
@@ -69,14 +80,14 @@ import {
 import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets';
+type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -162,6 +173,7 @@ let cityMap: MapLibreMap | undefined;
 let prayerMap: MapLibreMap | undefined;
 let restaurantMap: MapLibreMap | undefined;
 let toiletMap: MapLibreMap | undefined;
+let carRentalMap: MapLibreMap | undefined;
 const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
 const englishMapNameExpression = [
@@ -458,12 +470,16 @@ type RestaurantMode = 'map' | 'list';
 type RestaurantSort = 'distance' | 'name' | 'status' | 'open' | 'cuisine';
 type ToiletStatus = RestaurantStatus;
 type ToiletMode = 'map' | 'list';
+type CarRentalStatus = RestaurantStatus;
+type CarRentalMode = 'map' | 'list';
+type CarRentalSearchKind = 'destination' | 'airport' | 'station';
 
 type OverpassResponse = { elements?: Array<{ type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> }> };
 type NominatimResult = { lat: string; lon: string; display_name: string };
 
 const prayerRadii = [1, 3, 5, 10, 25, 50] as const;
 const toiletRadii = [0.5, 1, 3, 5, 10, 25] as const;
+const carRentalRadii = [3, 5, 10, 25, 50, 100] as const;
 let prayerStatus: PrayerLocationStatus = 'idle';
 let prayerMode: PrayerMode = 'map';
 let prayerCenter: PrayerCenter | undefined;
@@ -508,6 +524,20 @@ let toiletError = '';
 let toiletSearchTimer: number | undefined;
 let toiletSearchSequence = 0;
 const toiletCache = new Map<string, { expires: number; results: PublicToilet[] }>();
+let carRentalStatus: CarRentalStatus = 'idle';
+let carRentalMode: CarRentalMode = 'map';
+let carRentalCenter: PrayerCenter | undefined;
+let carRentalRadiusKm: typeof carRentalRadii[number] = 10;
+let carRentalManualQuery = '';
+let carRentalSearchKind: CarRentalSearchKind = 'destination';
+let carRentalResults: CarRentalOffice[] = [];
+let carRentalFilters: CarRentalFilters = { type: 'all', openNow: false, open24: false, website: false, phone: false, wheelchair: false, atAirport: false };
+let carRentalSort: CarRentalSort = 'distance';
+let carRentalMapMoved = false;
+let carRentalError = '';
+let carRentalSearchTimer: number | undefined;
+let carRentalSearchSequence = 0;
+const carRentalCache = new Map<string, { expires: number; results: CarRentalOffice[] }>();
 
 function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
   const controller = new AbortController();
@@ -1359,6 +1389,291 @@ function bindPublicToiletsPage() {
   });
 }
 
+function carRentalTypeLabel(type: CarRentalLocationType, copy: typeof labels[Language]) {
+  if (type === 'airport') return copy.carRentalAirportOffice;
+  if (type === 'city') return copy.carRentalCityOffice;
+  if (type === 'railway') return copy.carRentalRailwayOffice;
+  if (type === 'bus') return copy.carRentalBusOffice;
+  if (type === 'hotel') return copy.carRentalHotelDesk;
+  if (type === 'independent') return copy.carRentalIndependentOffice;
+  return copy.carRentalUnknownOffice;
+}
+
+function carRentalStatusMessage(copy: typeof labels[Language]) {
+  if (carRentalStatus === 'requesting') return copy.carRentalRequestingLocation;
+  if (carRentalStatus === 'searching') return copy.carRentalSearching;
+  if (carRentalStatus === 'denied') return copy.carRentalLocationDenied;
+  if (carRentalStatus === 'unavailable') return copy.carRentalLocationUnavailable;
+  if (carRentalStatus === 'service-unavailable') return carRentalError || copy.carRentalServiceUnavailable;
+  if (carRentalStatus === 'timeout') return copy.carRentalTimedOut;
+  if (carRentalStatus === 'too-many') return copy.carRentalTooMany;
+  if (carRentalStatus === 'cached') return copy.carRentalCached;
+  if (carRentalStatus === 'offline') return copy.carRentalOffline;
+  if (carRentalStatus === 'empty') return copy.carRentalNoResults;
+  return '';
+}
+
+function filteredCarRentalResults() {
+  return sortCarRentalOffices(filterCarRentalOffices(carRentalResults, carRentalFilters), carRentalSort);
+}
+
+async function searchCarRentalOffices(center: PrayerCenter) {
+  carRentalCenter = center;
+  carRentalMapMoved = false;
+  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${carRentalRadiusKm}`;
+  const cached = carRentalCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    carRentalResults = cached.results;
+    carRentalStatus = carRentalResults.length ? 'cached' : 'empty';
+    carRentalPage();
+    return;
+  }
+  const sequence = ++carRentalSearchSequence;
+  carRentalStatus = 'searching';
+  carRentalError = '';
+  carRentalPage();
+  try {
+    const body = buildCarRentalOverpassQuery(center.latitude, center.longitude, carRentalRadiusKm);
+    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 20000);
+    if (sequence !== carRentalSearchSequence) return;
+    const normalized = (data.elements ?? [])
+      .map((element) => normalizeCarRentalOffice(element, center))
+      .filter((office): office is CarRentalOffice => Boolean(office));
+    carRentalResults = dedupeCarRentalOffices(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 350);
+    carRentalCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: carRentalResults });
+    carRentalStatus = normalized.length > 350 ? 'too-many' : carRentalResults.length ? 'ready' : 'empty';
+  } catch (error) {
+    console.error(error);
+    if (cached) {
+      carRentalResults = cached.results;
+      carRentalStatus = navigator.onLine ? 'cached' : 'offline';
+    } else {
+      carRentalResults = [];
+      carRentalStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
+      carRentalError = labels[lang].carRentalServiceUnavailable;
+    }
+  }
+  carRentalPage();
+}
+
+function requestCarRentalLocation() {
+  if (!navigator.geolocation) {
+    carRentalStatus = 'unavailable';
+    carRentalPage();
+    return;
+  }
+  carRentalStatus = 'requesting';
+  carRentalPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => void searchCarRentalOffices({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (error) => {
+      carRentalStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      carRentalPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+async function searchCarRentalDestination() {
+  const rawQuery = carRentalManualQuery.trim();
+  if (!rawQuery) return;
+  const suffix = carRentalSearchKind === 'airport' ? ' airport' : carRentalSearchKind === 'station' ? ' station' : '';
+  const query = `${rawQuery}${rawQuery.toLowerCase().includes(suffix.trim()) ? '' : suffix}`.trim();
+  carRentalStatus = 'searching';
+  carRentalPage();
+  try {
+    const center = await resolveRestaurantDestination(query);
+    if (!center) {
+      carRentalResults = [];
+      carRentalStatus = 'empty';
+      carRentalPage();
+      return;
+    }
+    await searchCarRentalOffices({ ...center, label: carRentalSearchKind === 'airport' ? `${center.label} ${labels[lang].carRentalAirportSearch}` : center.label });
+  } catch (error) {
+    console.error(error);
+    carRentalStatus = 'service-unavailable';
+    carRentalError = labels[lang].carRentalServiceUnavailable;
+    carRentalPage();
+  }
+}
+
+function debouncedCarRentalSearch(center: PrayerCenter) {
+  if (carRentalSearchTimer) window.clearTimeout(carRentalSearchTimer);
+  carRentalSearchTimer = window.setTimeout(() => void searchCarRentalOffices(center), 450);
+}
+
+function carRentalAppleMapsUrl(office: CarRentalOffice) {
+  return `https://maps.apple.com/?daddr=${office.latitude},${office.longitude}&q=${encodeURIComponent(office.name)}`;
+}
+
+function carRentalBrowserDirectionsUrl(office: CarRentalOffice) {
+  return `https://www.openstreetmap.org/directions?to=${office.latitude},${office.longitude}#map=17/${office.latitude}/${office.longitude}`;
+}
+
+function initializeCarRentalMap() {
+  carRentalMap?.remove();
+  carRentalMap = undefined;
+  const element = document.querySelector<HTMLElement>('#car-rental-map');
+  if (!element || !carRentalCenter || !window.maplibregl) return;
+  try {
+    element.replaceChildren();
+    carRentalMap = new window.maplibregl.Map({
+      container: element,
+      style: openFreeMapStyle,
+      center: [carRentalCenter.longitude, carRentalCenter.latitude],
+      zoom: carRentalRadiusKm <= 5 ? 12 : carRentalRadiusKm <= 25 ? 10 : 8,
+      attributionControl: true,
+    });
+    carRentalMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
+    new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([carRentalCenter.longitude, carRentalCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(carRentalCenter.label)).addTo(carRentalMap);
+    const colors: Record<CarRentalLocationType, string> = { airport: '#7c3aed', city: '#0f766e', railway: '#2563eb', bus: '#0891b2', hotel: '#d97706', independent: '#15803d', unknown: '#64748b' };
+    const icons: Record<CarRentalLocationType, string> = { airport: 'AIR', city: 'CITY', railway: 'RAIL', bus: 'BUS', hotel: 'HOTEL', independent: 'CAR', unknown: 'CAR' };
+    for (const office of filteredCarRentalResults()) {
+      new window.maplibregl.Marker({ color: colors[office.locationType] }).setLngLat([office.longitude, office.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(`${icons[office.locationType]} ${office.name}`)).addTo(carRentalMap);
+    }
+    carRentalMap.on('moveend', () => {
+      carRentalMapMoved = true;
+      const button = document.querySelector<HTMLButtonElement>('#car-rental-search-this-area');
+      if (button) button.hidden = false;
+    });
+  } catch {
+    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+  }
+}
+
+function carRentalDetails(office: CarRentalOffice, copy: typeof labels[Language]) {
+  const wheelchair = office.wheelchair === 'yes' ? copy.toiletsWheelchair : office.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : office.wheelchair === 'no' ? copy.toiletsWheelchairNo : '';
+  const website = office.website ? `<a href="${esc(office.website)}" target="_blank" rel="noopener noreferrer">${copy.carRentalOfficialWebsiteListed}</a>` : '';
+  const booking = office.bookingUrl ? `<a href="${esc(office.bookingUrl)}" target="_blank" rel="noopener noreferrer">${copy.carRentalOfficialBookingListed}</a>` : '';
+  const rows = [
+    [copy.carRentalBrand, office.brand],
+    [copy.carRentalOperator, office.operator],
+    [copy.carRentalLocationType, carRentalTypeLabel(office.locationType, copy)],
+    [copy.carRentalLocationContext, office.locationContext],
+    [copy.prayerAddress, office.address],
+    [copy.prayerOpeningHours, office.openingHours || copy.halalOpeningUnavailable],
+    [copy.prayerTelephone, office.phone],
+    [copy.carRentalEmail, office.email ? `<a href="mailto:${esc(office.email)}">${esc(office.email)}</a>` : ''],
+    [copy.prayerWebsite, website],
+    [copy.carRentalBookingWebsite, booking],
+    [copy.toiletsWheelchair, wheelchair],
+    [copy.carRentalBranchRef, office.branchRef],
+  ].filter(([, value]) => Boolean(value));
+  return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+}
+
+function carRentalCard(office: CarRentalOffice, copy: typeof labels[Language]) {
+  const openLabel = office.openState === 'open' ? copy.halalOpen : office.openState === 'closed' ? copy.halalClosed : copy.halalOpeningUnavailable;
+  return `<article class="card car-rental-card" aria-label="${esc(office.name)}">
+    <div class="card-top"><span>${office.distanceKm.toFixed(1)} km · ${carRentalTypeLabel(office.locationType, copy)}</span><span class="badge car-${office.locationType}">${office.locationType === 'airport' ? 'AIR' : 'CAR'} ${carRentalTypeLabel(office.locationType, copy)}</span></div>
+    <h3>${esc(office.name)}</h3>
+    <p>${openLabel}</p>
+    ${carRentalDetails(office, copy)}
+    <div class="place-actions">
+      <a class="map-link" href="${office.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
+      <a class="map-link" href="${carRentalAppleMapsUrl(office)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
+      <a class="map-link" href="${carRentalBrowserDirectionsUrl(office)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+      ${office.website ? `<a class="map-link" href="${esc(office.website)}" target="_blank" rel="noopener noreferrer">${copy.carRentalOpenOfficialWebsite}</a>` : ''}
+      ${office.phone ? `<a class="map-link" href="tel:${esc(office.phone)}">${copy.carRentalCallOffice}</a>` : ''}
+    </div>
+  </article>`;
+}
+
+function carRentalChecklist(copy: typeof labels[Language]) {
+  return `<div class="destination-box"><h2>${copy.carRentalChecklistTitle}</h2><p>${copy.carRentalChecklistIntro}</p><ul class="compact-list">
+    <li>${copy.carRentalCheckAge}</li><li>${copy.carRentalCheckLicence}</li><li>${copy.carRentalCheckPermit}</li><li>${copy.carRentalCheckDeposit}</li><li>${copy.carRentalCheckInsurance}</li><li>${copy.carRentalCheckFuel}</li><li>${copy.carRentalCheckMileage}</li><li>${copy.carRentalCheckDriver}</li><li>${copy.carRentalCheckBorder}</li><li>${copy.carRentalCheckCancel}</li><li>${copy.carRentalCheckTimes}</li><li>${copy.carRentalCheckLate}</li>
+  </ul></div>`;
+}
+
+function carRentalPage() {
+  if (!root) return;
+  cityMap?.remove();
+  cityMap = undefined;
+  prayerMap?.remove();
+  prayerMap = undefined;
+  restaurantMap?.remove();
+  restaurantMap = undefined;
+  toiletMap?.remove();
+  toiletMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const results = filteredCarRentalResults();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `
+    <main dir="${dir}" class="app prayer-app car-rental-app">
+      <section class="hero prayer-hero">
+        ${languageSelector()}
+        <p class="eyebrow">${copy.carRentalOpen}</p>
+        <h1>${copy.carRentalTitle}</h1>
+        <p>${copy.carRentalSubtitle}</p>
+        <button type="button" class="ghost hero-action" id="back-from-car-rental">${copy.carRentalBack}</button>
+      </section>
+      <section class="panel prayer-panel" aria-live="polite">
+        <p class="notice prayer-notice">${copy.carRentalNotice}</p>
+        <p class="notice prayer-notice">${copy.carRentalAvailabilityNotice}</p>
+        <p class="notice prayer-notice">${copy.carRentalLiveNotice}</p>
+        <div class="prayer-actions">
+          <button type="button" id="use-car-rental-location">${copy.carRentalUseLocation}</button>
+          <label>${copy.carRentalRadius}<select id="car-rental-radius">${carRentalRadii.map((radius) => `<option value="${radius}" ${radius === carRentalRadiusKm ? 'selected' : ''}>${radius} km</option>`).join('')}</select></label>
+          <form id="manual-car-rental-search" class="manual-search"><label>${copy.carRentalManualSearch}<input id="car-rental-manual-query" value="${esc(carRentalManualQuery)}" placeholder="${copy.carRentalManualPlaceholder}" /></label><label>${copy.carRentalSearchNear}<select id="car-rental-search-kind"><option value="destination" ${carRentalSearchKind === 'destination' ? 'selected' : ''}>${copy.carRentalDestinationSearch}</option><option value="airport" ${carRentalSearchKind === 'airport' ? 'selected' : ''}>${copy.carRentalAirportSearch}</option><option value="station" ${carRentalSearchKind === 'station' ? 'selected' : ''}>${copy.carRentalStationSearch}</option></select></label><button type="submit">${copy.carRentalSearch}</button></form>
+        </div>
+        <p class="prayer-status ${carRentalStatus}" role="status">${carRentalStatusMessage(copy)}</p>
+        <div class="segmented" role="tablist" aria-label="${copy.carRentalTitle}">
+          <button type="button" class="${carRentalMode === 'map' ? 'active' : 'ghost'}" data-car-rental-mode="map">${copy.carRentalMapView}</button>
+          <button type="button" class="${carRentalMode === 'list' ? 'active' : 'ghost'}" data-car-rental-mode="list">${copy.carRentalListView}</button>
+        </div>
+        <div class="prayer-filters" aria-label="${copy.carRentalTitle}">
+          <select id="car-rental-type-filter"><option value="all">${copy.carRentalAllOffices}</option><option value="airport" ${carRentalFilters.type === 'airport' ? 'selected' : ''}>${copy.carRentalAirportOffice}</option><option value="city" ${carRentalFilters.type === 'city' ? 'selected' : ''}>${copy.carRentalCityOffice}</option><option value="railway" ${carRentalFilters.type === 'railway' ? 'selected' : ''}>${copy.carRentalRailwayOffice}</option><option value="bus" ${carRentalFilters.type === 'bus' ? 'selected' : ''}>${copy.carRentalBusOffice}</option><option value="hotel" ${carRentalFilters.type === 'hotel' ? 'selected' : ''}>${copy.carRentalHotelDesk}</option><option value="independent" ${carRentalFilters.type === 'independent' ? 'selected' : ''}>${copy.carRentalIndependentOffice}</option></select>
+          ${['atAirport', 'openNow', 'open24', 'website', 'phone', 'wheelchair'].map((key) => {
+            const label = ({ atAirport: copy.carRentalAtAirport, openNow: copy.toiletsOpenNow, open24: copy.toiletsOpen24, website: copy.carRentalWebsiteAvailable, phone: copy.carRentalPhoneAvailable, wheelchair: copy.toiletsWheelchair } as Record<string, string>)[key];
+            return `<label class="inline-check"><input type="checkbox" data-car-rental-filter="${key}" ${carRentalFilters[key as keyof CarRentalFilters] ? 'checked' : ''}/> ${label}</label>`;
+          }).join('')}
+          <label>${copy.carRentalSort}<select id="car-rental-sort"><option value="distance" ${carRentalSort === 'distance' ? 'selected' : ''}>${copy.toiletsNearest}</option><option value="name" ${carRentalSort === 'name' ? 'selected' : ''}>${copy.toiletsSortName}</option><option value="open" ${carRentalSort === 'open' ? 'selected' : ''}>${copy.toiletsSortOpen}</option><option value="airport" ${carRentalSort === 'airport' ? 'selected' : ''}>${copy.carRentalSortAirport}</option><option value="website" ${carRentalSort === 'website' ? 'selected' : ''}>${copy.carRentalSortWebsite}</option></select></label>
+        </div>
+        <div class="place-actions">
+          <button type="button" id="car-rental-search-this-area" class="ghost" ${carRentalMapMoved ? '' : 'hidden'}>${copy.carRentalSearchThisArea}</button>
+          <button type="button" id="car-rental-recentre" class="ghost">${copy.carRentalRecentre}</button>
+          <button type="button" id="car-rental-fit-results" class="ghost">${copy.carRentalFitResults}</button>
+        </div>
+        <div class="legend halal-legend"><strong>${copy.carRentalLegend}</strong><span class="badge car-airport">AIR ${copy.carRentalAirportOffice}</span><span class="badge car-city">CAR ${copy.carRentalCityOffice}</span><span class="badge car-railway">RAIL ${copy.carRentalRailwayOffice}</span><span class="badge car-bus">BUS ${copy.carRentalBusOffice}</span><span class="badge car-hotel">HOTEL ${copy.carRentalHotelDesk}</span><span class="badge car-independent">CAR ${copy.carRentalIndependentOffice}</span></div>
+        ${carRentalMode === 'map' ? `<div id="car-rental-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
+        ${(carRentalStatus === 'empty' || !results.length && carRentalResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-car-rental" class="ghost">${copy.carRentalRetry}</button><button type="button" id="increase-car-rental-radius">${copy.carRentalIncreaseRadius}</button><button type="button" id="another-car-rental-city" class="ghost">${copy.carRentalSearchAnother}</button></div>` : ''}
+        <div class="place-list">${results.length ? results.map((office) => carRentalCard(office, copy)).join('') : carRentalStatus === 'ready' ? `<p>${copy.carRentalNoResults}</p>` : ''}</div>
+        ${carRentalChecklist(copy)}
+        <p class="map-status">${copy.osmAttribution}</p>
+      </section>
+    </main>`;
+  bindCarRentalPage();
+  if (carRentalMode === 'map') initializeCarRentalMap();
+}
+
+function bindCarRentalPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; carRentalPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-car-rental')?.addEventListener('click', () => { view = 'planner'; carRentalMap?.remove(); carRentalMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#use-car-rental-location')?.addEventListener('click', requestCarRentalLocation);
+  document.querySelector<HTMLSelectElement>('#car-rental-radius')?.addEventListener('change', (event) => { carRentalRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof carRentalRadii[number]; if (carRentalCenter) void searchCarRentalOffices(carRentalCenter); });
+  document.querySelector<HTMLSelectElement>('#car-rental-search-kind')?.addEventListener('change', (event) => { carRentalSearchKind = (event.target as HTMLSelectElement).value as CarRentalSearchKind; });
+  document.querySelector<HTMLFormElement>('#manual-car-rental-search')?.addEventListener('submit', (event) => { event.preventDefault(); carRentalManualQuery = document.querySelector<HTMLInputElement>('#car-rental-manual-query')?.value ?? ''; void searchCarRentalDestination(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-car-rental-mode]').forEach((button) => button.addEventListener('click', () => { carRentalMode = button.dataset.carRentalMode as CarRentalMode; carRentalPage(); }));
+  document.querySelector<HTMLSelectElement>('#car-rental-type-filter')?.addEventListener('change', (event) => { carRentalFilters = { ...carRentalFilters, type: (event.target as HTMLSelectElement).value as CarRentalFilters['type'] }; carRentalPage(); });
+  document.querySelectorAll<HTMLInputElement>('[data-car-rental-filter]').forEach((input) => input.addEventListener('change', () => { carRentalFilters = { ...carRentalFilters, [input.dataset.carRentalFilter ?? 'openNow']: input.checked }; carRentalPage(); }));
+  document.querySelector<HTMLSelectElement>('#car-rental-sort')?.addEventListener('change', (event) => { carRentalSort = (event.target as HTMLSelectElement).value as CarRentalSort; carRentalPage(); });
+  document.querySelector<HTMLButtonElement>('#retry-car-rental')?.addEventListener('click', () => { if (carRentalCenter) void searchCarRentalOffices(carRentalCenter); else requestCarRentalLocation(); });
+  document.querySelector<HTMLButtonElement>('#increase-car-rental-radius')?.addEventListener('click', () => { const next = carRentalRadii.find((radius) => radius > carRentalRadiusKm); if (next) carRentalRadiusKm = next; if (carRentalCenter) void searchCarRentalOffices(carRentalCenter); });
+  document.querySelector<HTMLButtonElement>('#another-car-rental-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#car-rental-manual-query')?.focus());
+  document.querySelector<HTMLButtonElement>('#car-rental-search-this-area')?.addEventListener('click', () => { const center = carRentalMap?.getCenter?.(); if (!center) return; debouncedCarRentalSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].carRentalSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#car-rental-recentre')?.addEventListener('click', requestCarRentalLocation);
+  document.querySelector<HTMLButtonElement>('#car-rental-fit-results')?.addEventListener('click', () => {
+    const results = filteredCarRentalResults();
+    if (!carRentalMap?.fitBounds || !results.length) return;
+    const lngs = results.map((office) => office.longitude);
+    const lats = results.map((office) => office.latitude);
+    carRentalMap.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 60, maxZoom: 15 });
+  });
+}
+
 function selectedCity() {
   return cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
 }
@@ -1620,6 +1935,10 @@ function render() {
     publicToiletsPage();
     return;
   }
+  if (view === 'car-rental') {
+    carRentalPage();
+    return;
+  }
   document.body.classList.remove('map-expanded');
   const copy = labels[lang];
   const dir = languageDirection(lang);
@@ -1646,6 +1965,7 @@ function render() {
         <article class="quick-action"><div><h2>${copy.moneyTitle}</h2><p>${copy.moneySubtitle}</p></div><button type="button" id="open-money">${copy.moneyOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.halalRestaurantsTitle}</h2><p>${copy.halalRestaurantsSubtitle}</p></div><button type="button" id="open-halal-restaurants">${copy.halalRestaurantsOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.toiletsTitle}</h2><p>${copy.toiletsSubtitle}</p></div><button type="button" id="open-public-toilets">${copy.toiletsOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.carRentalTitle}</h2><p>${copy.carRentalSubtitle}</p></div><button type="button" id="open-car-rental">${copy.carRentalOpen}</button></article>
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
@@ -1709,6 +2029,11 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#open-public-toilets')?.addEventListener('click', () => {
     view = 'public-toilets';
     if (window.location.hash !== '#public-toilets') window.location.hash = 'public-toilets';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-car-rental')?.addEventListener('click', () => {
+    view = 'car-rental';
+    if (window.location.hash !== '#car-rental') window.location.hash = 'car-rental';
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
