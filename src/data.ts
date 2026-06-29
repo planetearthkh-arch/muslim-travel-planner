@@ -532,6 +532,45 @@ const makePlaceId = (city: string, suffix: string) => `${city.toLowerCase().repl
 
 const restaurantHalalNote = 'Unverified sample listing only. Ask for current halal certificate, supplier details, or ingredient policy before eating.';
 
+const currency = (code: string, symbol: string, name: string) => ({ code, symbol, name });
+
+const destinationMoney = (city: string, country: string): CityData['money'] => {
+  const note = 'Currency information is provided for orientation only. Do not rely on unverified general payment generalisations.';
+  const byCity: Record<string, CityData['money']> = {
+    Jerusalem: { localCurrencies: [currency('ILS', '₪', 'Israeli New Shekel'), currency('JOD', 'د.ا', 'Jordanian Dinar'), currency('USD', '$', 'US Dollar')], denominations: 'Common cash units include shekel notes and coins; availability of JOD or USD acceptance depends on the merchant.', note },
+    London: { localCurrencies: [currency('GBP', '£', 'British Pound')], denominations: 'Common notes include £5, £10, £20, and £50; common coins include 1p to £2.', cardsCommonlyAccepted: 'Verified', note },
+    Istanbul: { localCurrencies: [currency('TRY', '₺', 'Turkish Lira')], denominations: 'Common notes include ₺5 to ₺200; coins include kuruş and ₺1.', note },
+    Tokyo: { localCurrencies: [currency('JPY', '¥', 'Japanese Yen')], denominations: 'Common notes include ¥1,000, ¥5,000, and ¥10,000; coins include ¥1 to ¥500.', note },
+    Dubai: { localCurrencies: [currency('AED', 'د.إ', 'UAE Dirham')], denominations: 'Common notes include 5 to 1,000 dirhams; coins include fils and 1 dirham.', note },
+    'Abu Dhabi': { localCurrencies: [currency('AED', 'د.إ', 'UAE Dirham')], denominations: 'Common notes include 5 to 1,000 dirhams; coins include fils and 1 dirham.', note },
+    Doha: { localCurrencies: [currency('QAR', 'ر.ق', 'Qatari Riyal')], denominations: 'Common notes include 1 to 500 riyals; coins are used less often.', note },
+    Riyadh: { localCurrencies: [currency('SAR', 'ر.س', 'Saudi Riyal')], denominations: 'Common notes include 5 to 500 riyals; coins include halala and riyal coins.', note },
+    Jeddah: { localCurrencies: [currency('SAR', 'ر.س', 'Saudi Riyal')], denominations: 'Common notes include 5 to 500 riyals; coins include halala and riyal coins.', note },
+    Makkah: { localCurrencies: [currency('SAR', 'ر.س', 'Saudi Riyal')], denominations: 'Common notes include 5 to 500 riyals; coins include halala and riyal coins.', note },
+    Madinah: { localCurrencies: [currency('SAR', 'ر.س', 'Saudi Riyal')], denominations: 'Common notes include 5 to 500 riyals; coins include halala and riyal coins.', note },
+    Amman: { localCurrencies: [currency('JOD', 'د.ا', 'Jordanian Dinar')], denominations: 'Common notes include 1 to 50 dinars; coins and fils are also used.', note },
+    Marrakech: { localCurrencies: [currency('MAD', 'د.م.', 'Moroccan Dirham')], denominations: 'Common notes include 20 to 200 dirhams; coins include centimes and dirhams.', note },
+    Cairo: { localCurrencies: [currency('EGP', '£', 'Egyptian Pound')], denominations: 'Common notes include 5 to 200 pounds; coins and small notes may be used for small purchases.', note },
+    Jakarta: { localCurrencies: [currency('IDR', 'Rp', 'Indonesian Rupiah')], denominations: 'Common notes include Rp1,000 to Rp100,000; coins are used for small amounts.', note },
+    'Kuala Lumpur': { localCurrencies: [currency('MYR', 'RM', 'Malaysian Ringgit')], denominations: 'Common notes include RM1 to RM100; coins include sen.', note },
+    Seoul: { localCurrencies: [currency('KRW', '₩', 'South Korean Won')], denominations: 'Common notes include ₩1,000 to ₩50,000; coins include ₩10 to ₩500.', note },
+    Sydney: { localCurrencies: [currency('AUD', 'A$', 'Australian Dollar')], denominations: 'Common notes include $5 to $100; coins include 5c to $2.', note },
+    Toronto: { localCurrencies: [currency('CAD', 'C$', 'Canadian Dollar')], denominations: 'Common notes include $5 to $100; coins include 5c to $2.', note },
+  };
+  const byCountry: Record<string, CityData['money']> = {
+    France: { localCurrencies: [currency('EUR', '€', 'Euro')], denominations: 'Common notes include €5 to €200; coins include cents and €1/€2.', note },
+    'United States': { localCurrencies: [currency('USD', '$', 'US Dollar')], denominations: 'Common notes include $1 to $100; coins include cents.', note },
+    Singapore: { localCurrencies: [currency('SGD', 'S$', 'Singapore Dollar')], denominations: 'Common notes include $2 to $100; coins include cents.', note },
+    Thailand: { localCurrencies: [currency('THB', '฿', 'Thai Baht')], denominations: 'Common notes include ฿20 to ฿1,000; coins include satang and baht.', note },
+    Spain: { localCurrencies: [currency('EUR', '€', 'Euro')], denominations: 'Common notes include €5 to €200; coins include cents and €1/€2.', note },
+    Italy: { localCurrencies: [currency('EUR', '€', 'Euro')], denominations: 'Common notes include €5 to €200; coins include cents and €1/€2.', note },
+    'South Africa': { localCurrencies: [currency('ZAR', 'R', 'South African Rand')], denominations: 'Common notes include R10 to R200; coins include cents and rand.', note },
+    'Bosnia and Herzegovina': { localCurrencies: [currency('BAM', 'KM', 'Bosnia-Herzegovina Convertible Mark')], denominations: 'Common notes include KM10 to KM200; coins include fening and marks.', note },
+    Uzbekistan: { localCurrencies: [currency('UZS', "so'm", 'Uzbekistani Som')], denominations: 'Common notes include som notes in large numeric values; coins are less central for travellers.', note },
+  };
+  return byCity[city] ?? byCountry[country] ?? { localCurrencies: [currency('USD', '$', 'US Dollar')], note };
+};
+
 export const cities: CityData[] = specs.map((spec) => {
   const mosqueStatus: VerificationStatus = spec.existingVerified ? 'Verified' : 'Unverified';
 
@@ -541,6 +580,7 @@ export const cities: CityData[] = specs.map((spec) => {
     region: spec.region,
     timezone: spec.timezone,
     coordinates: spec.coordinates,
+    money: destinationMoney(spec.city, spec.country),
     prayerWindows: spec.prayerWindows,
     transportEstimates: spec.transportEstimates,
     places: [

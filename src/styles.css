@@ -556,6 +556,64 @@ button:disabled {
 .quick-action h2 { margin-bottom: 6px; }
 .quick-action p { margin-bottom: 0; color: #31534c; }
 
+.money-app { max-width: 1120px; }
+.money-app .hero { grid-column: 1 / -1; }
+.destination-box {
+  background: #f8fcfa;
+  border: 1px solid #d9eee7;
+  border-radius: 14px;
+  padding: 12px;
+}
+.destination-box p { margin: 6px 0 0; }
+.chips,
+.toolbar,
+.stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.chip {
+  min-height: 42px;
+  padding: 9px 12px;
+  background: #e8f7f1;
+  color: #0f766e;
+}
+.toolbar button { min-height: 46px; }
+.status { color: #31534c; font-weight: 800; }
+.error { color: #b91c1c; font-weight: 800; }
+.conversion-result {
+  display: grid;
+  gap: 8px;
+}
+.conversion-result h2 {
+  font-size: clamp(1.4rem, 4vw, 2.2rem);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.stats p {
+  min-width: 120px;
+  margin: 0;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f8fcfa;
+}
+.spark {
+  min-height: 70px;
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  padding-top: 12px;
+}
+.spark i {
+  display: block;
+  width: 100%;
+  min-width: 5px;
+  max-width: 18px;
+  border-radius: 8px 8px 0 0;
+  background: #0f766e;
+}
+
 .prayer-app { max-width: 1120px; }
 .prayer-hero, .prayer-panel { grid-column: 1 / -1; }
 .prayer-panel { display: grid; gap: 16px; }
@@ -587,13 +645,12 @@ button:disabled {
 .place-actions a { min-height: 44px; }
 
 @media (min-width: 800px) {
-  .quick-actions { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
+  .quick-actions { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 680px) {
-  .quick-action, .manual-search, .prayer-actions button, .prayer-actions select, .prayer-filters select, .segmented button { width: 100%; }
+  .quick-action, .manual-search, .prayer-actions button, .prayer-actions select, .prayer-filters select, .segmented button, .toolbar button { width: 100%; }
   .quick-action, .manual-search { flex-direction: column; align-items: stretch; }
   .place-details { grid-template-columns: 1fr; }
   .place-actions a { width: 100%; }
 }
-

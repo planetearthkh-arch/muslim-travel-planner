@@ -3,6 +3,27 @@ import { generateItinerary } from './planner.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
 import { buildOverpassQuery, ensureLatinDisplayName, getEnglishPlaceName, isReliablyOpenNow, normalizePrayerPlace, type PrayerPlace, type PrayerPlaceType } from './prayer-spaces.js';
 import {
+  CURRENCY_CACHE_MS,
+  FRANKFURTER_BASE_URL,
+  RATE_CACHE_MS,
+  cacheKeyForRate,
+  convertAmount,
+  destinationCurrency,
+  fallbackCurrencies,
+  formatCurrencyAmount,
+  formatPlainNumber,
+  historyStats,
+  normalizeCurrencies,
+  parseAmountInput,
+  popularCurrencyCodes,
+  readJsonCache,
+  searchCurrencies,
+  validateRateResponse,
+  writeJsonCache,
+  type CurrencyInfo,
+  type PairRate,
+} from './money.js';
+import {
   labels,
   languageDirection,
   languages,
@@ -25,14 +46,15 @@ import {
 import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces';
+type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-let view: View = window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : 'planner';
+let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
 let qiblaLocation: QiblaLocation | undefined;
@@ -60,6 +82,18 @@ let prefs: PlannerPreferences = {
   accessibilityNeeds: '',
   halalPreference: 'strictly labelled',
 };
+
+let currencies: CurrencyInfo[] = fallbackCurrencies;
+let currencySearch = '';
+let amountInput = '100';
+let fromCurrency = localStorage.getItem('mtp-home-currency') ?? 'USD';
+let toCurrency = 'GBP';
+let rate: PairRate | null = null;
+let moneyStatus: 'idle' | 'loadingCurrencies' | 'loadingRate' | 'updated' | 'offline' | 'cached' | 'serviceUnavailable' | 'invalidAmount' | 'noCachedData' | 'copied' = 'idle';
+let moneyError = '';
+let rateTimer: number | undefined;
+let historyDays: 7 | 30 | 90 = 7;
+let historySummary: ReturnType<typeof historyStats> | null = null;
 
 const root = document.querySelector<HTMLDivElement>('#root');
 const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America', 'Africa', 'Oceania'];
@@ -671,6 +705,241 @@ function selectedCity() {
   return cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
 }
 
+async function loadCurrencies() {
+  const cached = readJsonCache<CurrencyInfo[]>(localStorage, 'mtp-currencies', CURRENCY_CACHE_MS);
+  if (cached?.length) currencies = cached;
+  moneyStatus = cached?.length ? 'idle' : 'loadingCurrencies';
+  render();
+  try {
+    const loaded = normalizeCurrencies(await requestJson<unknown>(`${FRANKFURTER_BASE_URL}/currencies`, { headers: { Accept: 'application/json' } }, 7000));
+    if (loaded.length) {
+      currencies = loaded;
+      writeJsonCache(localStorage, 'mtp-currencies', loaded);
+      moneyStatus = 'idle';
+      render();
+    }
+  } catch {
+    moneyStatus = cached?.length ? 'cached' : 'serviceUnavailable';
+    render();
+  }
+}
+
+async function loadPairRate(useCache = true) {
+  if (fromCurrency === toCurrency) {
+    rate = { base: fromCurrency, quote: toCurrency, rate: 1, date: new Date().toISOString().slice(0, 10), refreshedAt: new Date().toISOString(), cached: false };
+    moneyStatus = 'updated';
+    render();
+    return;
+  }
+  const key = cacheKeyForRate(fromCurrency, toCurrency);
+  const cached = readJsonCache<PairRate>(localStorage, key, RATE_CACHE_MS);
+  moneyStatus = 'loadingRate';
+  moneyError = '';
+  render();
+  try {
+    rate = validateRateResponse(await requestJson<unknown>(`${FRANKFURTER_BASE_URL}/rate/${fromCurrency}/${toCurrency}`, { headers: { Accept: 'application/json' } }, 7000), fromCurrency, toCurrency);
+    writeJsonCache(localStorage, key, rate);
+    moneyStatus = 'updated';
+    void loadHistory();
+  } catch (error) {
+    const fallback = useCache ? cached : null;
+    if (fallback) {
+      rate = { ...fallback, cached: true };
+      moneyStatus = navigator.onLine ? 'cached' : 'offline';
+    } else {
+      rate = null;
+      moneyStatus = navigator.onLine ? 'serviceUnavailable' : 'noCachedData';
+      moneyError = error instanceof Error ? error.message : '';
+    }
+  }
+  render();
+}
+
+async function loadHistory() {
+  if (fromCurrency === toCurrency) {
+    historySummary = null;
+    return;
+  }
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(end.getDate() - historyDays);
+  const iso = (date: Date) => date.toISOString().slice(0, 10);
+  try {
+    const body = await requestJson<Array<{ date: string; base: string; quote: string; rate: number }>>(`${FRANKFURTER_BASE_URL}/rates?from=${iso(start)}&to=${iso(end)}`, { headers: { Accept: 'application/json' } }, 7000);
+    historySummary = historyStats(body, toCurrency, fromCurrency);
+  } catch {
+    historySummary = null;
+  }
+  render();
+}
+
+function scheduleRateLoad() {
+  window.clearTimeout(rateTimer);
+  rateTimer = window.setTimeout(() => void loadPairRate(), 350);
+}
+
+function currencyByCode(code: string) {
+  return currencies.find((currency) => currency.code === code) ?? fallbackCurrencies.find((currency) => currency.code === code) ?? currencies[0];
+}
+
+function currencyOption(currency: CurrencyInfo) {
+  return `${currency.flag} ${currency.code} - ${currency.name[lang]} (${currency.symbol})`;
+}
+
+function moneyStatusText(copy: typeof labels[Language]) {
+  const messages = {
+    idle: '',
+    loadingCurrencies: copy.loadingCurrencies,
+    loadingRate: copy.loadingRate,
+    updated: copy.rateUpdated,
+    offline: copy.offline,
+    cached: copy.cachedRate,
+    serviceUnavailable: `${copy.serviceUnavailable}${moneyError ? ` ${moneyError}` : ''}`,
+    invalidAmount: copy.invalidAmount,
+    noCachedData: copy.noCachedData,
+    copied: copy.copied,
+  };
+  return messages[moneyStatus];
+}
+
+function moneyPage() {
+  if (!root) return;
+  cityMap?.remove();
+  cityMap = undefined;
+  prayerMap?.remove();
+  prayerMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const city = selectedCity();
+  const local = city.money.localCurrencies[0];
+  const from = currencyByCode(fromCurrency);
+  const to = currencyByCode(toCurrency);
+  const parsed = parseAmountInput(amountInput);
+  const sameCurrency = fromCurrency === toCurrency;
+  const result = parsed.value !== null && rate ? convertAmount(parsed.value, rate.rate) : null;
+  const searchable = searchCurrencies(currencies, currencySearch);
+  const popularButtons = popularCurrencyCodes.map((code) => `<button class="chip" type="button" data-quick="${code}">${code}</button>`).join('');
+  const options = searchable.map((currency) => `<option value="${currency.code}">${currencyOption(currency)}</option>`).join('');
+  const summary = historySummary;
+  const history = summary ? `<div class="stats">
+    <p><strong>${copy.highestRate}</strong><br>${formatPlainNumber(summary.high, lang)}</p>
+    <p><strong>${copy.lowestRate}</strong><br>${formatPlainNumber(summary.low, lang)}</p>
+    <p><strong>${copy.startRate}</strong><br>${formatPlainNumber(summary.start, lang)}</p>
+    <p><strong>${copy.latestRate}</strong><br>${formatPlainNumber(summary.latest, lang)}</p>
+    <p><strong>${copy.percentageChange}</strong><br>${formatPlainNumber(summary.changePercent, lang)}%</p>
+  </div><div class="spark" aria-hidden="true">${summary.points.map((point) => `<i style="height:${Math.max(8, Math.round((point.rate / summary.high) * 54))}px"></i>`).join('')}</div>` : '';
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `
+    <main dir="${dir}" class="app money-app">
+      <section class="hero">
+        ${languageSelector()}
+        <p class="eyebrow">${copy.moneyOpen}</p>
+        <h1>${copy.moneyTitle}</h1>
+        <p>${copy.moneySubtitle}</p>
+        <p class="notice">${copy.rateNotice}</p>
+        <button type="button" class="ghost hero-action" id="back-from-money">${copy.moneyBack}</button>
+      </section>
+      <section class="panel form" aria-label="${copy.moneyTitle}">
+        <div class="destination-box">
+          <strong>${copy.destination}: ${esc(city.city)}</strong>
+          <p>${copy.localCurrency}: ${esc(local.name)} - ${local.code}</p>
+          <p>${copy.symbol}: ${esc(local.symbol)}</p>
+        </div>
+        <label>${copy.amount}<input id="money-amount" inputmode="decimal" value="${esc(amountInput)}" aria-describedby="money-status" /></label>
+        <div class="grid">
+          <label>${copy.fromCurrency}<select id="from-currency"><option value="${fromCurrency}">${currencyOption(from)}</option>${options}</select></label>
+          <label>${copy.toCurrency}<select id="to-currency"><option value="${toCurrency}">${currencyOption(to)}</option>${options}</select></label>
+        </div>
+        <label>${copy.searchCurrency}<input id="currency-search" value="${esc(currencySearch)}" /></label>
+        <div class="chips" aria-label="${copy.popularCurrencies}">${popularButtons}</div>
+        <div class="toolbar">
+          <button type="button" id="swap-currencies" aria-label="${copy.swapCurrencies}">⇄</button>
+          <button type="button" class="ghost" id="clear-money">${copy.clear}</button>
+          <button type="button" class="ghost" id="refresh-rate">${copy.refreshRates}</button>
+          <button type="button" class="ghost" id="copy-result">${copy.copyResult}</button>
+        </div>
+        <p id="money-status" class="status" aria-live="polite">${moneyStatusText(copy)}${sameCurrency ? ` ${copy.sameCurrency}` : ''}</p>
+        ${parsed.error && parsed.error !== 'empty' ? `<p class="error">${copy.invalidAmount}</p>` : ''}
+      </section>
+      <section class="panel results" aria-live="polite">
+        <article class="card">
+          <div class="conversion-result">
+            <span>${from.flag} ${from.code} ${from.name[lang]} · ${from.symbol}</span>
+            <h2>${result ? `${formatCurrencyAmount(result.amount, fromCurrency, lang)} = ${formatCurrencyAmount(result.converted, toCurrency, lang)}` : copy.loadingRate}</h2>
+            <span>${to.flag} ${to.code} ${to.name[lang]} · ${to.symbol}</span>
+          </div>
+          ${rate ? `<p>${copy.pairRate}: 1 ${fromCurrency} = ${formatPlainNumber(rate.rate, lang)} ${toCurrency}</p><p>${copy.reversePairRate}: 1 ${toCurrency} = ${formatPlainNumber(1 / rate.rate, lang)} ${fromCurrency}</p><p>${copy.rateDate}: ${rate.date}${rate.cached ? ` · ${copy.cachedRate}` : ''}</p><p>${copy.lastRefreshed}: ${new Intl.DateTimeFormat(localeForLanguage(lang), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(rate.refreshedAt))}</p>` : `<p>${copy.noCachedData}</p>`}
+          <button class="ghost" id="retry-rate">${copy.retry}</button>
+        </article>
+        <article class="card">
+          <h3>${copy.moneyInfo}</h3>
+          <p>${copy.officialCurrency}: ${city.money.localCurrencies.map((item) => `${item.name} - ${item.code} (${item.symbol})`).join(', ')}</p>
+          ${city.money.denominations ? `<p>${copy.denominations}: ${esc(city.money.denominations)}</p>` : ''}
+          ${city.money.cardsCommonlyAccepted ? `<p>${copy.cardsAccepted}: ${statusBadge(city.money.cardsCommonlyAccepted)}</p>` : ''}
+          <p>${copy.paymentWarning}</p>
+        </article>
+        <article class="card">
+          <div class="card-top"><h3>${copy.rateHistory}</h3><select id="history-days"><option value="7" ${historyDays === 7 ? 'selected' : ''}>${copy.sevenDays}</option><option value="30" ${historyDays === 30 ? 'selected' : ''}>${copy.thirtyDays}</option><option value="90" ${historyDays === 90 ? 'selected' : ''}>${copy.ninetyDays}</option></select></div>
+          ${history || `<p>${copy.noCachedData}</p>`}
+        </article>
+      </section>
+    </main>`;
+  bindMoneyPage();
+}
+
+function bindMoneyPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; moneyPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-money')?.addEventListener('click', () => { view = 'planner'; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLInputElement>('#money-amount')?.addEventListener('input', (event) => {
+    amountInput = (event.target as HTMLInputElement).value;
+    const parsed = parseAmountInput(amountInput);
+    moneyStatus = parsed.error && parsed.error !== 'empty' ? 'invalidAmount' : moneyStatus;
+    moneyPage();
+  });
+  document.querySelector<HTMLInputElement>('#currency-search')?.addEventListener('input', (event) => {
+    currencySearch = (event.target as HTMLInputElement).value;
+    moneyPage();
+  });
+  document.querySelector<HTMLSelectElement>('#from-currency')?.addEventListener('change', (event) => {
+    fromCurrency = (event.target as HTMLSelectElement).value;
+    localStorage.setItem('mtp-home-currency', fromCurrency);
+    scheduleRateLoad();
+  });
+  document.querySelector<HTMLSelectElement>('#to-currency')?.addEventListener('change', (event) => {
+    toCurrency = (event.target as HTMLSelectElement).value;
+    scheduleRateLoad();
+  });
+  document.querySelector<HTMLButtonElement>('#swap-currencies')?.addEventListener('click', () => {
+    [fromCurrency, toCurrency] = [toCurrency, fromCurrency];
+    localStorage.setItem('mtp-home-currency', fromCurrency);
+    void loadPairRate();
+  });
+  document.querySelector<HTMLButtonElement>('#clear-money')?.addEventListener('click', () => {
+    amountInput = '';
+    moneyStatus = 'idle';
+    moneyPage();
+  });
+  document.querySelector<HTMLButtonElement>('#refresh-rate')?.addEventListener('click', () => void loadPairRate(false));
+  document.querySelector<HTMLButtonElement>('#retry-rate')?.addEventListener('click', () => void loadPairRate());
+  document.querySelector<HTMLButtonElement>('#copy-result')?.addEventListener('click', async () => {
+    const parsed = parseAmountInput(amountInput);
+    if (parsed.value === null || !rate) return;
+    const result = convertAmount(parsed.value, rate.rate);
+    await navigator.clipboard?.writeText(`${parsed.value} ${fromCurrency} = ${result.converted} ${toCurrency}`);
+    moneyStatus = 'copied';
+    moneyPage();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-quick]').forEach((button) => button.addEventListener('click', () => {
+    toCurrency = button.dataset.quick ?? toCurrency;
+    scheduleRateLoad();
+  }));
+  document.querySelector<HTMLSelectElement>('#history-days')?.addEventListener('change', (event) => {
+    historyDays = Number((event.target as HTMLSelectElement).value) as 7 | 30 | 90;
+    void loadHistory();
+  });
+}
+
 function render() {
   if (!root) return;
   if (view === 'qibla') {
@@ -679,6 +948,10 @@ function render() {
   }
   if (view === 'prayer-spaces') {
     prayerPage();
+    return;
+  }
+  if (view === 'money') {
+    moneyPage();
     return;
   }
   document.body.classList.remove('map-expanded');
@@ -704,6 +977,7 @@ function render() {
       <section class="panel quick-actions">
         <article class="quick-action"><div><h2>${copy.qiblaTitle}</h2><p>${copy.qiblaSubtitle}</p></div><button type="button" id="open-qibla">${copy.qiblaOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.prayerSpacesTitle}</h2><p>${copy.prayerSpacesSubtitle}</p></div><button type="button" id="open-prayer-spaces">${copy.prayerSpacesOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.moneyTitle}</h2><p>${copy.moneySubtitle}</p></div><button type="button" id="open-money">${copy.moneyOpen}</button></article>
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
@@ -749,6 +1023,14 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#open-prayer-spaces')?.addEventListener('click', () => {
     view = 'prayer-spaces';
     if (window.location.hash !== '#prayer-spaces') window.location.hash = 'prayer-spaces';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-money')?.addEventListener('click', () => {
+    view = 'money';
+    toCurrency = destinationCurrency(selectedCity());
+    if (window.location.hash !== '#money') window.location.hash = 'money';
+    void loadCurrencies();
+    void loadPairRate();
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
@@ -820,9 +1102,20 @@ function bind() {
 }
 
 window.addEventListener('hashchange', () => {
-  view = window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : 'planner';
+  view = viewFromHash();
   if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; }
+  if (view === 'money') {
+    toCurrency = destinationCurrency(selectedCity());
+    void loadCurrencies();
+    void loadPairRate();
+  }
   render();
 });
+
+if (view === 'money') {
+  toCurrency = destinationCurrency(selectedCity());
+  void loadCurrencies();
+  void loadPairRate();
+}
 
 render();

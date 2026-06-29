@@ -33,6 +33,7 @@ export interface CityData {
   region: Region;
   timezone: string;
   coordinates: { lat: number; lng: number };
+  money: DestinationMoneyInfo;
   prayerWindows: Record<PrayerName, string>;
   transportEstimates: {
     walking: number;
@@ -72,4 +73,17 @@ export interface ItineraryItem {
   details: string;
   place?: Place;
   status: VerificationStatus;
+}
+
+export interface DestinationCurrency {
+  code: string;
+  symbol: string;
+  name: string;
+}
+
+export interface DestinationMoneyInfo {
+  localCurrencies: DestinationCurrency[];
+  denominations?: string;
+  cardsCommonlyAccepted?: VerificationStatus;
+  note: string;
 }

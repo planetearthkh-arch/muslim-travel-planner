@@ -5,6 +5,20 @@ import { labels, languageDirection, languages, nextLanguage, regionLabels } from
 import { generateItinerary } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
 import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace } from './prayer-spaces.js';
+import {
+  cacheKeyForRate,
+  convertAmount,
+  destinationCurrency,
+  fallbackCurrencies,
+  formatCurrencyAmount,
+  historyStats,
+  normalizeCurrencies,
+  parseAmountInput,
+  readJsonCache,
+  searchCurrencies,
+  validateRateResponse,
+  writeJsonCache,
+} from './money.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -110,6 +124,92 @@ test('exposes Sample, Unverified, and Verified labels in prototype data', () => 
   assert.equal(statuses.has('Sample'), true);
   assert.equal(statuses.has('Unverified'), true);
   assert.equal(statuses.has('Verified'), true);
+});
+
+test('performs standard, reverse, and same-currency conversion locally', () => {
+  const standard = convertAmount(100, 0.8642);
+  assert.equal(standard.converted, 86.42);
+  assert.equal(Math.round(standard.reverseRate * 10000) / 10000, 1.1571);
+  assert.equal(convertAmount(50, 1).converted, 50);
+});
+
+test('supports currency swap calculations without sending amounts to the API', () => {
+  const usdToEur = convertAmount(100, 0.8);
+  const eurToUsd = convertAmount(usdToEur.converted, 1 / 0.8);
+  assert.equal(eurToUsd.converted, 100);
+});
+
+test('formats two-decimal, zero-decimal, and three-decimal currencies with Intl', () => {
+  assert.match(formatCurrencyAmount(12.3, 'USD', 'en'), /12\.30/);
+  assert.doesNotMatch(formatCurrencyAmount(1234, 'JPY', 'en'), /\.00/);
+  assert.match(formatCurrencyAmount(1.234, 'BHD', 'en'), /1\.234/);
+});
+
+test('parses decimal comma, decimal point, pasted formatting, and zero', () => {
+  assert.equal(parseAmountInput('1.234,56').value, 1234.56);
+  assert.equal(parseAmountInput('1,234.56 USD').value, 1234.56);
+  assert.equal(parseAmountInput('0').value, 0);
+});
+
+test('rejects invalid, negative, and extremely large input', () => {
+  assert.equal(parseAmountInput('abc').error, 'invalid');
+  assert.equal(parseAmountInput('-10').error, 'negative');
+  assert.equal(parseAmountInput('100000000000000000000').error, 'tooLarge');
+});
+
+test('validates Frankfurter currency and rate responses', () => {
+  const currencies = normalizeCurrencies([{ iso_code: 'USD', name: 'US Dollar' }, { iso_code: 'EUR', name: 'Euro' }]);
+  assert.deepEqual(currencies.map((currency) => currency.code), ['EUR', 'USD']);
+  const rate = validateRateResponse({ base: 'USD', quote: 'EUR', date: '2026-06-29', rate: 0.86 }, 'USD', 'EUR', '2026-06-29T10:00:00.000Z');
+  assert.equal(rate.rate, 0.86);
+  assert.throws(() => validateRateResponse({ base: 'USD', date: '2026-06-29', rates: {} }, 'USD', 'EUR'), /Unsupported currency|Missing rate data/);
+  assert.throws(() => normalizeCurrencies(null), /Malformed/);
+});
+
+test('derives history stats from Frankfurter v2 EUR-based rows', () => {
+  const stats = historyStats([
+    { date: '2026-06-28', base: 'EUR', quote: 'USD', rate: 1.2 },
+    { date: '2026-06-28', base: 'EUR', quote: 'GBP', rate: 0.8 },
+    { date: '2026-06-29', base: 'EUR', quote: 'USD', rate: 1.25 },
+    { date: '2026-06-29', base: 'EUR', quote: 'GBP', rate: 0.75 },
+  ], 'GBP', 'USD');
+  assert.equal(Number(stats.start.toFixed(4)), 0.6667);
+  assert.equal(stats.latest, 0.6);
+});
+
+test('supports cached-rate fallback helpers and offline cache misses', () => {
+  const store = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => { store.set(key, value); },
+    removeItem: (key: string) => { store.delete(key); },
+    clear: () => { store.clear(); },
+    key: (index: number) => [...store.keys()][index] ?? null,
+    get length() { return store.size; },
+  } as Storage;
+  const key = cacheKeyForRate('USD', 'EUR');
+  writeJsonCache(storage, key, { base: 'USD', quote: 'EUR', rate: 0.9, date: '2026-06-29', refreshedAt: '2026-06-29T10:00:00.000Z', cached: false });
+  assert.equal(readJsonCache<{ rate: number }>(storage, key, 1000)?.rate, 0.9);
+  assert.equal(readJsonCache(storage, 'missing', 1000), null);
+});
+
+test('searches currencies by code, English, Arabic, Indonesian, and country', () => {
+  assert.equal(searchCurrencies(fallbackCurrencies, 'USD')[0].code, 'USD');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'US Dollar')[0].code, 'USD');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'دولار أمريكي')[0].code, 'USD');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'Dolar AS')[0].code, 'USD');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'United Kingdom')[0].code, 'GBP');
+});
+
+test('uses destination default currency from city money data', () => {
+  assert.equal(destinationCurrency(cities.find((city) => city.city === 'London') ?? cities[0]), 'GBP');
+  assert.equal(destinationCurrency(cities.find((city) => city.city === 'Jerusalem') ?? cities[0]), 'ILS');
+});
+
+test('formats amounts for English, Arabic, and Indonesian modes', () => {
+  assert.match(formatCurrencyAmount(1234.5, 'USD', 'en'), /\$/);
+  assert.match(formatCurrencyAmount(1234.5, 'USD', 'ar'), /US\$/);
+  assert.match(formatCurrencyAmount(1234.5, 'IDR', 'id'), /Rp/);
 });
 
 test('calculates Qibla bearings for major cities', () => {
