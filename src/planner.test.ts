@@ -19,6 +19,17 @@ import {
   validateRateResponse,
   writeJsonCache,
 } from './money.js';
+import {
+  classifyHalalStatus,
+  cuisineOptions,
+  dedupeRestaurants,
+  filterRestaurants,
+  normalizeHalalRestaurant,
+  openingState,
+  sortRestaurants,
+  type HalalRestaurant,
+  type RestaurantFilters,
+} from './halal-restaurants.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -310,6 +321,73 @@ test('normalization keeps original name internally but displays Latin only', () 
   assert.equal(place?.name, 'Al-Aqsa Mosque');
   assert.equal(place?.originalName, 'مسجد الأقصى');
   assert.equal(latinOnly(place?.name ?? ''), true);
+});
+
+test('classifies structured halal restaurant tags without unsafe assumptions', () => {
+  assert.equal(classifyHalalStatus({ 'diet:halal': 'only' }), 'halal-only');
+  assert.equal(classifyHalalStatus({ 'diet:halal': 'yes' }), 'halal-options');
+  assert.equal(classifyHalalStatus({ 'halal:certification': 'Local council certificate' }), 'certification-listed');
+  assert.equal(classifyHalalStatus({ halal: 'yes' }), 'legacy-halal');
+  assert.equal(classifyHalalStatus({ 'diet:halal': 'no', halal: 'yes' }), undefined);
+  assert.equal(classifyHalalStatus({ halal: 'no', 'diet:halal': 'yes' }), undefined);
+  assert.equal(classifyHalalStatus({ amenity: 'restaurant', name: 'مطعم القدس' }), undefined);
+  assert.equal(classifyHalalStatus({ cuisine: 'middle_eastern' }), undefined);
+  assert.equal(classifyHalalStatus({ name: 'Halal Palace' }), undefined);
+  assert.equal(classifyHalalStatus({ description: 'Halal food available' }, true), 'possible-unverified');
+});
+
+test('normalizes halal restaurants from node, way, and relation coordinates', () => {
+  const origin = { latitude: 51.5, longitude: -0.1 };
+  const node = normalizeHalalRestaurant({ type: 'node', id: 1, lat: 51.501, lon: -0.101, tags: { amenity: 'restaurant', 'diet:halal': 'only', name: 'Halal Grill' } }, origin);
+  const way = normalizeHalalRestaurant({ type: 'way', id: 2, center: { lat: 51.502, lon: -0.102 }, tags: { amenity: 'fast_food', 'diet:halal': 'yes', name: 'Quick Bites' } }, origin);
+  const relation = normalizeHalalRestaurant({ type: 'relation', id: 3, center: { lat: 51.503, lon: -0.103 }, tags: { amenity: 'cafe', 'halal:certification': 'listed', name: 'Cafe Noor' } }, origin);
+  assert.equal(node?.latitude, 51.501);
+  assert.equal(way?.longitude, -0.102);
+  assert.equal(relation?.type, 'cafe');
+  assert.equal(Number((node?.distanceKm ?? 0).toFixed(2)) > 0, true);
+});
+
+test('deduplicates node and way records for the same physical restaurant', () => {
+  const origin = { latitude: 0, longitude: 0 };
+  const first = normalizeHalalRestaurant({ type: 'node', id: 1, lat: 1, lon: 1, tags: { amenity: 'restaurant', halal: 'yes', name: 'Same Grill' } }, origin);
+  const stronger = normalizeHalalRestaurant({ type: 'way', id: 2, center: { lat: 1.00001, lon: 1.00001 }, tags: { amenity: 'restaurant', 'diet:halal': 'only', name: 'Same Grill' } }, origin);
+  const deduped = dedupeRestaurants([first, stronger].filter(Boolean) as NonNullable<typeof first>[]);
+  assert.equal(deduped.length, 1);
+  assert.equal(deduped[0].halalStatus, 'halal-only');
+});
+
+test('filters and sorts halal restaurants by cuisine, open-now, and nearest', () => {
+  const origin = { latitude: 0, longitude: 0 };
+  const restaurants = [
+    normalizeHalalRestaurant({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'only', name: 'Far Arabic', cuisine: 'arabic;burgers', opening_hours: '24/7' } }, origin),
+    normalizeHalalRestaurant({ type: 'node', id: 2, lat: 0.01, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'yes', name: 'Near Pizza', cuisine: 'pizza', opening_hours: 'Mo-Su 00:00-24:00' } }, origin),
+  ].filter((restaurant): restaurant is HalalRestaurant => Boolean(restaurant));
+  const filters: RestaurantFilters = { status: 'reliable', type: 'all', cuisine: 'pizza', openNow: true, takeaway: false, delivery: false, wheelchair: false };
+  const filtered = filterRestaurants(restaurants, filters);
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0]?.name, 'Near Pizza');
+  assert.equal(sortRestaurants(restaurants, 'distance')[0]?.name, 'Near Pizza');
+  assert.deepEqual(cuisineOptions(restaurants), ['arabic', 'burgers', 'pizza']);
+});
+
+test('handles invalid opening hours, missing address, fallback names, and transliteration', () => {
+  const origin = { latitude: 0, longitude: 0 };
+  assert.equal(openingState('not real hours'), 'unknown');
+  assert.equal(openingState('24/7'), 'open');
+  const fallback = normalizeHalalRestaurant({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'food_court', 'diet:halal': 'only' } }, origin);
+  const transliterated = normalizeHalalRestaurant({ type: 'node', id: 2, lat: 0, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'only', name: 'مطعم النور' } }, origin);
+  assert.equal(fallback?.address, '');
+  assert.equal(fallback?.name, 'Unnamed Halal Food Court');
+  assert.equal(latinOnly(transliterated?.name ?? ''), true);
+});
+
+test('includes halal restaurant timeout, cache, denial, empty, and language labels', () => {
+  assert.equal(labels.en.halalTimedOut.includes('timed out'), true);
+  assert.equal(labels.en.halalCached.includes('cached'), true);
+  assert.equal(labels.en.halalLocationDenied.includes('denied'), true);
+  assert.equal(labels.en.halalNoResults, 'No mapped halal restaurants were found in this area. This does not necessarily mean that none exist.');
+  assert.equal(labels.ar.halalRestaurantsTitle.length > 0, true);
+  assert.equal(labels.id.halalRestaurantsTitle.length > 0, true);
 });
 
 test('rendered prayer-place titles use the shared English-name safety function', async () => {

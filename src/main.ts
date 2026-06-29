@@ -3,6 +3,18 @@ import { generateItinerary } from './planner.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
 import { buildOverpassQuery, ensureLatinDisplayName, getEnglishPlaceName, isReliablyOpenNow, normalizePrayerPlace, type PrayerPlace, type PrayerPlaceType } from './prayer-spaces.js';
 import {
+  buildHalalOverpassQuery,
+  cuisineOptions,
+  dedupeRestaurants,
+  filterRestaurants,
+  normalizeHalalRestaurant,
+  sortRestaurants,
+  type FoodPlaceType,
+  type HalalRestaurant,
+  type HalalStatus,
+  type RestaurantFilters,
+} from './halal-restaurants.js';
+import {
   CURRENCY_CACHE_MS,
   FRANKFURTER_BASE_URL,
   RATE_CACHE_MS,
@@ -46,14 +58,14 @@ import {
 import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money';
+type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -112,6 +124,7 @@ type MapLibreMap = {
   addControl: (control: unknown, position?: string) => MapLibreMap;
   resize: () => void;
   getCenter?: () => { lat: number; lng: number };
+  fitBounds?: (bounds: [[number, number], [number, number]], options?: { padding?: number; maxZoom?: number }) => void;
 };
 type MapLibrePopup = { setText: (text: string) => MapLibrePopup };
 type MapLibreMarker = {
@@ -136,6 +149,7 @@ declare global { interface Window { maplibregl?: MapLibreGlobal } }
 
 let cityMap: MapLibreMap | undefined;
 let prayerMap: MapLibreMap | undefined;
+let restaurantMap: MapLibreMap | undefined;
 const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
 const englishMapNameExpression = [
@@ -427,11 +441,14 @@ type PrayerMode = 'map' | 'list';
 type PrayerFilter = 'all' | PrayerPlaceType;
 type PrayerSort = 'distance' | 'name' | 'open';
 type PrayerCenter = { latitude: number; longitude: number; label: string };
+type RestaurantStatus = PrayerLocationStatus | 'too-many' | 'cached' | 'offline' | 'timeout';
+type RestaurantMode = 'map' | 'list';
+type RestaurantSort = 'distance' | 'name' | 'status' | 'open' | 'cuisine';
 
 type OverpassResponse = { elements?: Array<{ type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> }> };
 type NominatimResult = { lat: string; lon: string; display_name: string };
 
-const prayerRadii = [5, 10, 25, 50] as const;
+const prayerRadii = [1, 3, 5, 10, 25, 50] as const;
 let prayerStatus: PrayerLocationStatus = 'idle';
 let prayerMode: PrayerMode = 'map';
 let prayerCenter: PrayerCenter | undefined;
@@ -448,6 +465,21 @@ let prayerMapMoved = false;
 let prayerError = '';
 let prayerSearchTimer: number | undefined;
 const prayerCache = new Map<string, { expires: number; results: PrayerPlace[] }>();
+let restaurantStatus: RestaurantStatus = 'idle';
+let restaurantMode: RestaurantMode = 'map';
+let restaurantCenter: PrayerCenter | undefined;
+let restaurantRadiusKm: typeof prayerRadii[number] = 5;
+let restaurantManualQuery = '';
+let restaurantResults: HalalRestaurant[] = [];
+let restaurantFilters: RestaurantFilters = { status: 'reliable', type: 'all', cuisine: '', openNow: false, takeaway: false, delivery: false, wheelchair: false };
+let restaurantSort: RestaurantSort = 'distance';
+let restaurantMapMoved = false;
+let restaurantError = '';
+let restaurantSearchTimer: number | undefined;
+let restaurantSearchSequence = 0;
+let selectedRestaurantId = '';
+const restaurantCache = new Map<string, { expires: number; results: HalalRestaurant[] }>();
+const destinationCache = new Map<string, { expires: number; center?: PrayerCenter }>();
 
 function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
   const controller = new AbortController();
@@ -499,7 +531,7 @@ function browserDirectionsUrl(place: PrayerPlace) {
   return `https://www.openstreetmap.org/directions?to=${place.latitude},${place.longitude}#map=17/${place.latitude}/${place.longitude}`;
 }
 
-function overpassUrl() { return 'https://overpass-api.de/api/interpreter'; }
+function overpassUrl() { return localStorage.getItem('mtp-overpass-endpoint') ?? 'https://overpass-api.de/api/interpreter'; }
 
 async function searchPrayerPlaces(center: PrayerCenter) {
   prayerCenter = center;
@@ -699,6 +731,319 @@ function bindPrayerPage() {
   document.querySelector<HTMLButtonElement>('#retry-prayer')?.addEventListener('click', () => { if (prayerCenter) void searchPrayerPlaces(prayerCenter); else requestPrayerLocation(); });
   document.querySelector<HTMLButtonElement>('#increase-radius')?.addEventListener('click', () => { const next = prayerRadii.find((radius) => radius > prayerRadiusKm); if (next) prayerRadiusKm = next; if (prayerCenter) void searchPrayerPlaces(prayerCenter); });
   document.querySelector<HTMLButtonElement>('#search-this-area')?.addEventListener('click', () => { const center = prayerMap?.getCenter?.(); if (!center) return; debouncedPrayerSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].prayerSearchThisArea }); });
+}
+
+function halalStatusLabel(status: HalalStatus, copy: typeof labels[Language]) {
+  if (status === 'halal-only') return copy.halalOnly;
+  if (status === 'halal-options') return copy.halalOptions;
+  if (status === 'certification-listed') return copy.halalCertificationListed;
+  if (status === 'legacy-halal') return copy.halalLegacy;
+  return copy.halalPossible;
+}
+
+function foodTypeLabel(type: FoodPlaceType, copy: typeof labels[Language]) {
+  if (type === 'fast_food') return copy.halalFastFood;
+  if (type === 'cafe') return copy.halalCafe;
+  if (type === 'food_court') return copy.halalFoodCourt;
+  return copy.halalRestaurant;
+}
+
+function restaurantStatusMessage(copy: typeof labels[Language]) {
+  if (restaurantStatus === 'requesting') return copy.halalRequestingLocation;
+  if (restaurantStatus === 'searching') return copy.halalSearching;
+  if (restaurantStatus === 'denied') return copy.halalLocationDenied;
+  if (restaurantStatus === 'unavailable') return copy.halalLocationUnavailable;
+  if (restaurantStatus === 'service-unavailable') return restaurantError || copy.halalServiceUnavailable;
+  if (restaurantStatus === 'timeout') return copy.halalTimedOut;
+  if (restaurantStatus === 'too-many') return copy.halalTooMany;
+  if (restaurantStatus === 'cached') return copy.halalCached;
+  if (restaurantStatus === 'offline') return copy.halalOffline;
+  if (restaurantStatus === 'empty') return copy.halalNoResults;
+  return '';
+}
+
+function restaurantAppleMapsUrl(restaurant: HalalRestaurant) {
+  return `https://maps.apple.com/?daddr=${restaurant.latitude},${restaurant.longitude}&q=${encodeURIComponent(restaurant.name)}`;
+}
+
+function restaurantBrowserDirectionsUrl(restaurant: HalalRestaurant) {
+  return `https://www.openstreetmap.org/directions?to=${restaurant.latitude},${restaurant.longitude}#map=17/${restaurant.latitude}/${restaurant.longitude}`;
+}
+
+function filteredRestaurantResults() {
+  return sortRestaurants(filterRestaurants(restaurantResults, restaurantFilters), restaurantSort);
+}
+
+async function resolveRestaurantDestination(query: string): Promise<PrayerCenter | undefined> {
+  const trimmed = query.trim();
+  if (!trimmed) return undefined;
+  const city = cities.find((candidate) => `${candidate.city} ${candidate.country}`.toLowerCase().includes(trimmed.toLowerCase()) || candidate.city.toLowerCase() === trimmed.toLowerCase());
+  if (city) return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}` };
+  const cached = destinationCache.get(trimmed.toLowerCase());
+  if (cached && cached.expires > Date.now()) return cached.center;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=en&q=${encodeURIComponent(trimmed)}`;
+  const data = await requestJson<NominatimResult[]>(url, { headers: { Accept: 'application/json' } }, 12000);
+  const first = data[0];
+  const center = first ? { latitude: Number(first.lat), longitude: Number(first.lon), label: first.display_name } : undefined;
+  destinationCache.set(trimmed.toLowerCase(), { expires: Date.now() + 15 * 60 * 1000, center });
+  return center;
+}
+
+async function searchHalalRestaurants(center: PrayerCenter) {
+  restaurantCenter = center;
+  restaurantMapMoved = false;
+  selectedRestaurantId = '';
+  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${restaurantRadiusKm}`;
+  const cached = restaurantCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    restaurantResults = cached.results;
+    restaurantStatus = restaurantResults.length ? 'cached' : 'empty';
+    halalRestaurantsPage();
+    return;
+  }
+  const sequence = ++restaurantSearchSequence;
+  restaurantStatus = 'searching';
+  restaurantError = '';
+  halalRestaurantsPage();
+  try {
+    const body = buildHalalOverpassQuery(center.latitude, center.longitude, restaurantRadiusKm, true);
+    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 20000);
+    if (sequence !== restaurantSearchSequence) return;
+    const normalized = (data.elements ?? [])
+      .map((element) => normalizeHalalRestaurant(element, center, true))
+      .filter((place): place is HalalRestaurant => Boolean(place));
+    restaurantResults = dedupeRestaurants(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 350);
+    restaurantCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: restaurantResults });
+    restaurantStatus = normalized.length > 350 ? 'too-many' : restaurantResults.length ? 'ready' : 'empty';
+  } catch (error) {
+    console.error(error);
+    if (cached) {
+      restaurantResults = cached.results;
+      restaurantStatus = navigator.onLine ? 'cached' : 'offline';
+    } else {
+      restaurantResults = [];
+      restaurantStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
+      restaurantError = labels[lang].halalServiceUnavailable;
+    }
+  }
+  halalRestaurantsPage();
+}
+
+function requestRestaurantLocation() {
+  if (!navigator.geolocation) {
+    restaurantStatus = 'unavailable';
+    halalRestaurantsPage();
+    return;
+  }
+  restaurantStatus = 'requesting';
+  halalRestaurantsPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => void searchHalalRestaurants({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (error) => {
+      restaurantStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      halalRestaurantsPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+async function searchRestaurantDestination() {
+  const query = restaurantManualQuery.trim();
+  if (!query) return;
+  restaurantStatus = 'searching';
+  halalRestaurantsPage();
+  try {
+    const center = await resolveRestaurantDestination(query);
+    if (!center) {
+      restaurantResults = [];
+      restaurantStatus = 'empty';
+      halalRestaurantsPage();
+      return;
+    }
+    await searchHalalRestaurants(center);
+  } catch (error) {
+    console.error(error);
+    restaurantStatus = 'service-unavailable';
+    restaurantError = labels[lang].halalServiceUnavailable;
+    halalRestaurantsPage();
+  }
+}
+
+function debouncedRestaurantSearch(center: PrayerCenter) {
+  if (restaurantSearchTimer) window.clearTimeout(restaurantSearchTimer);
+  restaurantSearchTimer = window.setTimeout(() => void searchHalalRestaurants(center), 450);
+}
+
+function initializeRestaurantMap() {
+  restaurantMap?.remove();
+  restaurantMap = undefined;
+  const element = document.querySelector<HTMLElement>('#halal-map');
+  if (!element || !restaurantCenter || !window.maplibregl) return;
+  try {
+    element.replaceChildren();
+    restaurantMap = new window.maplibregl.Map({
+      container: element,
+      style: openFreeMapStyle,
+      center: [restaurantCenter.longitude, restaurantCenter.latitude],
+      zoom: restaurantRadiusKm <= 3 ? 13 : restaurantRadiusKm <= 10 ? 11 : 9,
+      attributionControl: true,
+    });
+    restaurantMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
+    new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([restaurantCenter.longitude, restaurantCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(restaurantCenter.label)).addTo(restaurantMap);
+    const colors: Record<HalalStatus, string> = { 'halal-only': '#15803d', 'halal-options': '#2563eb', 'certification-listed': '#7c3aed', 'legacy-halal': '#d97706', 'possible-unverified': '#64748b' };
+    const groups = new Map<string, HalalRestaurant[]>();
+    for (const place of filteredRestaurantResults()) {
+      const key = `${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`;
+      groups.set(key, [...(groups.get(key) ?? []), place]);
+    }
+    for (const group of groups.values()) {
+      const place = group[0];
+      const label = group.length > 1 ? `${group.length} places near ${place.name}` : place.name;
+      new window.maplibregl.Marker({ color: colors[place.halalStatus] })
+        .setLngLat([place.longitude, place.latitude])
+        .setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(label))
+        .addTo(restaurantMap);
+    }
+    restaurantMap.on('moveend', () => {
+      restaurantMapMoved = true;
+      const button = document.querySelector<HTMLButtonElement>('#halal-search-this-area');
+      if (button) button.hidden = false;
+    });
+  } catch {
+    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+  }
+}
+
+function restaurantDetails(place: HalalRestaurant, copy: typeof labels[Language]) {
+  const rows = [
+    [copy.halalCuisineLabel, place.cuisine.join(', ')],
+    [copy.prayerAddress, place.address],
+    [copy.prayerOpeningHours, place.openingHours || copy.halalOpeningUnavailable],
+    [copy.prayerTelephone, place.phone],
+    [copy.prayerWebsite, place.website ? `<a href="${esc(place.website)}" target="_blank" rel="noopener noreferrer">${esc(place.website)}</a>` : ''],
+    [copy.halalMenu, place.menu ? `<a href="${esc(place.menu)}" target="_blank" rel="noopener noreferrer">${esc(place.menu)}</a>` : ''],
+    [copy.halalPrice, place.price],
+    [copy.halalTakeaway, place.takeaway ? copy.prayerVerified : ''],
+    [copy.halalDelivery, place.delivery ? copy.prayerVerified : ''],
+    [copy.halalOutdoor, place.outdoorSeating ? copy.prayerVerified : ''],
+    [copy.halalWheelchair, place.wheelchair ? copy.prayerVerified : ''],
+  ].filter(([, value]) => Boolean(value));
+  return rows.length ? `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>` : '';
+}
+
+function restaurantCard(restaurant: HalalRestaurant, copy: typeof labels[Language]) {
+  const openLabel = restaurant.openState === 'open' ? copy.halalOpen : restaurant.openState === 'closed' ? copy.halalClosed : copy.halalOpeningUnavailable;
+  const notice = restaurant.halalStatus === 'certification-listed' ? `${copy.halalCertificationNotice}: ${esc(restaurant.certification)}` : restaurant.halalStatus === 'legacy-halal' ? copy.halalLegacyNotice : restaurant.halalStatus === 'possible-unverified' ? copy.halalPossibleNotice : '';
+  return `<article class="card restaurant-card ${selectedRestaurantId === restaurant.id ? 'selected' : ''}" aria-label="${esc(restaurant.name)}">
+    <div class="card-top"><span>${restaurant.distanceKm.toFixed(1)} km · ${foodTypeLabel(restaurant.type, copy)}</span><span class="badge halal-${restaurant.halalStatus}">${halalStatusLabel(restaurant.halalStatus, copy)}</span></div>
+    <h3>${esc(restaurant.name)}</h3>
+    <p>${openLabel}</p>
+    ${notice ? `<p class="evidence">${notice}</p>` : ''}
+    ${restaurantDetails(restaurant, copy)}
+    <div class="place-actions">
+      <a class="map-link" href="${restaurant.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
+      <a class="map-link" href="${restaurantAppleMapsUrl(restaurant)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
+      <a class="map-link" href="${restaurantBrowserDirectionsUrl(restaurant)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+      <button type="button" class="ghost" data-copy-restaurant="${restaurant.id}">${copy.halalCopyDetails}</button>
+    </div>
+    <p><a class="map-link" href="${restaurant.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.halalInfoIssue}</a></p>
+  </article>`;
+}
+
+function halalRestaurantsPage() {
+  if (!root) return;
+  cityMap?.remove();
+  cityMap = undefined;
+  prayerMap?.remove();
+  prayerMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const results = filteredRestaurantResults();
+  const cuisines = cuisineOptions(restaurantResults);
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `
+    <main dir="${dir}" class="app prayer-app halal-app">
+      <section class="hero prayer-hero">
+        ${languageSelector()}
+        <p class="eyebrow">${copy.halalRestaurantsOpen}</p>
+        <h1>${copy.halalRestaurantsTitle}</h1>
+        <p>${copy.halalRestaurantsSubtitle}</p>
+        <button type="button" class="ghost hero-action" id="back-from-halal">${copy.halalRestaurantsBack}</button>
+      </section>
+      <section class="panel prayer-panel" aria-live="polite">
+        <p class="notice prayer-notice">${copy.halalNotice}</p>
+        <p class="notice prayer-notice">${copy.halalMeaningNotice}</p>
+        <div class="prayer-actions">
+          <button type="button" id="use-halal-location">${copy.halalUseLocation}</button>
+          <label>${copy.halalRadius}<select id="halal-radius">${prayerRadii.map((radius) => `<option value="${radius}" ${radius === restaurantRadiusKm ? 'selected' : ''}>${radius} km</option>`).join('')}</select></label>
+          <form id="manual-halal-search" class="manual-search"><label>${copy.halalManualSearch}<input id="halal-manual-query" value="${esc(restaurantManualQuery)}" placeholder="${copy.halalManualPlaceholder}" /></label><button type="submit">${copy.halalSearch}</button></form>
+        </div>
+        <p class="prayer-status ${restaurantStatus}" role="status">${restaurantStatusMessage(copy)}</p>
+        <div class="segmented" role="tablist" aria-label="${copy.halalRestaurantsTitle}">
+          <button type="button" class="${restaurantMode === 'map' ? 'active' : 'ghost'}" data-halal-mode="map">${copy.halalMapView}</button>
+          <button type="button" class="${restaurantMode === 'list' ? 'active' : 'ghost'}" data-halal-mode="list">${copy.halalListView}</button>
+        </div>
+        <div class="prayer-filters" aria-label="${copy.halalRestaurantsTitle}">
+          <select id="halal-status-filter"><option value="reliable">${copy.halalAllReliable}</option><option value="halal-only" ${restaurantFilters.status === 'halal-only' ? 'selected' : ''}>${copy.halalOnly}</option><option value="halal-options" ${restaurantFilters.status === 'halal-options' ? 'selected' : ''}>${copy.halalOptions}</option><option value="certification-listed" ${restaurantFilters.status === 'certification-listed' ? 'selected' : ''}>${copy.halalCertificationListed}</option><option value="legacy-halal" ${restaurantFilters.status === 'legacy-halal' ? 'selected' : ''}>${copy.halalLegacy}</option><option value="possible-unverified" ${restaurantFilters.status === 'possible-unverified' ? 'selected' : ''}>${copy.halalPossible}</option></select>
+          <select id="halal-type-filter"><option value="all">${copy.prayerAllPlaces}</option><option value="restaurant" ${restaurantFilters.type === 'restaurant' ? 'selected' : ''}>${copy.halalRestaurant}</option><option value="fast_food" ${restaurantFilters.type === 'fast_food' ? 'selected' : ''}>${copy.halalFastFood}</option><option value="cafe" ${restaurantFilters.type === 'cafe' ? 'selected' : ''}>${copy.halalCafe}</option><option value="food_court" ${restaurantFilters.type === 'food_court' ? 'selected' : ''}>${copy.halalFoodCourt}</option></select>
+          <label>${copy.halalCuisine}<select id="halal-cuisine-filter"><option value="">${copy.halalAllCuisines}</option>${cuisines.map((cuisine) => `<option value="${esc(cuisine)}" ${restaurantFilters.cuisine === cuisine ? 'selected' : ''}>${esc(cuisine)}</option>`).join('')}</select></label>
+          <label class="inline-check"><input type="checkbox" id="halal-open" ${restaurantFilters.openNow ? 'checked' : ''}/> ${copy.halalOpenNow}</label>
+          <label class="inline-check"><input type="checkbox" id="halal-takeaway" ${restaurantFilters.takeaway ? 'checked' : ''}/> ${copy.halalTakeaway}</label>
+          <label class="inline-check"><input type="checkbox" id="halal-delivery" ${restaurantFilters.delivery ? 'checked' : ''}/> ${copy.halalDelivery}</label>
+          <label class="inline-check"><input type="checkbox" id="halal-wheelchair" ${restaurantFilters.wheelchair ? 'checked' : ''}/> ${copy.halalWheelchair}</label>
+          <label>${copy.halalSort}<select id="halal-sort"><option value="distance" ${restaurantSort === 'distance' ? 'selected' : ''}>${copy.halalNearest}</option><option value="name" ${restaurantSort === 'name' ? 'selected' : ''}>${copy.halalSortName}</option><option value="status" ${restaurantSort === 'status' ? 'selected' : ''}>${copy.halalSortStatus}</option><option value="open" ${restaurantSort === 'open' ? 'selected' : ''}>${copy.halalSortOpen}</option><option value="cuisine" ${restaurantSort === 'cuisine' ? 'selected' : ''}>${copy.halalSortCuisine}</option></select></label>
+        </div>
+        <div class="place-actions">
+          <button type="button" id="halal-search-this-area" class="ghost" ${restaurantMapMoved ? '' : 'hidden'}>${copy.halalSearchThisArea}</button>
+          <button type="button" id="halal-recentre" class="ghost">${copy.halalRecentre}</button>
+          <button type="button" id="halal-fit-results" class="ghost">${copy.halalFitResults}</button>
+        </div>
+        <div class="legend halal-legend"><strong>${copy.halalLegend}</strong><span class="badge halal-halal-only">${copy.halalOnly}</span><span class="badge halal-halal-options">${copy.halalOptions}</span><span class="badge halal-certification-listed">${copy.halalCertificationListed}</span><span class="badge halal-legacy-halal">${copy.halalLegacy}</span><span class="badge halal-possible-unverified">${copy.halalPossible}</span></div>
+        ${restaurantMode === 'map' ? `<div id="halal-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
+        ${(restaurantStatus === 'empty' || !results.length && restaurantResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-halal" class="ghost">${copy.halalRetry}</button><button type="button" id="increase-halal-radius">${copy.halalIncreaseRadius}</button><button type="button" id="another-halal-city" class="ghost">${copy.halalSearchAnotherCity}</button></div>` : ''}
+        <div class="place-list">${results.length ? results.map((place) => restaurantCard(place, copy)).join('') : restaurantStatus === 'ready' ? `<p>${copy.halalNoReliable}</p>` : ''}</div>
+        <p class="map-status">${copy.osmAttribution}</p>
+      </section>
+    </main>`;
+  bindHalalRestaurantsPage();
+  if (restaurantMode === 'map') initializeRestaurantMap();
+}
+
+function bindHalalRestaurantsPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; halalRestaurantsPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-halal')?.addEventListener('click', () => { view = 'planner'; restaurantMap?.remove(); restaurantMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#use-halal-location')?.addEventListener('click', requestRestaurantLocation);
+  document.querySelector<HTMLSelectElement>('#halal-radius')?.addEventListener('change', (event) => { restaurantRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof prayerRadii[number]; if (restaurantCenter) void searchHalalRestaurants(restaurantCenter); });
+  document.querySelector<HTMLFormElement>('#manual-halal-search')?.addEventListener('submit', (event) => { event.preventDefault(); restaurantManualQuery = document.querySelector<HTMLInputElement>('#halal-manual-query')?.value ?? ''; void searchRestaurantDestination(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-halal-mode]').forEach((button) => button.addEventListener('click', () => { restaurantMode = button.dataset.halalMode as RestaurantMode; halalRestaurantsPage(); }));
+  document.querySelector<HTMLSelectElement>('#halal-status-filter')?.addEventListener('change', (event) => { restaurantFilters = { ...restaurantFilters, status: (event.target as HTMLSelectElement).value as RestaurantFilters['status'] }; halalRestaurantsPage(); });
+  document.querySelector<HTMLSelectElement>('#halal-type-filter')?.addEventListener('change', (event) => { restaurantFilters = { ...restaurantFilters, type: (event.target as HTMLSelectElement).value as RestaurantFilters['type'] }; halalRestaurantsPage(); });
+  document.querySelector<HTMLSelectElement>('#halal-cuisine-filter')?.addEventListener('change', (event) => { restaurantFilters = { ...restaurantFilters, cuisine: (event.target as HTMLSelectElement).value }; halalRestaurantsPage(); });
+  document.querySelector<HTMLInputElement>('#halal-open')?.addEventListener('change', (event) => { restaurantFilters = { ...restaurantFilters, openNow: (event.target as HTMLInputElement).checked }; halalRestaurantsPage(); });
+  document.querySelector<HTMLInputElement>('#halal-takeaway')?.addEventListener('change', (event) => { restaurantFilters = { ...restaurantFilters, takeaway: (event.target as HTMLInputElement).checked }; halalRestaurantsPage(); });
+  document.querySelector<HTMLInputElement>('#halal-delivery')?.addEventListener('change', (event) => { restaurantFilters = { ...restaurantFilters, delivery: (event.target as HTMLInputElement).checked }; halalRestaurantsPage(); });
+  document.querySelector<HTMLInputElement>('#halal-wheelchair')?.addEventListener('change', (event) => { restaurantFilters = { ...restaurantFilters, wheelchair: (event.target as HTMLInputElement).checked }; halalRestaurantsPage(); });
+  document.querySelector<HTMLSelectElement>('#halal-sort')?.addEventListener('change', (event) => { restaurantSort = (event.target as HTMLSelectElement).value as RestaurantSort; halalRestaurantsPage(); });
+  document.querySelector<HTMLButtonElement>('#retry-halal')?.addEventListener('click', () => { if (restaurantCenter) void searchHalalRestaurants(restaurantCenter); else requestRestaurantLocation(); });
+  document.querySelector<HTMLButtonElement>('#increase-halal-radius')?.addEventListener('click', () => { const next = prayerRadii.find((radius) => radius > restaurantRadiusKm); if (next) restaurantRadiusKm = next; if (restaurantCenter) void searchHalalRestaurants(restaurantCenter); });
+  document.querySelector<HTMLButtonElement>('#another-halal-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#halal-manual-query')?.focus());
+  document.querySelector<HTMLButtonElement>('#halal-search-this-area')?.addEventListener('click', () => { const center = restaurantMap?.getCenter?.(); if (!center) return; debouncedRestaurantSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].halalSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#halal-recentre')?.addEventListener('click', requestRestaurantLocation);
+  document.querySelector<HTMLButtonElement>('#halal-fit-results')?.addEventListener('click', () => {
+    const results = filteredRestaurantResults();
+    if (!restaurantMap?.fitBounds || !results.length) return;
+    const lngs = results.map((place) => place.longitude);
+    const lats = results.map((place) => place.latitude);
+    restaurantMap.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 60, maxZoom: 15 });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-copy-restaurant]').forEach((button) => button.addEventListener('click', async () => {
+    const place = restaurantResults.find((candidate) => candidate.id === button.dataset.copyRestaurant);
+    if (!place) return;
+    await navigator.clipboard?.writeText(`${place.name}\n${place.sourceUrl}\n${place.latitude},${place.longitude}`);
+    restaurantStatus = 'ready';
+    button.textContent = labels[lang].halalCopiedDetails;
+  }));
 }
 
 function selectedCity() {
@@ -954,6 +1299,10 @@ function render() {
     moneyPage();
     return;
   }
+  if (view === 'halal-restaurants') {
+    halalRestaurantsPage();
+    return;
+  }
   document.body.classList.remove('map-expanded');
   const copy = labels[lang];
   const dir = languageDirection(lang);
@@ -978,6 +1327,7 @@ function render() {
         <article class="quick-action"><div><h2>${copy.qiblaTitle}</h2><p>${copy.qiblaSubtitle}</p></div><button type="button" id="open-qibla">${copy.qiblaOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.prayerSpacesTitle}</h2><p>${copy.prayerSpacesSubtitle}</p></div><button type="button" id="open-prayer-spaces">${copy.prayerSpacesOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.moneyTitle}</h2><p>${copy.moneySubtitle}</p></div><button type="button" id="open-money">${copy.moneyOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.halalRestaurantsTitle}</h2><p>${copy.halalRestaurantsSubtitle}</p></div><button type="button" id="open-halal-restaurants">${copy.halalRestaurantsOpen}</button></article>
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
@@ -1031,6 +1381,11 @@ function bind() {
     if (window.location.hash !== '#money') window.location.hash = 'money';
     void loadCurrencies();
     void loadPairRate();
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-halal-restaurants')?.addEventListener('click', () => {
+    view = 'halal-restaurants';
+    if (window.location.hash !== '#halal-restaurants') window.location.hash = 'halal-restaurants';
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
@@ -1103,7 +1458,7 @@ function bind() {
 
 window.addEventListener('hashchange', () => {
   view = viewFromHash();
-  if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; }
+  if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; restaurantMap?.remove(); restaurantMap = undefined; }
   if (view === 'money') {
     toCurrency = destinationCurrency(selectedCity());
     void loadCurrencies();
