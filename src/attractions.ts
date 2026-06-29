@@ -255,26 +255,12 @@ export function sortAttractions(attractions: Attraction[], sort: AttractionSort)
 export function buildAttractionOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
   const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
+  const historic = '^(monument|memorial|castle|archaeological_site|ruins|fort|city_gate|manor|church|mosque|synagogue|palace)$';
+  const tourism = '^(attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park|artwork)$';
   const selectors = [
-    `node["tourism"~"^(attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park|artwork)$"]${around}`,
-    `way["tourism"~"^(attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park|artwork)$"]${around}`,
-    `relation["tourism"~"^(attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park|artwork)$"]${around}`,
-    `node["historic"]${around}`,
-    `way["historic"]${around}`,
-    `relation["historic"]${around}`,
-    `node["leisure"="nature_reserve"]${around}`,
-    `way["leisure"="nature_reserve"]${around}`,
-    `relation["leisure"="nature_reserve"]${around}`,
-    `node["leisure"="park"]["tourism"="attraction"]${around}`,
-    `way["leisure"="park"]["tourism"="attraction"]${around}`,
-    `relation["leisure"="park"]["tourism"="attraction"]${around}`,
-    `node["boundary"="protected_area"]${around}`,
-    `way["boundary"="protected_area"]${around}`,
-    `relation["boundary"="protected_area"]${around}`,
-    `node["natural"~"^(peak|waterfall)$"]["tourism"="attraction"]${around}`,
-    `way["natural"~"^(peak|waterfall)$"]["tourism"="attraction"]${around}`,
-    `relation["natural"~"^(peak|waterfall)$"]["tourism"="attraction"]${around}`,
+    `nwr["tourism"~"${tourism}"]${around}`,
+    `nwr["historic"~"${historic}"]["wikipedia"]${around}`,
+    `nwr["historic"~"${historic}"]["wikidata"]${around}`,
   ];
-  return `[out:json][timeout:25];(${selectors.join(';')};);out center tags;`;
+  return `[out:json][timeout:15];(${selectors.join(';')};);out center tags;`;
 }
-

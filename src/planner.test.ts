@@ -825,8 +825,9 @@ test('deduplicates, filters, sorts, and queries attractions', () => {
   assert.equal(sortAttractions(deduped, 'history')[0]?.name, 'Far Museum');
   const query = buildAttractionOverpassQuery(51.5, -0.1, 99);
   assert.equal(query.includes('around:50000,51.5,-0.1'), true);
-  assert.equal(query.includes('["tourism"~'), true);
-  assert.equal(query.includes('["historic"]'), true);
+  assert.equal(query.includes('nwr["tourism"~'), true);
+  assert.equal(query.includes('nwr["historic"~'), true);
+  assert.equal(query.includes('["wikidata"]'), true);
 });
 
 test('includes attraction state and language labels while keeping content English', () => {

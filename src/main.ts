@@ -601,6 +601,7 @@ let attractionMapMoved = false;
 let attractionError = '';
 let attractionSearchTimer: number | undefined;
 let attractionSearchSequence = 0;
+let attractionEnrichmentSequence = 0;
 let selectedAttractionId = '';
 const attractionCache = new Map<string, { expires: number; results: Attraction[] }>();
 
@@ -2022,12 +2023,47 @@ function attractionStatusMessage(copy: typeof labels[Language]) {
   return '';
 }
 
+function overpassPostOptions(query: string): RequestInit {
+  return {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: new URLSearchParams({ data: query }),
+  };
+}
+
 function filteredAttractionResults() {
   return sortAttractions(filterAttractions(attractionResults, attractionFilters), attractionSort);
 }
 
 function destinationAttractionCenter(city = selectedCity()): PrayerCenter {
   return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}` };
+}
+
+async function progressiveAttractionEnrichment(sequence: number) {
+  const candidates = attractionResults.slice(0, 12).filter((attraction) => attraction.wikipedia || attraction.commons);
+  if (!candidates.length) return;
+  attractionStatus = 'history';
+  attractionsPage();
+  for (const attraction of candidates) {
+    if (sequence !== attractionEnrichmentSequence) return;
+    try {
+      let wikipediaExtract = '';
+      if (attraction.wikipedia) {
+        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(attraction.wikipedia.replace(/ /g, '_'))}`;
+        const summary = await requestJson<{ extract?: string }>(summaryUrl, { headers: { Accept: 'application/json' } }, 5000);
+        wikipediaExtract = summary.extract ?? '';
+      }
+      const updated = enrichAttraction(attraction, { wikipediaExtract, osmDescription: attraction.osmDescription });
+      attractionResults = attractionResults.map((candidate) => candidate.id === attraction.id ? updated : candidate);
+      attractionsPage();
+    } catch {
+      // Enrichment is best-effort and must never block basic attraction cards.
+    }
+  }
+  if (sequence === attractionEnrichmentSequence && attractionStatus === 'history') {
+    attractionStatus = 'ready';
+    attractionsPage();
+  }
 }
 
 async function searchAttractions(center: PrayerCenter) {
@@ -2045,8 +2081,14 @@ async function searchAttractions(center: PrayerCenter) {
   attractionStatus = 'searching';
   attractionError = '';
   attractionsPage();
+  const watchdog = window.setTimeout(() => {
+    if (sequence !== attractionSearchSequence || attractionStatus !== 'searching') return;
+    attractionStatus = 'timeout';
+    attractionError = labels[lang].attractionsTimedOut;
+    attractionsPage();
+  }, 14000);
   try {
-    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body: buildAttractionOverpassQuery(center.latitude, center.longitude, attractionRadiusKm) }, 20000);
+    const data = await requestJson<OverpassResponse>(overpassUrl(), overpassPostOptions(buildAttractionOverpassQuery(center.latitude, center.longitude, attractionRadiusKm)), 12000);
     if (sequence !== attractionSearchSequence) return;
     const normalized = (data.elements ?? [])
       .map((element) => normalizeAttraction(element, center))
@@ -2055,8 +2097,12 @@ async function searchAttractions(center: PrayerCenter) {
     attractionResults = dedupeAttractions(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 250);
     attractionCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
     attractionStatus = attractionResults.length ? 'ready' : 'empty';
+    attractionsPage();
+    if (attractionResults.length) void progressiveAttractionEnrichment(++attractionEnrichmentSequence);
+    return;
   } catch (error) {
     console.error(error);
+    if (sequence !== attractionSearchSequence) return;
     if (cached) {
       attractionResults = cached.results;
       attractionStatus = navigator.onLine ? 'cached' : 'offline';
@@ -2065,6 +2111,8 @@ async function searchAttractions(center: PrayerCenter) {
       attractionStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
       attractionError = labels[lang].attractionsServiceUnavailable;
     }
+  } finally {
+    window.clearTimeout(watchdog);
   }
   attractionsPage();
 }
@@ -2221,7 +2269,7 @@ function attractionsPage() {
       <div class="place-actions"><button type="button" id="attractions-search-this-area" class="ghost" ${attractionMapMoved ? '' : 'hidden'}>${copy.toiletsSearchThisArea}</button><button type="button" id="attractions-recentre" class="ghost">${copy.toiletsRecentre}</button><button type="button" id="attractions-fit-results" class="ghost">${copy.toiletsFitResults}</button></div>
       ${selectedAttractionDetail(copy)}
       ${attractionView === 'map' ? `<div id="attractions-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : `<div class="${attractionView === 'photos' ? 'attraction-grid' : 'place-list'}">${results.length ? results.map((attraction) => attractionCard(attraction, copy)).join('') : attractionStatus === 'ready' ? `<p>${copy.attractionsNoResults}</p>` : ''}</div>`}
-      ${(attractionStatus === 'empty' || !results.length && attractionResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-attractions" class="ghost">${copy.weatherRetry}</button><button type="button" id="increase-attraction-radius">${copy.toiletsIncreaseRadius}</button><button type="button" id="another-attraction-city" class="ghost">${copy.attractionsSearchAnother}</button></div>` : ''}
+      ${(['empty', 'timeout', 'service-unavailable', 'offline', 'cached'].includes(attractionStatus) || !results.length && attractionResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-attractions" class="ghost">${copy.weatherRetry}</button><button type="button" id="increase-attraction-radius">${copy.toiletsIncreaseRadius}</button><button type="button" id="another-attraction-city" class="ghost">${copy.attractionsSearchAnother}</button></div>` : ''}
       <p class="map-status">${copy.osmAttribution} · Wikimedia Commons · Wikipedia · Wikidata</p>
     </section>
   </main>`;
