@@ -211,7 +211,7 @@ export function cuisineOptions(restaurants: HalalRestaurant[]) {
   return [...new Set(restaurants.flatMap((restaurant) => restaurant.cuisine))].sort((a, b) => a.localeCompare(b));
 }
 
-export function buildHalalOverpassQuery(latitude: number, longitude: number, radiusKm: number, includePossible = false) {
+export function buildHalalOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
   const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const foodSelectors = ['restaurant', 'fast_food', 'cafe', 'food_court'].flatMap((type) => [
@@ -219,7 +219,6 @@ export function buildHalalOverpassQuery(latitude: number, longitude: number, rad
     `way["amenity"="${type}"]${around}`,
     `relation["amenity"="${type}"]${around}`,
   ]);
-  void includePossible;
   return `[out:json][timeout:25];(${foodSelectors.join(';')};);out center tags;`;
 }
 

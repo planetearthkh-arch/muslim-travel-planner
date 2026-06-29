@@ -643,9 +643,13 @@ button:disabled {
 .place-details dt { color: #5a786f; font-weight: 900; }
 .place-details dd { margin: 0; overflow-wrap: anywhere; color: #17322d; }
 .place-actions a { min-height: 44px; }
+.badge.toilet-public { background: #dcfce7; color: #14532d; }
+.badge.toilet-customers { background: #dbeafe; color: #1e3a8a; }
+.badge.toilet-restricted { background: #fef3c7; color: #78350f; }
+.badge.toilet-unknown { background: #e2e8f0; color: #334155; }
 
 @media (min-width: 800px) {
-  .quick-actions { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .quick-actions { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 }
 
 @media (max-width: 680px) {

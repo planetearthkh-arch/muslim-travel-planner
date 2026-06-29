@@ -15,6 +15,17 @@ import {
   type RestaurantFilters,
 } from './halal-restaurants.js';
 import {
+  buildToiletOverpassQuery,
+  dedupeToilets,
+  filterToilets,
+  normalizePublicToilet,
+  sortToilets,
+  type PublicToilet,
+  type ToiletAccess,
+  type ToiletFilters,
+  type ToiletSort,
+} from './public-toilets.js';
+import {
   CURRENCY_CACHE_MS,
   FRANKFURTER_BASE_URL,
   RATE_CACHE_MS,
@@ -58,14 +69,14 @@ import {
 import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants';
+type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -150,6 +161,7 @@ declare global { interface Window { maplibregl?: MapLibreGlobal } }
 let cityMap: MapLibreMap | undefined;
 let prayerMap: MapLibreMap | undefined;
 let restaurantMap: MapLibreMap | undefined;
+let toiletMap: MapLibreMap | undefined;
 const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
 const englishMapNameExpression = [
@@ -444,11 +456,14 @@ type PrayerCenter = { latitude: number; longitude: number; label: string };
 type RestaurantStatus = PrayerLocationStatus | 'too-many' | 'cached' | 'offline' | 'timeout';
 type RestaurantMode = 'map' | 'list';
 type RestaurantSort = 'distance' | 'name' | 'status' | 'open' | 'cuisine';
+type ToiletStatus = RestaurantStatus;
+type ToiletMode = 'map' | 'list';
 
 type OverpassResponse = { elements?: Array<{ type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> }> };
 type NominatimResult = { lat: string; lon: string; display_name: string };
 
 const prayerRadii = [1, 3, 5, 10, 25, 50] as const;
+const toiletRadii = [0.5, 1, 3, 5, 10, 25] as const;
 let prayerStatus: PrayerLocationStatus = 'idle';
 let prayerMode: PrayerMode = 'map';
 let prayerCenter: PrayerCenter | undefined;
@@ -480,6 +495,19 @@ let restaurantSearchSequence = 0;
 let selectedRestaurantId = '';
 const restaurantCache = new Map<string, { expires: number; results: HalalRestaurant[] }>();
 const destinationCache = new Map<string, { expires: number; center?: PrayerCenter }>();
+let toiletStatus: ToiletStatus = 'idle';
+let toiletMode: ToiletMode = 'map';
+let toiletCenter: PrayerCenter | undefined;
+let toiletRadiusKm: typeof toiletRadii[number] = 1;
+let toiletManualQuery = '';
+let toiletResults: PublicToilet[] = [];
+let toiletFilters: ToiletFilters = { access: 'all', free: false, paid: false, openNow: false, open24: false, wheelchair: false, limitedWheelchair: false, changing: false, female: false, male: false, unisex: false, handwashing: false, shower: false, drinkingWater: false, seated: false, squat: false };
+let toiletSort: ToiletSort = 'distance';
+let toiletMapMoved = false;
+let toiletError = '';
+let toiletSearchTimer: number | undefined;
+let toiletSearchSequence = 0;
+const toiletCache = new Map<string, { expires: number; results: PublicToilet[] }>();
 
 function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
   const controller = new AbortController();
@@ -806,7 +834,7 @@ async function searchHalalRestaurants(center: PrayerCenter) {
   restaurantError = '';
   halalRestaurantsPage();
   try {
-    const body = buildHalalOverpassQuery(center.latitude, center.longitude, restaurantRadiusKm, true);
+    const body = buildHalalOverpassQuery(center.latitude, center.longitude, restaurantRadiusKm);
     const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 20000);
     if (sequence !== restaurantSearchSequence) return;
     const normalized = (data.elements ?? [])
@@ -1044,6 +1072,291 @@ function bindHalalRestaurantsPage() {
     restaurantStatus = 'ready';
     button.textContent = labels[lang].halalCopiedDetails;
   }));
+}
+
+function toiletAccessLabel(access: ToiletAccess, copy: typeof labels[Language]) {
+  if (access === 'public') return copy.toiletsPublicAccess;
+  if (access === 'customers') return copy.toiletsCustomersOnly;
+  if (access === 'restricted') return copy.toiletsRestricted;
+  return copy.toiletsAccessUnknown;
+}
+
+function toiletKindLabel(toilet: PublicToilet, copy: typeof labels[Language]) {
+  if (toilet.kind === 'accessible') return copy.toiletsWheelchair;
+  if (toilet.kind === 'customers') return copy.toiletsCustomersOnly;
+  if (toilet.kind === 'portable') return copy.toiletsPortable;
+  if (toilet.kind === 'venue') return copy.toiletsVenue;
+  if (toilet.kind === 'unknown') return copy.toiletsAccessUnknown;
+  return copy.toiletsStandalone;
+}
+
+function toiletStatusMessage(copy: typeof labels[Language]) {
+  if (toiletStatus === 'requesting') return copy.toiletsRequestingLocation;
+  if (toiletStatus === 'searching') return copy.toiletsSearching;
+  if (toiletStatus === 'denied') return copy.toiletsLocationDenied;
+  if (toiletStatus === 'unavailable') return copy.toiletsLocationUnavailable;
+  if (toiletStatus === 'service-unavailable') return toiletError || copy.toiletsServiceUnavailable;
+  if (toiletStatus === 'timeout') return copy.toiletsTimedOut;
+  if (toiletStatus === 'too-many') return copy.toiletsTooMany;
+  if (toiletStatus === 'cached') return copy.toiletsCached;
+  if (toiletStatus === 'offline') return copy.toiletsOffline;
+  if (toiletStatus === 'empty') return copy.toiletsNoResults;
+  return '';
+}
+
+function filteredToiletResults() {
+  return sortToilets(filterToilets(toiletResults, toiletFilters), toiletSort);
+}
+
+async function searchPublicToilets(center: PrayerCenter) {
+  toiletCenter = center;
+  toiletMapMoved = false;
+  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${toiletRadiusKm}`;
+  const cached = toiletCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    toiletResults = cached.results;
+    toiletStatus = toiletResults.length ? 'cached' : 'empty';
+    publicToiletsPage();
+    return;
+  }
+  const sequence = ++toiletSearchSequence;
+  toiletStatus = 'searching';
+  toiletError = '';
+  publicToiletsPage();
+  try {
+    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body: buildToiletOverpassQuery(center.latitude, center.longitude, toiletRadiusKm) }, 20000);
+    if (sequence !== toiletSearchSequence) return;
+    const normalized = (data.elements ?? [])
+      .map((element) => normalizePublicToilet(element, center))
+      .filter((toilet): toilet is PublicToilet => Boolean(toilet));
+    toiletResults = dedupeToilets(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 350);
+    toiletCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: toiletResults });
+    toiletStatus = normalized.length > 350 ? 'too-many' : toiletResults.length ? 'ready' : 'empty';
+  } catch (error) {
+    console.error(error);
+    if (cached) {
+      toiletResults = cached.results;
+      toiletStatus = navigator.onLine ? 'cached' : 'offline';
+    } else {
+      toiletResults = [];
+      toiletStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
+      toiletError = labels[lang].toiletsServiceUnavailable;
+    }
+  }
+  publicToiletsPage();
+}
+
+function requestToiletLocation() {
+  if (!navigator.geolocation) {
+    toiletStatus = 'unavailable';
+    publicToiletsPage();
+    return;
+  }
+  toiletStatus = 'requesting';
+  publicToiletsPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => void searchPublicToilets({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (error) => {
+      toiletStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      publicToiletsPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+async function searchToiletDestination() {
+  const query = toiletManualQuery.trim();
+  if (!query) return;
+  toiletStatus = 'searching';
+  publicToiletsPage();
+  try {
+    const center = await resolveRestaurantDestination(query);
+    if (!center) {
+      toiletResults = [];
+      toiletStatus = 'empty';
+      publicToiletsPage();
+      return;
+    }
+    await searchPublicToilets(center);
+  } catch (error) {
+    console.error(error);
+    toiletStatus = 'service-unavailable';
+    toiletError = labels[lang].toiletsServiceUnavailable;
+    publicToiletsPage();
+  }
+}
+
+function debouncedToiletSearch(center: PrayerCenter) {
+  if (toiletSearchTimer) window.clearTimeout(toiletSearchTimer);
+  toiletSearchTimer = window.setTimeout(() => void searchPublicToilets(center), 450);
+}
+
+function toiletAppleMapsUrl(toilet: PublicToilet) {
+  return `https://maps.apple.com/?daddr=${toilet.latitude},${toilet.longitude}&q=${encodeURIComponent(toilet.name)}`;
+}
+
+function toiletBrowserDirectionsUrl(toilet: PublicToilet) {
+  return `https://www.openstreetmap.org/directions?to=${toilet.latitude},${toilet.longitude}#map=17/${toilet.latitude}/${toilet.longitude}`;
+}
+
+function initializeToiletMap() {
+  toiletMap?.remove();
+  toiletMap = undefined;
+  const element = document.querySelector<HTMLElement>('#toilet-map');
+  if (!element || !toiletCenter || !window.maplibregl) return;
+  try {
+    element.replaceChildren();
+    toiletMap = new window.maplibregl.Map({
+      container: element,
+      style: openFreeMapStyle,
+      center: [toiletCenter.longitude, toiletCenter.latitude],
+      zoom: toiletRadiusKm <= 1 ? 14 : toiletRadiusKm <= 5 ? 12 : 10,
+      attributionControl: true,
+    });
+    toiletMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
+    new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([toiletCenter.longitude, toiletCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(toiletCenter.label)).addTo(toiletMap);
+    const colors: Record<ToiletAccess, string> = { public: '#15803d', customers: '#2563eb', restricted: '#d97706', unknown: '#64748b' };
+    for (const toilet of filteredToiletResults()) {
+      const icon = toilet.wheelchair === 'yes' ? ' ♿' : toilet.fee === 'paid' ? ' $' : ' WC';
+      new window.maplibregl.Marker({ color: colors[toilet.access] }).setLngLat([toilet.longitude, toilet.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(`${toilet.name}${icon}`)).addTo(toiletMap);
+    }
+    toiletMap.on('moveend', () => {
+      toiletMapMoved = true;
+      const button = document.querySelector<HTMLButtonElement>('#toilet-search-this-area');
+      if (button) button.hidden = false;
+    });
+  } catch {
+    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+  }
+}
+
+function toiletDetails(toilet: PublicToilet, copy: typeof labels[Language]) {
+  const fee = toilet.fee === 'free' ? copy.toiletsFree : toilet.fee === 'paid' ? `${copy.toiletsPaid}${toilet.feeAmount ? `: ${esc(toilet.feeAmount)}` : ''}` : copy.toiletsFeeUnknown;
+  const wheelchair = toilet.wheelchair === 'yes' ? copy.toiletsWheelchair : toilet.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : toilet.wheelchair === 'no' ? copy.toiletsWheelchairNo : copy.toiletsWheelchairUnknown;
+  const rows = [
+    [copy.toiletsInside, toilet.inside],
+    [copy.prayerAddress, toilet.address],
+    [copy.toiletsFeeUnknown, fee],
+    [copy.prayerOpeningHours, toilet.openingHours || copy.halalOpeningUnavailable],
+    [copy.toiletsWheelchair, wheelchair],
+    [copy.toiletsChanging, toilet.changingTable === 'yes' ? `${copy.toiletsChanging}${toilet.changingLocation ? `: ${esc(toilet.changingLocation)}` : ''}` : toilet.changingTable === 'limited' ? copy.toiletsWheelchairLimited : ''],
+    [copy.toiletsFemale, toilet.female ? copy.prayerVerified : ''],
+    [copy.toiletsMale, toilet.male ? copy.prayerVerified : ''],
+    [copy.toiletsUnisex, toilet.unisex ? copy.prayerVerified : ''],
+    [copy.toiletsHandwashing, toilet.handwashing ? copy.prayerVerified : ''],
+    [copy.toiletsSoap, toilet.soap ? copy.prayerVerified : ''],
+    [copy.toiletsPaper, toilet.toiletPaper ? copy.prayerVerified : ''],
+    [copy.toiletsHotWater, toilet.hotWater ? copy.prayerVerified : ''],
+    [copy.toiletsShower, toilet.shower ? copy.prayerVerified : ''],
+    [copy.toiletsDrinkingWater, toilet.drinkingWater ? copy.prayerVerified : ''],
+    [copy.toiletsSeated, toilet.seated ? copy.prayerVerified : ''],
+    [copy.toiletsSquat, toilet.squat ? copy.prayerVerified : ''],
+    [copy.toiletsUrinal, toilet.urinal ? copy.prayerVerified : ''],
+    [copy.toiletsOperator, toilet.operator],
+    [copy.toiletsSupervised, toilet.supervised ? copy.prayerVerified : ''],
+    [copy.prayerWebsite, toilet.website ? `<a href="${esc(toilet.website)}" target="_blank" rel="noopener noreferrer">${esc(toilet.website)}</a>` : ''],
+    [copy.prayerTelephone, toilet.phone],
+  ].filter(([, value]) => Boolean(value));
+  return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+}
+
+function toiletCard(toilet: PublicToilet, copy: typeof labels[Language]) {
+  const openLabel = toilet.openState === 'open' ? copy.halalOpen : toilet.openState === 'closed' ? copy.halalClosed : copy.halalOpeningUnavailable;
+  return `<article class="card toilet-card" aria-label="${esc(toilet.name)}">
+    <div class="card-top"><span>${toilet.distanceKm.toFixed(1)} km · ${toiletKindLabel(toilet, copy)}</span><span class="badge toilet-${toilet.access}">${toiletAccessLabel(toilet.access, copy)}</span></div>
+    <h3>${esc(toilet.name)}</h3>
+    <p>${openLabel}</p>
+    ${toilet.access === 'unknown' ? `<p class="evidence">${copy.toiletsAccessNotice}</p>` : ''}
+    ${toiletDetails(toilet, copy)}
+    <div class="place-actions">
+      <a class="map-link" href="${toilet.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
+      <a class="map-link" href="${toiletAppleMapsUrl(toilet)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
+      <a class="map-link" href="${toiletBrowserDirectionsUrl(toilet)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+    </div>
+  </article>`;
+}
+
+function publicToiletsPage() {
+  if (!root) return;
+  cityMap?.remove();
+  cityMap = undefined;
+  prayerMap?.remove();
+  prayerMap = undefined;
+  restaurantMap?.remove();
+  restaurantMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const results = filteredToiletResults();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `
+    <main dir="${dir}" class="app prayer-app toilet-app">
+      <section class="hero prayer-hero">
+        ${languageSelector()}
+        <p class="eyebrow">${copy.toiletsOpen}</p>
+        <h1>${copy.toiletsTitle}</h1>
+        <p>${copy.toiletsSubtitle}</p>
+        <button type="button" class="ghost hero-action" id="back-from-toilets">${copy.toiletsBack}</button>
+      </section>
+      <section class="panel prayer-panel" aria-live="polite">
+        <p class="notice prayer-notice">${copy.toiletsNotice}</p>
+        <p class="notice prayer-notice">${copy.toiletsAccessNotice}</p>
+        <div class="prayer-actions">
+          <button type="button" id="use-toilet-location">${copy.toiletsUseLocation}</button>
+          <label>${copy.toiletsRadius}<select id="toilet-radius">${toiletRadii.map((radius) => `<option value="${radius}" ${radius === toiletRadiusKm ? 'selected' : ''}>${radius < 1 ? '500 m' : `${radius} km`}</option>`).join('')}</select></label>
+          <form id="manual-toilet-search" class="manual-search"><label>${copy.toiletsManualSearch}<input id="toilet-manual-query" value="${esc(toiletManualQuery)}" placeholder="${copy.toiletsManualPlaceholder}" /></label><button type="submit">${copy.toiletsSearch}</button></form>
+        </div>
+        <p class="prayer-status ${toiletStatus}" role="status">${toiletStatusMessage(copy)}</p>
+        <div class="segmented" role="tablist" aria-label="${copy.toiletsTitle}">
+          <button type="button" class="${toiletMode === 'map' ? 'active' : 'ghost'}" data-toilet-mode="map">${copy.toiletsMapView}</button>
+          <button type="button" class="${toiletMode === 'list' ? 'active' : 'ghost'}" data-toilet-mode="list">${copy.toiletsListView}</button>
+        </div>
+        <div class="prayer-filters" aria-label="${copy.toiletsTitle}">
+          <select id="toilet-access-filter"><option value="all">${copy.toiletsAllResults}</option><option value="public" ${toiletFilters.access === 'public' ? 'selected' : ''}>${copy.toiletsPublicAccess}</option><option value="customers" ${toiletFilters.access === 'customers' ? 'selected' : ''}>${copy.toiletsCustomersOnly}</option><option value="unknown" ${toiletFilters.access === 'unknown' ? 'selected' : ''}>${copy.toiletsAccessUnknown}</option></select>
+          ${['free', 'paid', 'openNow', 'open24', 'wheelchair', 'limitedWheelchair', 'changing', 'female', 'male', 'unisex', 'handwashing', 'shower', 'drinkingWater', 'seated', 'squat'].map((key) => {
+            const label = ({ free: copy.toiletsFree, paid: copy.toiletsPaid, openNow: copy.toiletsOpenNow, open24: copy.toiletsOpen24, wheelchair: copy.toiletsWheelchair, limitedWheelchair: copy.toiletsWheelchairLimited, changing: copy.toiletsChanging, female: copy.toiletsFemale, male: copy.toiletsMale, unisex: copy.toiletsUnisex, handwashing: copy.toiletsHandwashing, shower: copy.toiletsShower, drinkingWater: copy.toiletsDrinkingWater, seated: copy.toiletsSeated, squat: copy.toiletsSquat } as Record<string, string>)[key];
+            return `<label class="inline-check"><input type="checkbox" data-toilet-filter="${key}" ${toiletFilters[key as keyof ToiletFilters] ? 'checked' : ''}/> ${label}</label>`;
+          }).join('')}
+          <label>${copy.toiletsSort}<select id="toilet-sort"><option value="distance" ${toiletSort === 'distance' ? 'selected' : ''}>${copy.toiletsNearest}</option><option value="name" ${toiletSort === 'name' ? 'selected' : ''}>${copy.toiletsSortName}</option><option value="access" ${toiletSort === 'access' ? 'selected' : ''}>${copy.toiletsSortAccess}</option><option value="free" ${toiletSort === 'free' ? 'selected' : ''}>${copy.toiletsSortFree}</option><option value="open" ${toiletSort === 'open' ? 'selected' : ''}>${copy.toiletsSortOpen}</option><option value="accessible" ${toiletSort === 'accessible' ? 'selected' : ''}>${copy.toiletsSortAccessible}</option></select></label>
+        </div>
+        <div class="place-actions">
+          <button type="button" id="toilet-search-this-area" class="ghost" ${toiletMapMoved ? '' : 'hidden'}>${copy.toiletsSearchThisArea}</button>
+          <button type="button" id="toilet-recentre" class="ghost">${copy.toiletsRecentre}</button>
+          <button type="button" id="toilet-fit-results" class="ghost">${copy.toiletsFitResults}</button>
+        </div>
+        <div class="legend halal-legend"><strong>${copy.toiletsLegend}</strong><span class="badge toilet-public">WC ${copy.toiletsPublicAccess}</span><span class="badge toilet-customers">WC ${copy.toiletsCustomersOnly}</span><span class="badge toilet-unknown">WC ${copy.toiletsAccessUnknown}</span><span class="badge toilet-restricted">WC ${copy.toiletsRestricted}</span><span class="badge verified">♿ ${copy.toiletsWheelchair}</span></div>
+        ${toiletMode === 'map' ? `<div id="toilet-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
+        ${(toiletStatus === 'empty' || !results.length && toiletResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-toilets" class="ghost">${copy.toiletsRetry}</button><button type="button" id="increase-toilet-radius">${copy.toiletsIncreaseRadius}</button><button type="button" id="another-toilet-city" class="ghost">${copy.toiletsSearchAnotherCity}</button></div>` : ''}
+        <div class="place-list">${results.length ? results.map((toilet) => toiletCard(toilet, copy)).join('') : toiletStatus === 'ready' ? `<p>${copy.toiletsNoPublic}</p>` : ''}</div>
+        <p class="map-status">${copy.osmAttribution}</p>
+      </section>
+    </main>`;
+  bindPublicToiletsPage();
+  if (toiletMode === 'map') initializeToiletMap();
+}
+
+function bindPublicToiletsPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; publicToiletsPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-toilets')?.addEventListener('click', () => { view = 'planner'; toiletMap?.remove(); toiletMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#use-toilet-location')?.addEventListener('click', requestToiletLocation);
+  document.querySelector<HTMLSelectElement>('#toilet-radius')?.addEventListener('change', (event) => { toiletRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof toiletRadii[number]; if (toiletCenter) void searchPublicToilets(toiletCenter); });
+  document.querySelector<HTMLFormElement>('#manual-toilet-search')?.addEventListener('submit', (event) => { event.preventDefault(); toiletManualQuery = document.querySelector<HTMLInputElement>('#toilet-manual-query')?.value ?? ''; void searchToiletDestination(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-toilet-mode]').forEach((button) => button.addEventListener('click', () => { toiletMode = button.dataset.toiletMode as ToiletMode; publicToiletsPage(); }));
+  document.querySelector<HTMLSelectElement>('#toilet-access-filter')?.addEventListener('change', (event) => { toiletFilters = { ...toiletFilters, access: (event.target as HTMLSelectElement).value as ToiletFilters['access'] }; publicToiletsPage(); });
+  document.querySelectorAll<HTMLInputElement>('[data-toilet-filter]').forEach((input) => input.addEventListener('change', () => { toiletFilters = { ...toiletFilters, [input.dataset.toiletFilter ?? 'free']: input.checked }; publicToiletsPage(); }));
+  document.querySelector<HTMLSelectElement>('#toilet-sort')?.addEventListener('change', (event) => { toiletSort = (event.target as HTMLSelectElement).value as ToiletSort; publicToiletsPage(); });
+  document.querySelector<HTMLButtonElement>('#retry-toilets')?.addEventListener('click', () => { if (toiletCenter) void searchPublicToilets(toiletCenter); else requestToiletLocation(); });
+  document.querySelector<HTMLButtonElement>('#increase-toilet-radius')?.addEventListener('click', () => { const next = toiletRadii.find((radius) => radius > toiletRadiusKm); if (next) toiletRadiusKm = next; if (toiletCenter) void searchPublicToilets(toiletCenter); });
+  document.querySelector<HTMLButtonElement>('#another-toilet-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#toilet-manual-query')?.focus());
+  document.querySelector<HTMLButtonElement>('#toilet-search-this-area')?.addEventListener('click', () => { const center = toiletMap?.getCenter?.(); if (!center) return; debouncedToiletSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].toiletsSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#toilet-recentre')?.addEventListener('click', requestToiletLocation);
+  document.querySelector<HTMLButtonElement>('#toilet-fit-results')?.addEventListener('click', () => {
+    const results = filteredToiletResults();
+    if (!toiletMap?.fitBounds || !results.length) return;
+    const lngs = results.map((toilet) => toilet.longitude);
+    const lats = results.map((toilet) => toilet.latitude);
+    toiletMap.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 60, maxZoom: 15 });
+  });
 }
 
 function selectedCity() {
@@ -1303,6 +1616,10 @@ function render() {
     halalRestaurantsPage();
     return;
   }
+  if (view === 'public-toilets') {
+    publicToiletsPage();
+    return;
+  }
   document.body.classList.remove('map-expanded');
   const copy = labels[lang];
   const dir = languageDirection(lang);
@@ -1328,6 +1645,7 @@ function render() {
         <article class="quick-action"><div><h2>${copy.prayerSpacesTitle}</h2><p>${copy.prayerSpacesSubtitle}</p></div><button type="button" id="open-prayer-spaces">${copy.prayerSpacesOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.moneyTitle}</h2><p>${copy.moneySubtitle}</p></div><button type="button" id="open-money">${copy.moneyOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.halalRestaurantsTitle}</h2><p>${copy.halalRestaurantsSubtitle}</p></div><button type="button" id="open-halal-restaurants">${copy.halalRestaurantsOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.toiletsTitle}</h2><p>${copy.toiletsSubtitle}</p></div><button type="button" id="open-public-toilets">${copy.toiletsOpen}</button></article>
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
@@ -1386,6 +1704,11 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#open-halal-restaurants')?.addEventListener('click', () => {
     view = 'halal-restaurants';
     if (window.location.hash !== '#halal-restaurants') window.location.hash = 'halal-restaurants';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-public-toilets')?.addEventListener('click', () => {
+    view = 'public-toilets';
+    if (window.location.hash !== '#public-toilets') window.location.hash = 'public-toilets';
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {

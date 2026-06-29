@@ -30,6 +30,19 @@ import {
   type HalalRestaurant,
   type RestaurantFilters,
 } from './halal-restaurants.js';
+import {
+  buildToiletOverpassQuery,
+  changingTable,
+  classifyToiletAccess,
+  dedupeToilets,
+  filterToilets,
+  normalizePublicToilet,
+  sortToilets,
+  toiletFee,
+  wheelchairAccess,
+  type PublicToilet,
+  type ToiletFilters,
+} from './public-toilets.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -388,6 +401,103 @@ test('includes halal restaurant timeout, cache, denial, empty, and language labe
   assert.equal(labels.en.halalNoResults, 'No mapped halal restaurants were found in this area. This does not necessarily mean that none exist.');
   assert.equal(labels.ar.halalRestaurantsTitle.length > 0, true);
   assert.equal(labels.id.halalRestaurantsTitle.length > 0, true);
+});
+
+test('classifies public toilet access from structured OpenStreetMap tags', () => {
+  assert.equal(classifyToiletAccess({ amenity: 'toilets' }), 'public');
+  assert.equal(classifyToiletAccess({ building: 'toilets' }), 'public');
+  assert.equal(classifyToiletAccess({ amenity: 'cafe', toilets: 'yes' }), 'unknown');
+  assert.equal(classifyToiletAccess({ amenity: 'cafe' }), undefined);
+  assert.equal(classifyToiletAccess({ amenity: 'toilets', access: 'yes' }), 'public');
+  assert.equal(classifyToiletAccess({ amenity: 'toilets', access: 'customers' }), 'customers');
+  assert.equal(classifyToiletAccess({ amenity: 'toilets', access: 'private' }), undefined);
+  assert.equal(classifyToiletAccess({ amenity: 'toilets', access: 'no' }), undefined);
+  assert.equal(classifyToiletAccess({ amenity: 'cafe', toilets: 'yes', 'toilets:access': 'yes' }), 'public');
+  assert.equal(classifyToiletAccess({ amenity: 'cafe', toilets: 'yes', 'toilets:access': 'customers' }), 'customers');
+  assert.equal(classifyToiletAccess({ amenity: 'cafe', toilets: 'no' }), undefined);
+  assert.equal(classifyToiletAccess({ amenity: 'toilets', access: 'key' }), 'restricted');
+});
+
+test('interprets public toilet fees, wheelchair access, and baby-changing tags', () => {
+  assert.deepEqual(toiletFee({ fee: 'no' }), { fee: 'free', amount: '' });
+  assert.deepEqual(toiletFee({ fee: 'yes' }), { fee: 'paid', amount: '' });
+  assert.deepEqual(toiletFee({}), { fee: 'unknown', amount: '' });
+  assert.deepEqual(toiletFee({ fee: '€1' }), { fee: 'paid', amount: '€1' });
+  assert.equal(wheelchairAccess({ wheelchair: 'yes' }), 'yes');
+  assert.equal(wheelchairAccess({ wheelchair: 'limited' }), 'limited');
+  assert.equal(wheelchairAccess({ wheelchair: 'no' }), 'no');
+  assert.equal(wheelchairAccess({ wheelchair: 'no', 'toilets:wheelchair': 'yes' }), 'yes');
+  assert.equal(changingTable({ changing_table: 'yes' }), 'yes');
+  assert.equal(changingTable({ changing_table: 'limited' }), 'limited');
+  assert.equal(changingTable({ changing_table: 'no' }), 'no');
+});
+
+test('normalizes public toilets from node, way, and relation coordinates', () => {
+  const origin = { latitude: 51.5, longitude: -0.1 };
+  const node = normalizePublicToilet({ type: 'node', id: 1, lat: 51.501, lon: -0.101, tags: { amenity: 'toilets', name: 'Station WC', fee: 'no', opening_hours: '24/7', male: 'yes', female: 'yes', unisex: 'yes', handwashing: 'yes', shower: 'yes', drinking_water: 'yes', 'toilets:position:seated': 'yes' } }, origin);
+  const way = normalizePublicToilet({ type: 'way', id: 2, center: { lat: 51.502, lon: -0.102 }, tags: { building: 'toilets', wheelchair: 'limited', changing_table: 'yes', 'toilets:position:squat': 'yes' } }, origin);
+  const relation = normalizePublicToilet({ type: 'relation', id: 3, center: { lat: 51.503, lon: -0.103 }, tags: { amenity: 'cafe', name: 'Museum Cafe', toilets: 'yes', 'toilets:access': 'customers', fee: 'yes' } }, origin);
+  assert.equal(node?.latitude, 51.501);
+  assert.equal(way?.longitude, -0.102);
+  assert.equal(relation?.inside, 'Museum Cafe');
+  assert.equal(relation?.access, 'customers');
+  assert.equal(node?.fee, 'free');
+  assert.equal(way?.wheelchair, 'limited');
+  assert.equal(way?.changingTable, 'yes');
+  assert.equal(node?.male, true);
+  assert.equal(node?.female, true);
+  assert.equal(node?.unisex, true);
+  assert.equal(node?.handwashing, true);
+  assert.equal(node?.shower, true);
+  assert.equal(node?.drinkingWater, true);
+  assert.equal(node?.seated, true);
+  assert.equal(way?.squat, true);
+  assert.equal(openingState(node?.openingHours ?? ''), 'open');
+  assert.equal(Number((node?.distanceKm ?? 0).toFixed(2)) > 0, true);
+});
+
+test('deduplicates, filters, and sorts public toilets', () => {
+  const origin = { latitude: 0, longitude: 0 };
+  const toilets = [
+    normalizePublicToilet({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { amenity: 'toilets', name: 'Far WC', fee: 'yes', wheelchair: 'yes', opening_hours: '24/7' } }, origin),
+    normalizePublicToilet({ type: 'way', id: 2, center: { lat: 0.01, lon: 0 }, tags: { amenity: 'toilets', name: 'Near WC', fee: 'no', wheelchair: 'limited' } }, origin),
+    normalizePublicToilet({ type: 'relation', id: 3, center: { lat: 0.010004, lon: 0.000004 }, tags: { amenity: 'toilets', name: 'Near WC', access: 'customers' } }, origin),
+  ].filter((toilet): toilet is PublicToilet => Boolean(toilet));
+  const deduped = dedupeToilets(toilets);
+  assert.equal(deduped.length, 2);
+  assert.equal(sortToilets(deduped, 'distance')[0]?.name, 'Near WC');
+  assert.equal(sortToilets(deduped, 'free')[0]?.fee, 'free');
+  assert.equal(sortToilets(deduped, 'accessible')[0]?.wheelchair, 'yes');
+
+  const filters: ToiletFilters = { access: 'public', free: true, paid: false, openNow: false, open24: false, wheelchair: false, limitedWheelchair: true, changing: false, female: false, male: false, unisex: false, handwashing: false, shower: false, drinkingWater: false, seated: false, squat: false };
+  const filtered = filterToilets(deduped, filters);
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0]?.name, 'Near WC');
+});
+
+test('uses safe public toilet fallbacks and Latin-readable names', () => {
+  const origin = { latitude: 0, longitude: 0 };
+  const fallback = normalizePublicToilet({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'toilets' } }, origin);
+  const accessible = normalizePublicToilet({ type: 'node', id: 2, lat: 0, lon: 0, tags: { amenity: 'toilets', wheelchair: 'yes' } }, origin);
+  const venue = normalizePublicToilet({ type: 'node', id: 3, lat: 0, lon: 0, tags: { amenity: 'library', name: 'Central Library', toilets: 'yes' } }, origin);
+  const transliterated = normalizePublicToilet({ type: 'node', id: 4, lat: 0, lon: 0, tags: { amenity: 'toilets', name: 'دورات مياه' } }, origin);
+  assert.equal(fallback?.name, 'Public Toilets');
+  assert.equal(accessible?.name, 'Accessible Public Toilets');
+  assert.equal(venue?.name, 'Central Library Toilets');
+  assert.equal(latinOnly(transliterated?.name ?? ''), true);
+});
+
+test('builds bounded toilet Overpass queries and includes toilet language states', () => {
+  const query = buildToiletOverpassQuery(51.5, -0.1, 50);
+  assert.equal(query.includes('around:25000,51.5,-0.1'), true);
+  assert.equal(query.includes('["amenity"="toilets"]'), true);
+  assert.equal(query.includes('["toilets:access"]'), true);
+  assert.equal(labels.en.toiletsLocationDenied.includes('denied'), true);
+  assert.equal(labels.en.toiletsTimedOut.includes('timed out'), true);
+  assert.equal(labels.en.toiletsCached.includes('cached'), true);
+  assert.equal(labels.en.toiletsNoResults, 'No mapped public toilets were found in this area. This does not necessarily mean that none exist.');
+  assert.equal(labels.ar.toiletsTitle.length > 0, true);
+  assert.equal(labels.id.toiletsTitle.length > 0, true);
 });
 
 test('rendered prayer-place titles use the shared English-name safety function', async () => {
