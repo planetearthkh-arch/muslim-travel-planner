@@ -70,6 +70,24 @@ import {
   weatherCodeInfo,
   type WeatherUnits,
 } from './weather.js';
+import {
+  acceptableCommonsLicense,
+  attractionName,
+  buildAttractionOverpassQuery,
+  canAttachExternalSource,
+  categoryExplanation,
+  classifyAttraction,
+  dedupeAttractions,
+  enrichAttraction,
+  filterAttractions,
+  isMappedAttraction,
+  normalizeAttraction,
+  normalizeCommonsImage,
+  sortAttractions,
+  summarizeWikipediaExtract,
+  type Attraction,
+  type AttractionFilters,
+} from './attractions.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -725,6 +743,101 @@ test('includes weather state and language labels', () => {
   assert.equal(labels.en.weatherNoCached.includes('No cached'), true);
   assert.equal(labels.ar.weatherTitle.length > 0, true);
   assert.equal(labels.id.weatherTitle.length > 0, true);
+});
+
+test('discovers structured OpenStreetMap attractions and excludes ordinary places', () => {
+  assert.equal(isMappedAttraction({ tourism: 'attraction' }), true);
+  assert.equal(isMappedAttraction({ tourism: 'museum' }), true);
+  assert.equal(isMappedAttraction({ tourism: 'viewpoint' }), true);
+  assert.equal(isMappedAttraction({ natural: 'waterfall', tourism: 'attraction' }), true);
+  assert.equal(isMappedAttraction({ building: 'yes', name: 'Office' }), false);
+  assert.equal(isMappedAttraction({ leisure: 'park' }), false);
+});
+
+test('classifies attraction categories from structured tags', () => {
+  assert.equal(classifyAttraction({ historic: 'castle' }), 'castle');
+  assert.equal(classifyAttraction({ historic: 'archaeological_site' }), 'archaeological');
+  assert.equal(classifyAttraction({ historic: 'mosque' }), 'religious');
+  assert.equal(classifyAttraction({ tourism: 'gallery' }), 'gallery');
+  assert.equal(classifyAttraction({ leisure: 'nature_reserve' }), 'natural');
+});
+
+test('normalizes attraction coordinates, names, fallbacks, and distance', () => {
+  const origin = { latitude: 51.5, longitude: -0.1 };
+  const node = normalizeAttraction({ type: 'node', id: 1, lat: 51.501, lon: -0.101, tags: { tourism: 'museum', 'name:en': 'Test Museum', fee: 'no', wheelchair: 'yes' } }, origin);
+  const way = normalizeAttraction({ type: 'way', id: 2, center: { lat: 51.502, lon: -0.102 }, tags: { historic: 'monument', name: 'نصب تذكاري' } }, origin);
+  const relation = normalizeAttraction({ type: 'relation', id: 3, center: { lat: 51.503, lon: -0.103 }, tags: { tourism: 'viewpoint' } }, origin);
+  assert.equal(node?.name, 'Test Museum');
+  assert.equal(node?.fee, 'free');
+  assert.equal(node?.wheelchair, 'yes');
+  assert.equal(way?.category, 'monument');
+  assert.equal(latinOnly(way?.name ?? ''), true);
+  assert.equal(relation?.name, 'Scenic Viewpoint');
+  assert.equal(Number((node?.distanceKm ?? 0).toFixed(2)) > 0, true);
+});
+
+test('prioritizes English attraction names from source tags', () => {
+  assert.equal(attractionName({ name: 'متحف', 'name:en': 'English Museum' }, 'museum'), 'English Museum');
+  assert.equal(attractionName({ wikipedia: 'en:British_Museum' }, 'museum'), 'British Museum');
+  assert.equal(attractionName({}, 'natural'), 'Natural Attraction');
+});
+
+test('matches exact attraction sources and rejects ambiguous matches', () => {
+  const attraction = normalizeAttraction({ type: 'node', id: 1, lat: 0, lon: 0, tags: { tourism: 'museum', 'name:en': 'Exact Museum', wikidata: 'Q1', wikipedia: 'en:Exact_Museum', wikimedia_commons: 'Category:Exact Museum' } }, { latitude: 0, longitude: 0 }) as Attraction;
+  assert.equal(canAttachExternalSource(attraction, { wikidata: 'Q1' }), true);
+  assert.equal(canAttachExternalSource(attraction, { wikipedia: 'Exact Museum' }), true);
+  assert.equal(canAttachExternalSource(attraction, { commons: 'Category:Exact Museum' }), true);
+  assert.equal(canAttachExternalSource(attraction, { name: 'Exact Museum', category: 'museum', distanceKm: 0.1 }), true);
+  assert.equal(canAttachExternalSource(attraction, { name: 'Exact Museum', category: 'gallery', distanceKm: 0.1 }), false);
+  assert.equal(canAttachExternalSource(attraction, { name: 'Similar Museum', category: 'museum', distanceKm: 0.1 }), false);
+});
+
+test('handles Wikimedia Commons metadata, licences, and placeholders', () => {
+  const raw = { query: { pages: { 1: { title: 'File:Test.jpg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/test.jpg', descriptionurl: 'https://commons.wikimedia.org/wiki/File:Test.jpg', extmetadata: { Artist: { value: 'Photographer' }, LicenseShortName: { value: 'CC BY-SA 4.0' }, LicenseUrl: { value: 'https://creativecommons.org/licenses/by-sa/4.0/' }, Credit: { value: 'Credit line' } } }] } } } };
+  const photo = normalizeCommonsImage(raw);
+  assert.equal(photo?.creator, 'Photographer');
+  assert.equal(photo?.license, 'CC BY-SA 4.0');
+  assert.equal(acceptableCommonsLicense({ thumbnailUrl: 'x', sourceUrl: 'y', license: 'All rights reserved' }), false);
+  assert.equal(categoryExplanation('viewpoint'), 'This is a mapped scenic viewpoint overlooking the surrounding area.');
+});
+
+test('creates English summaries from Wikipedia, Wikidata, and OSM descriptions', () => {
+  const attraction = normalizeAttraction({ type: 'node', id: 1, lat: 0, lon: 0, tags: { tourism: 'museum', 'description:en': 'OSM English description.' } }, { latitude: 0, longitude: 0 }) as Attraction;
+  assert.equal(summarizeWikipediaExtract('Sentence one. Sentence two. Sentence three. Sentence four.').split('.').length <= 4, true);
+  assert.equal(enrichAttraction(attraction, { wikipediaExtract: 'A museum. It has exhibitions.' }).historySource, 'Wikipedia');
+  assert.equal(enrichAttraction(attraction, { wikidataDescription: 'Wikidata description' }).history, 'Wikidata description');
+  assert.equal(enrichAttraction(attraction, { osmDescription: 'OSM description' }).history, 'OSM description');
+  assert.equal(enrichAttraction({ ...attraction, osmDescription: '' }).history, 'This is a mapped museum or visitor exhibition site.');
+});
+
+test('deduplicates, filters, sorts, and queries attractions', () => {
+  const origin = { latitude: 0, longitude: 0 };
+  const attractions = [
+    enrichAttraction(normalizeAttraction({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { tourism: 'museum', 'name:en': 'Far Museum', opening_hours: '24/7' } }, origin) as Attraction, { wikipediaExtract: 'A museum.' }),
+    normalizeAttraction({ type: 'way', id: 2, center: { lat: 0.01, lon: 0 }, tags: { tourism: 'viewpoint', 'name:en': 'Near View', fee: 'no', wheelchair: 'yes' } }, origin),
+    normalizeAttraction({ type: 'relation', id: 3, center: { lat: 0.010004, lon: 0.000004 }, tags: { tourism: 'viewpoint', 'name:en': 'Near View' } }, origin),
+  ].filter((attraction): attraction is Attraction => Boolean(attraction));
+  const deduped = dedupeAttractions(attractions);
+  assert.equal(deduped.length, 2);
+  const filters: AttractionFilters = { category: 'viewpoint', photo: false, history: false, openNow: false, free: true, wheelchair: true };
+  assert.equal(filterAttractions(deduped, filters)[0]?.name, 'Near View');
+  assert.equal(sortAttractions(deduped, 'distance')[0]?.name, 'Near View');
+  assert.equal(sortAttractions(deduped, 'history')[0]?.name, 'Far Museum');
+  const query = buildAttractionOverpassQuery(51.5, -0.1, 99);
+  assert.equal(query.includes('around:50000,51.5,-0.1'), true);
+  assert.equal(query.includes('["tourism"~'), true);
+  assert.equal(query.includes('["historic"]'), true);
+});
+
+test('includes attraction state and language labels while keeping content English', () => {
+  assert.equal(labels.en.attractionsLocationDenied.includes('denied'), true);
+  assert.equal(labels.en.attractionsTimedOut.includes('timed out'), true);
+  assert.equal(labels.en.attractionsCached.includes('cached'), true);
+  assert.equal(labels.en.attractionsNoResults, 'No mapped attractions were found in this area. This does not necessarily mean that none exist.');
+  assert.equal(labels.ar.attractionsTitle.length > 0, true);
+  assert.equal(labels.id.attractionsTitle.length > 0, true);
+  const englishSummary = categoryExplanation('natural');
+  assert.equal(/[A-Za-z]/.test(englishSummary), true);
 });
 
 test('rendered prayer-place titles use the shared English-name safety function', async () => {

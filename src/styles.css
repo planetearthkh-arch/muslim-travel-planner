@@ -686,6 +686,59 @@ button:disabled {
   text-transform: uppercase;
 }
 .weather-current h2 { font-size: clamp(2rem, 8vw, 4rem); margin-bottom: 8px; }
+.attraction-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.attraction-photo,
+.attraction-placeholder {
+  margin: 0 0 12px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #e8f7f1;
+}
+.attraction-photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.attraction-photo.large img,
+.attraction-placeholder.large { aspect-ratio: 16 / 9; }
+.attraction-photo figcaption {
+  padding: 8px 10px;
+  font-size: .85rem;
+  color: #31534c;
+}
+.attraction-placeholder {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 20px;
+  color: #0f766e;
+  font-weight: 900;
+  text-align: center;
+}
+.attraction-placeholder small { display: block; color: #31534c; font-weight: 700; }
+.attraction-history { color: #17322d; }
+.attraction-detail { grid-column: 1 / -1; }
+.badge.attraction-historic,
+.badge.attraction-monument,
+.badge.attraction-archaeological,
+.badge.attraction-castle,
+.badge.attraction-religious { background: #fef3c7; color: #78350f; }
+.badge.attraction-museum,
+.badge.attraction-gallery,
+.badge.attraction-cultural,
+.badge.attraction-artwork { background: #ede9fe; color: #4c1d95; }
+.badge.attraction-viewpoint,
+.badge.attraction-natural,
+.badge.attraction-park { background: #dcfce7; color: #14532d; }
+.badge.attraction-zoo,
+.badge.attraction-theme,
+.badge.attraction-other { background: #dbeafe; color: #1e3a8a; }
 
 @media (min-width: 800px) {
   .quick-actions { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }

@@ -56,6 +56,20 @@ import {
   type WeatherUnits,
 } from './weather.js';
 import {
+  buildAttractionOverpassQuery,
+  categoryExplanation,
+  dedupeAttractions,
+  enrichAttraction,
+  filterAttractions,
+  normalizeAttraction,
+  sortAttractions,
+  type Attraction,
+  type AttractionCategory,
+  type AttractionFilters,
+  type AttractionSort,
+  type AttractionView,
+} from './attractions.js';
+import {
   CURRENCY_CACHE_MS,
   FRANKFURTER_BASE_URL,
   RATE_CACHE_MS,
@@ -99,14 +113,14 @@ import {
 import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'weather';
+type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'weather' | 'attractions';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#weather' ? 'weather' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -193,6 +207,7 @@ let prayerMap: MapLibreMap | undefined;
 let restaurantMap: MapLibreMap | undefined;
 let toiletMap: MapLibreMap | undefined;
 let carRentalMap: MapLibreMap | undefined;
+let attractionsMap: MapLibreMap | undefined;
 const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
 const englishMapNameExpression = [
@@ -494,6 +509,7 @@ type CarRentalMode = 'map' | 'list';
 type CarRentalSearchKind = 'destination' | 'airport' | 'station';
 type WeatherStatus = 'idle' | 'requesting' | 'loading' | 'ready' | 'updated' | 'denied' | 'unavailable' | 'service-unavailable' | 'timeout' | 'invalid' | 'offline' | 'cached' | 'no-cache' | 'unsupported';
 type WeatherLocation = { latitude: number; longitude: number; label: string; country?: string; timezone?: string };
+type AttractionStatus = RestaurantStatus | 'photos' | 'history';
 
 type OverpassResponse = { elements?: Array<{ type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> }> };
 type NominatimResult = { lat: string; lon: string; display_name: string };
@@ -501,6 +517,7 @@ type NominatimResult = { lat: string; lon: string; display_name: string };
 const prayerRadii = [1, 3, 5, 10, 25, 50] as const;
 const toiletRadii = [0.5, 1, 3, 5, 10, 25] as const;
 const carRentalRadii = [3, 5, 10, 25, 50, 100] as const;
+const attractionRadii = [1, 3, 5, 10, 25, 50] as const;
 let prayerStatus: PrayerLocationStatus = 'idle';
 let prayerMode: PrayerMode = 'map';
 let prayerCenter: PrayerCenter | undefined;
@@ -572,6 +589,20 @@ let weatherUnits: WeatherUnits = {
   wind: (localStorage.getItem('mtp-weather-wind') as WeatherUnits['wind']) || 'kmh',
   precipitation: (localStorage.getItem('mtp-weather-precip') as WeatherUnits['precipitation']) || 'mm',
 };
+let attractionStatus: AttractionStatus = 'idle';
+let attractionView: AttractionView = 'photos';
+let attractionCenter: PrayerCenter | undefined;
+let attractionRadiusKm: typeof attractionRadii[number] = 5;
+let attractionManualQuery = '';
+let attractionResults: Attraction[] = [];
+let attractionFilters: AttractionFilters = { category: 'all', photo: false, history: false, openNow: false, free: false, wheelchair: false };
+let attractionSort: AttractionSort = 'distance';
+let attractionMapMoved = false;
+let attractionError = '';
+let attractionSearchTimer: number | undefined;
+let attractionSearchSequence = 0;
+let selectedAttractionId = '';
+const attractionCache = new Map<string, { expires: number; results: Attraction[] }>();
 
 function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
   const controller = new AbortController();
@@ -1955,6 +1986,277 @@ function bindWeatherPage() {
   document.querySelector<HTMLSelectElement>('#weather-precip-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, precipitation: (event.target as HTMLSelectElement).value as WeatherUnits['precipitation'] }; localStorage.setItem('mtp-weather-precip', weatherUnits.precipitation); if (weatherLocation) void loadWeather(weatherLocation, true); });
 }
 
+function attractionCategoryLabel(category: AttractionCategory, copy: typeof labels[Language]) {
+  const values: Record<AttractionCategory, string> = {
+    historic: copy.attractionsHistoric,
+    museum: copy.attractionsMuseum,
+    gallery: copy.attractionsGallery,
+    monument: copy.attractionsMonument,
+    archaeological: copy.attractionsArchaeological,
+    castle: copy.attractionsCastle,
+    religious: copy.attractionsReligious,
+    viewpoint: copy.attractionsViewpoint,
+    natural: copy.attractionsNatural,
+    park: copy.attractionsPark,
+    zoo: copy.attractionsZoo,
+    theme: copy.attractionsTheme,
+    artwork: copy.attractionsArtwork,
+    cultural: copy.attractionsCultural,
+    other: copy.attractionsOther,
+  };
+  return values[category];
+}
+
+function attractionStatusMessage(copy: typeof labels[Language]) {
+  if (attractionStatus === 'requesting') return copy.attractionsRequestingLocation;
+  if (attractionStatus === 'searching') return copy.attractionsSearching;
+  if (attractionStatus === 'photos') return copy.attractionsLoadingPhotos;
+  if (attractionStatus === 'history') return copy.attractionsLoadingHistory;
+  if (attractionStatus === 'denied') return copy.attractionsLocationDenied;
+  if (attractionStatus === 'unavailable') return copy.attractionsLocationUnavailable;
+  if (attractionStatus === 'service-unavailable') return attractionError || copy.attractionsServiceUnavailable;
+  if (attractionStatus === 'timeout') return copy.attractionsTimedOut;
+  if (attractionStatus === 'offline') return copy.attractionsOffline;
+  if (attractionStatus === 'cached') return copy.attractionsCached;
+  if (attractionStatus === 'empty') return copy.attractionsNoResults;
+  return '';
+}
+
+function filteredAttractionResults() {
+  return sortAttractions(filterAttractions(attractionResults, attractionFilters), attractionSort);
+}
+
+function destinationAttractionCenter(city = selectedCity()): PrayerCenter {
+  return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}` };
+}
+
+async function searchAttractions(center: PrayerCenter) {
+  attractionCenter = center;
+  attractionMapMoved = false;
+  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${attractionRadiusKm}`;
+  const cached = attractionCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    attractionResults = cached.results;
+    attractionStatus = attractionResults.length ? 'cached' : 'empty';
+    attractionsPage();
+    return;
+  }
+  const sequence = ++attractionSearchSequence;
+  attractionStatus = 'searching';
+  attractionError = '';
+  attractionsPage();
+  try {
+    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body: buildAttractionOverpassQuery(center.latitude, center.longitude, attractionRadiusKm) }, 20000);
+    if (sequence !== attractionSearchSequence) return;
+    const normalized = (data.elements ?? [])
+      .map((element) => normalizeAttraction(element, center))
+      .filter((attraction): attraction is Attraction => Boolean(attraction))
+      .map((attraction) => enrichAttraction(attraction, { osmDescription: attraction.osmDescription }));
+    attractionResults = dedupeAttractions(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 250);
+    attractionCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
+    attractionStatus = attractionResults.length ? 'ready' : 'empty';
+  } catch (error) {
+    console.error(error);
+    if (cached) {
+      attractionResults = cached.results;
+      attractionStatus = navigator.onLine ? 'cached' : 'offline';
+    } else {
+      attractionResults = [];
+      attractionStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
+      attractionError = labels[lang].attractionsServiceUnavailable;
+    }
+  }
+  attractionsPage();
+}
+
+function requestAttractionLocation() {
+  if (!navigator.geolocation) {
+    attractionStatus = 'unavailable';
+    attractionsPage();
+    return;
+  }
+  attractionStatus = 'requesting';
+  attractionsPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => void searchAttractions({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (error) => {
+      attractionStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      attractionsPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+async function searchAttractionDestination() {
+  const query = attractionManualQuery.trim();
+  if (!query) return;
+  const city = cities.find((candidate) => candidate.city.toLowerCase() === query.toLowerCase());
+  if (city) {
+    await searchAttractions(destinationAttractionCenter(city));
+    return;
+  }
+  attractionStatus = 'searching';
+  attractionsPage();
+  const center = await resolveRestaurantDestination(query);
+  if (center) await searchAttractions(center);
+  else {
+    attractionResults = [];
+    attractionStatus = 'empty';
+    attractionsPage();
+  }
+}
+
+function debouncedAttractionSearch(center: PrayerCenter) {
+  if (attractionSearchTimer) window.clearTimeout(attractionSearchTimer);
+  attractionSearchTimer = window.setTimeout(() => void searchAttractions(center), 450);
+}
+
+function attractionAppleMapsUrl(attraction: Attraction) {
+  return `https://maps.apple.com/?daddr=${attraction.latitude},${attraction.longitude}&q=${encodeURIComponent(attraction.name)}`;
+}
+
+function attractionBrowserDirectionsUrl(attraction: Attraction) {
+  return `https://www.openstreetmap.org/directions?to=${attraction.latitude},${attraction.longitude}#map=17/${attraction.latitude}/${attraction.longitude}`;
+}
+
+function initializeAttractionsMap() {
+  attractionsMap?.remove();
+  attractionsMap = undefined;
+  const element = document.querySelector<HTMLElement>('#attractions-map');
+  if (!element || !attractionCenter || !window.maplibregl) return;
+  try {
+    element.replaceChildren();
+    attractionsMap = new window.maplibregl.Map({
+      container: element,
+      style: openFreeMapStyle,
+      center: [attractionCenter.longitude, attractionCenter.latitude],
+      zoom: attractionRadiusKm <= 3 ? 13 : attractionRadiusKm <= 10 ? 11 : 9,
+      attributionControl: true,
+    });
+    attractionsMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
+    for (const attraction of filteredAttractionResults()) {
+      const info = `${attractionCategoryLabel(attraction.category, labels[lang])}: ${attraction.name}`;
+      new window.maplibregl.Marker({ color: attraction.id === selectedAttractionId ? '#7c3aed' : '#0f766e' }).setLngLat([attraction.longitude, attraction.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(`${info}. ${attraction.history || categoryExplanation(attraction.category)}`)).addTo(attractionsMap);
+    }
+    attractionsMap.on('moveend', () => {
+      attractionMapMoved = true;
+      const button = document.querySelector<HTMLButtonElement>('#attractions-search-this-area');
+      if (button) button.hidden = false;
+    });
+  } catch {
+    element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+  }
+}
+
+function attractionPhoto(attraction: Attraction, copy: typeof labels[Language], large = false) {
+  if (!attraction.photo) return `<div class="attraction-placeholder ${large ? 'large' : ''}" role="img" aria-label="${copy.attractionsNoLicensedImage}">${attractionCategoryLabel(attraction.category, copy)}<small>${copy.attractionsNoLicensedImage}</small></div>`;
+  return `<figure class="attraction-photo ${large ? 'large' : ''}"><img src="${esc(attraction.photo.thumbnailUrl)}" alt="${esc(`Licensed photo of ${attraction.name}`)}" loading="lazy" /><figcaption><a href="${esc(attraction.photo.sourceUrl)}" target="_blank" rel="noopener noreferrer">Photo: ${esc(attraction.photo.creator || attraction.photo.title)}</a> · ${esc(attraction.photo.license)} · Wikimedia Commons</figcaption></figure>`;
+}
+
+function attractionDetailsRows(attraction: Attraction, copy: typeof labels[Language]) {
+  const rows = [
+    [copy.attractionsCategory, attractionCategoryLabel(attraction.category, copy)],
+    [copy.prayerAddress, attraction.address],
+    [copy.prayerOpeningHours, attraction.openingHours || copy.halalOpeningUnavailable],
+    [copy.halalOpen, attraction.openState === 'open' ? copy.halalOpen : attraction.openState === 'closed' ? copy.halalClosed : ''],
+    [copy.prayerWebsite, attraction.website ? `<a href="${esc(attraction.website)}" target="_blank" rel="noopener noreferrer">${esc(attraction.website)}</a>` : ''],
+    [copy.prayerTelephone, attraction.phone],
+    [copy.toiletsWheelchair, attraction.wheelchair === 'yes' ? copy.toiletsWheelchair : attraction.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : ''],
+    [copy.attractionsAdmission, attraction.fee === 'free' ? copy.toiletsFree : attraction.fee === 'paid' ? copy.toiletsPaid : ''],
+    [copy.attractionsInfoSource, attraction.historySource],
+  ].filter(([, value]) => Boolean(value));
+  return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+}
+
+function attractionCard(attraction: Attraction, copy: typeof labels[Language]) {
+  return `<article class="card attraction-card" aria-label="${esc(attraction.name)}">
+    ${attractionPhoto(attraction, copy)}
+    <div class="card-top"><span>${attraction.distanceKm.toFixed(1)} km</span><span class="badge attraction-${attraction.category}">${attractionCategoryLabel(attraction.category, copy)}</span></div>
+    <h3>${esc(attraction.name)}</h3>
+    <p class="attraction-history">${esc(attraction.history || categoryExplanation(attraction.category))}</p>
+    ${attractionDetailsRows(attraction, copy)}
+    <div class="place-actions">
+      <button type="button" class="ghost" data-attraction-detail="${attraction.id}">${copy.attractionsDetails}</button>
+      <button type="button" class="ghost" data-attraction-save="${attraction.id}">${copy.attractionsSave}</button>
+      ${attraction.readMoreUrl ? `<a class="map-link" href="${esc(attraction.readMoreUrl)}" target="_blank" rel="noopener noreferrer">${copy.attractionsReadMore}</a>` : ''}
+      <a class="map-link" href="${attraction.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
+      <a class="map-link" href="${attractionAppleMapsUrl(attraction)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
+      <a class="map-link" href="${attractionBrowserDirectionsUrl(attraction)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+    </div>
+  </article>`;
+}
+
+function selectedAttractionDetail(copy: typeof labels[Language]) {
+  const attraction = attractionResults.find((item) => item.id === selectedAttractionId);
+  if (!attraction) return '';
+  return `<section class="panel attraction-detail"><button type="button" class="ghost" id="close-attraction-detail">${copy.attractionsClose}</button>${attractionPhoto(attraction, copy, true)}<h2>${esc(attraction.name)}</h2><p>${esc(attraction.history || categoryExplanation(attraction.category))}</p>${attractionDetailsRows(attraction, copy)}<div class="place-actions"><a class="map-link" href="#prayer-spaces">${copy.prayerSpacesTitle}</a><a class="map-link" href="#halal-restaurants">${copy.halalRestaurantsTitle}</a><a class="map-link" href="#public-toilets">${copy.toiletsTitle}</a><a class="map-link" href="#weather">${copy.weatherTitle}</a></div></section>`;
+}
+
+function attractionsPage() {
+  if (!root) return;
+  cityMap?.remove();
+  cityMap = undefined;
+  prayerMap?.remove();
+  prayerMap = undefined;
+  restaurantMap?.remove();
+  restaurantMap = undefined;
+  toiletMap?.remove();
+  toiletMap = undefined;
+  carRentalMap?.remove();
+  carRentalMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const results = filteredAttractionResults();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `<main dir="${dir}" class="app prayer-app attractions-app">
+    <section class="hero prayer-hero">${languageSelector()}<p class="eyebrow">${copy.attractionsOpen}</p><h1>${copy.attractionsTitle}</h1><p>${copy.attractionsSubtitle}</p><button type="button" class="ghost hero-action" id="back-from-attractions">${copy.attractionsBack}</button></section>
+    <section class="panel prayer-panel" aria-live="polite">
+      <p class="notice prayer-notice">${copy.attractionsNotice}</p><p class="notice prayer-notice">${copy.attractionsPhotoNotice}</p>
+      <div class="prayer-actions"><button type="button" id="use-attraction-location">${copy.attractionsUseLocation}</button><button type="button" id="use-attraction-destination" class="ghost">${copy.attractionsUseDestination}</button><label>${copy.toiletsRadius}<select id="attraction-radius">${attractionRadii.map((radius) => `<option value="${radius}" ${radius === attractionRadiusKm ? 'selected' : ''}>${radius} km</option>`).join('')}</select></label><form id="manual-attraction-search" class="manual-search"><label>${copy.attractionsManualSearch}<input id="attraction-manual-query" list="attraction-cities" value="${esc(attractionManualQuery)}" placeholder="${copy.weatherManualPlaceholder}" /></label><button type="submit">${copy.attractionsSearch}</button></form></div>
+      <datalist id="attraction-cities">${cities.map((city) => `<option value="${city.city}">${city.country}</option>`).join('')}</datalist>
+      <p class="prayer-status ${attractionStatus}" role="status">${attractionStatusMessage(copy)}</p>
+      <div class="segmented" role="tablist" aria-label="${copy.attractionsTitle}"><button type="button" class="${attractionView === 'photos' ? 'active' : 'ghost'}" data-attraction-view="photos">${copy.attractionsPhotoView}</button><button type="button" class="${attractionView === 'list' ? 'active' : 'ghost'}" data-attraction-view="list">${copy.attractionsListView}</button><button type="button" class="${attractionView === 'map' ? 'active' : 'ghost'}" data-attraction-view="map">${copy.attractionsMapView}</button></div>
+      <div class="prayer-filters"><select id="attraction-category-filter"><option value="all">${copy.attractionsAll}</option>${(['historic','museum','gallery','monument','archaeological','castle','religious','viewpoint','natural','park','zoo','theme','artwork','cultural','other'] as AttractionCategory[]).map((category) => `<option value="${category}" ${attractionFilters.category === category ? 'selected' : ''}>${attractionCategoryLabel(category, copy)}</option>`).join('')}</select>${['photo','history','openNow','free','wheelchair'].map((key) => { const label = ({ photo: copy.attractionsPhotoAvailable, history: copy.attractionsHistoryAvailable, openNow: copy.toiletsOpenNow, free: copy.toiletsFree, wheelchair: copy.toiletsWheelchair } as Record<string, string>)[key]; return `<label class="inline-check"><input type="checkbox" data-attraction-filter="${key}" ${attractionFilters[key as keyof AttractionFilters] ? 'checked' : ''}/> ${label}</label>`; }).join('')}<label>${copy.carRentalSort}<select id="attraction-sort"><option value="distance" ${attractionSort === 'distance' ? 'selected' : ''}>${copy.toiletsNearest}</option><option value="name" ${attractionSort === 'name' ? 'selected' : ''}>${copy.toiletsSortName}</option><option value="category" ${attractionSort === 'category' ? 'selected' : ''}>${copy.attractionsSortCategory}</option><option value="photo" ${attractionSort === 'photo' ? 'selected' : ''}>${copy.attractionsSortPhoto}</option><option value="history" ${attractionSort === 'history' ? 'selected' : ''}>${copy.attractionsSortHistory}</option><option value="open" ${attractionSort === 'open' ? 'selected' : ''}>${copy.toiletsSortOpen}</option><option value="complete" ${attractionSort === 'complete' ? 'selected' : ''}>${copy.attractionsSortComplete}</option></select></label></div>
+      <div class="place-actions"><button type="button" id="attractions-search-this-area" class="ghost" ${attractionMapMoved ? '' : 'hidden'}>${copy.toiletsSearchThisArea}</button><button type="button" id="attractions-recentre" class="ghost">${copy.toiletsRecentre}</button><button type="button" id="attractions-fit-results" class="ghost">${copy.toiletsFitResults}</button></div>
+      ${selectedAttractionDetail(copy)}
+      ${attractionView === 'map' ? `<div id="attractions-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : `<div class="${attractionView === 'photos' ? 'attraction-grid' : 'place-list'}">${results.length ? results.map((attraction) => attractionCard(attraction, copy)).join('') : attractionStatus === 'ready' ? `<p>${copy.attractionsNoResults}</p>` : ''}</div>`}
+      ${(attractionStatus === 'empty' || !results.length && attractionResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-attractions" class="ghost">${copy.weatherRetry}</button><button type="button" id="increase-attraction-radius">${copy.toiletsIncreaseRadius}</button><button type="button" id="another-attraction-city" class="ghost">${copy.attractionsSearchAnother}</button></div>` : ''}
+      <p class="map-status">${copy.osmAttribution} · Wikimedia Commons · Wikipedia · Wikidata</p>
+    </section>
+  </main>`;
+  bindAttractionsPage();
+  if (attractionView === 'map') initializeAttractionsMap();
+}
+
+function bindAttractionsPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; attractionsPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-attractions')?.addEventListener('click', () => { view = 'planner'; attractionsMap?.remove(); attractionsMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#use-attraction-location')?.addEventListener('click', requestAttractionLocation);
+  document.querySelector<HTMLButtonElement>('#use-attraction-destination')?.addEventListener('click', () => void searchAttractions(destinationAttractionCenter()));
+  document.querySelector<HTMLSelectElement>('#attraction-radius')?.addEventListener('change', (event) => { attractionRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof attractionRadii[number]; if (attractionCenter) void searchAttractions(attractionCenter); });
+  document.querySelector<HTMLFormElement>('#manual-attraction-search')?.addEventListener('submit', (event) => { event.preventDefault(); attractionManualQuery = document.querySelector<HTMLInputElement>('#attraction-manual-query')?.value ?? ''; void searchAttractionDestination(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-attraction-view]').forEach((button) => button.addEventListener('click', () => { attractionView = button.dataset.attractionView as AttractionView; attractionsPage(); }));
+  document.querySelector<HTMLSelectElement>('#attraction-category-filter')?.addEventListener('change', (event) => { attractionFilters = { ...attractionFilters, category: (event.target as HTMLSelectElement).value as AttractionFilters['category'] }; attractionsPage(); });
+  document.querySelectorAll<HTMLInputElement>('[data-attraction-filter]').forEach((input) => input.addEventListener('change', () => { attractionFilters = { ...attractionFilters, [input.dataset.attractionFilter ?? 'photo']: input.checked }; attractionsPage(); }));
+  document.querySelector<HTMLSelectElement>('#attraction-sort')?.addEventListener('change', (event) => { attractionSort = (event.target as HTMLSelectElement).value as AttractionSort; attractionsPage(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-attraction-detail]').forEach((button) => button.addEventListener('click', () => { selectedAttractionId = button.dataset.attractionDetail ?? ''; attractionsPage(); }));
+  document.querySelector<HTMLButtonElement>('#close-attraction-detail')?.addEventListener('click', () => { selectedAttractionId = ''; attractionsPage(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-attraction-save]').forEach((button) => button.addEventListener('click', () => { button.textContent = labels[lang].attractionsSaved; }));
+  document.querySelector<HTMLButtonElement>('#retry-attractions')?.addEventListener('click', () => { if (attractionCenter) void searchAttractions(attractionCenter); else void searchAttractions(destinationAttractionCenter()); });
+  document.querySelector<HTMLButtonElement>('#increase-attraction-radius')?.addEventListener('click', () => { const next = attractionRadii.find((radius) => radius > attractionRadiusKm); if (next) attractionRadiusKm = next; if (attractionCenter) void searchAttractions(attractionCenter); });
+  document.querySelector<HTMLButtonElement>('#another-attraction-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#attraction-manual-query')?.focus());
+  document.querySelector<HTMLButtonElement>('#attractions-search-this-area')?.addEventListener('click', () => { const center = attractionsMap?.getCenter?.(); if (!center) return; debouncedAttractionSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].toiletsSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#attractions-recentre')?.addEventListener('click', requestAttractionLocation);
+  document.querySelector<HTMLButtonElement>('#attractions-fit-results')?.addEventListener('click', () => {
+    const results = filteredAttractionResults();
+    if (!attractionsMap?.fitBounds || !results.length) return;
+    const lngs = results.map((attraction) => attraction.longitude);
+    const lats = results.map((attraction) => attraction.latitude);
+    attractionsMap.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 60, maxZoom: 15 });
+  });
+}
+
 function selectedCity() {
   return cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
 }
@@ -2224,6 +2526,10 @@ function render() {
     weatherPage();
     return;
   }
+  if (view === 'attractions') {
+    attractionsPage();
+    return;
+  }
   document.body.classList.remove('map-expanded');
   const copy = labels[lang];
   const dir = languageDirection(lang);
@@ -2252,6 +2558,7 @@ function render() {
         <article class="quick-action"><div><h2>${copy.toiletsTitle}</h2><p>${copy.toiletsSubtitle}</p></div><button type="button" id="open-public-toilets">${copy.toiletsOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.carRentalTitle}</h2><p>${copy.carRentalSubtitle}</p></div><button type="button" id="open-car-rental">${copy.carRentalOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.weatherTitle}</h2><p>${copy.weatherSubtitle}</p></div><button type="button" id="open-weather">${copy.weatherOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.attractionsTitle}</h2><p>${copy.attractionsSubtitle}</p></div><button type="button" id="open-attractions">${copy.attractionsOpen}</button></article>
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
@@ -2326,6 +2633,12 @@ function bind() {
     view = 'weather';
     if (window.location.hash !== '#weather') window.location.hash = 'weather';
     void loadWeather(destinationWeatherLocation());
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-attractions')?.addEventListener('click', () => {
+    view = 'attractions';
+    if (window.location.hash !== '#attractions') window.location.hash = 'attractions';
+    void searchAttractions(destinationAttractionCenter());
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
