@@ -23,6 +23,8 @@ export type AttractionPhoto = {
   credit: string;
 };
 
+export type AttractionPhotoStatus = 'idle' | 'loading' | 'checked' | 'error';
+
 export type Attraction = {
   id: string;
   name: string;
@@ -46,6 +48,7 @@ export type Attraction = {
   historySource: string;
   readMoreUrl: string;
   photo?: AttractionPhoto;
+  photoStatus: AttractionPhotoStatus;
   sourceUrl: string;
 };
 
@@ -59,6 +62,7 @@ export function isMappedAttraction(tags: OsmTags) {
   if (tags.leisure === 'park' && (tags.tourism === 'attraction' || tags.historic || tags.wikipedia || tags.wikidata)) return true;
   if (tags.boundary === 'protected_area' && (tags.tourism === 'attraction' || tags.protect_class || tags.wikipedia || tags.wikidata)) return true;
   if ((tags.natural === 'peak' || tags.natural === 'waterfall') && (tags.tourism === 'attraction' || tags.wikipedia || tags.wikidata)) return true;
+  if (tags.amenity === 'place_of_worship' && (tags.wikipedia || tags['wikipedia:en'] || tags.wikidata)) return true;
   return false;
 }
 
@@ -73,6 +77,7 @@ export function classifyAttraction(tags: OsmTags): AttractionCategory {
   if (['archaeological_site', 'ruins'].includes(tags.historic ?? '')) return 'archaeological';
   if (['castle', 'fort', 'manor', 'palace', 'city_gate'].includes(tags.historic ?? '')) return 'castle';
   if (['church', 'mosque', 'synagogue'].includes(tags.historic ?? '')) return 'religious';
+  if (tags.amenity === 'place_of_worship') return 'religious';
   if (tags.historic) return 'historic';
   if (tags.natural === 'peak' || tags.natural === 'waterfall' || tags.leisure === 'nature_reserve' || tags.boundary === 'protected_area') return 'natural';
   if (tags.leisure === 'park') return 'park';
@@ -81,7 +86,7 @@ export function classifyAttraction(tags: OsmTags): AttractionCategory {
 }
 
 function wikipediaTitle(tags: OsmTags) {
-  const value = tags['wikipedia:en'] ?? tags.wikipedia ?? '';
+  const value = tags['wikipedia:en'] ?? (tags.wikipedia?.startsWith('en:') ? tags.wikipedia : '') ?? '';
   const title = value.includes(':') ? value.split(':').slice(1).join(':') : value;
   return title.replace(/_/g, ' ').trim();
 }
@@ -150,6 +155,7 @@ export function normalizeAttraction(element: OverpassElement, origin: { latitude
     history: '',
     historySource: '',
     readMoreUrl: wikiTitle ? `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle.replace(/ /g, '_'))}` : '',
+    photoStatus: 'idle',
     sourceUrl: `https://www.openstreetmap.org/${element.type}/${element.id}`,
   };
 }
@@ -202,6 +208,81 @@ export function acceptableCommonsLicense(metadata: { license?: string; licenseUr
   return Boolean(metadata.thumbnailUrl && metadata.sourceUrl && (license.includes('cc') || license.includes('public domain') || license.includes('pd')));
 }
 
+export function commonsFilenameFromTag(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const withoutUrl = trimmed.includes('/wiki/') ? trimmed.split('/wiki/').pop() ?? trimmed : trimmed;
+  const decoded = decodeURIComponent(withoutUrl.replace(/_/g, ' '));
+  if (/^file:/i.test(decoded)) return decoded.replace(/^file:/i, '').trim();
+  return '';
+}
+
+export function commonsFilenameFromImageUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (!/wikimedia\.org$/.test(url.hostname) && !url.hostname.endsWith('.wikimedia.org')) return '';
+    const file = url.pathname.split('/').filter(Boolean).pop() ?? '';
+    return decodeURIComponent(file).replace(/_/g, ' ').replace(/^\d+px-/, '');
+  } catch {
+    return '';
+  }
+}
+
+export function commonsImageInfoUrl(filename: string, thumbnailWidth = 720) {
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    origin: '*',
+    prop: 'imageinfo',
+    iiprop: 'url|extmetadata',
+    iiurlwidth: String(thumbnailWidth),
+    titles: `File:${filename}`,
+  });
+  return `https://commons.wikimedia.org/w/api.php?${params.toString()}`;
+}
+
+export function wikidataEntityUrl(wikidataId: string) {
+  const params = new URLSearchParams({
+    action: 'wbgetentities',
+    ids: wikidataId,
+    props: 'claims|descriptions',
+    languages: 'en',
+    format: 'json',
+    origin: '*',
+  });
+  return `https://www.wikidata.org/w/api.php?${params.toString()}`;
+}
+
+export function wikipediaSummaryUrl(title: string) {
+  return `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+}
+
+export function commonsSearchUrl(attraction: Pick<Attraction, 'name' | 'category' | 'latitude' | 'longitude'>, cityName: string) {
+  const search = `"${attraction.name}" ${cityName} ${attraction.category}`;
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    origin: '*',
+    generator: 'search',
+    gsrnamespace: '6',
+    gsrlimit: '5',
+    gsrsearch: search,
+    prop: 'imageinfo',
+    iiprop: 'url|extmetadata',
+    iiurlwidth: '720',
+  });
+  return `https://commons.wikimedia.org/w/api.php?${params.toString()}`;
+}
+
+export function wikidataP18Filename(raw: any, wikidataId: string) {
+  const entity = raw?.entities?.[wikidataId];
+  return entity?.claims?.P18?.[0]?.mainsnak?.datavalue?.value ?? '';
+}
+
+export function wikidataEnglishDescription(raw: any, wikidataId: string) {
+  return raw?.entities?.[wikidataId]?.descriptions?.en?.value ?? '';
+}
+
 export function normalizeCommonsImage(raw: any): AttractionPhoto | undefined {
   const page = raw?.query?.pages ? Object.values(raw.query.pages)[0] as any : raw;
   const ext = page?.imageinfo?.[0] ?? page;
@@ -217,11 +298,24 @@ export function normalizeCommonsImage(raw: any): AttractionPhoto | undefined {
   return acceptableCommonsLicense(photo) ? photo : undefined;
 }
 
-export function enrichAttraction(attraction: Attraction, source: { wikipediaExtract?: string; wikidataDescription?: string; osmDescription?: string; commonsImage?: any } = {}) {
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/^file:/, '').replace(/\.[a-z0-9]+$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+export function selectHighConfidenceCommonsImage(raw: any, attraction: Pick<Attraction, 'name'>) {
+  const pages = raw?.query?.pages ? Object.values(raw.query.pages) as any[] : [];
+  const attractionName = normalizeSearchText(attraction.name);
+  if (!attractionName || attractionName.length < 4) return undefined;
+  return pages
+    .map((page) => ({ page, photo: normalizeCommonsImage(page) }))
+    .find(({ page, photo }) => photo && normalizeSearchText(page.title ?? '').includes(attractionName))?.photo;
+}
+
+export function enrichAttraction(attraction: Attraction, source: { wikipediaExtract?: string; wikidataDescription?: string; osmDescription?: string; commonsImage?: any; photo?: AttractionPhoto; photoStatus?: AttractionPhotoStatus } = {}) {
   const photo = source.commonsImage ? normalizeCommonsImage(source.commonsImage) : attraction.photo;
   const history = source.wikipediaExtract ? summarizeWikipediaExtract(source.wikipediaExtract) : source.wikidataDescription || source.osmDescription || attraction.osmDescription || categoryExplanation(attraction.category);
   const historySource = source.wikipediaExtract ? 'Wikipedia' : source.wikidataDescription ? 'Wikidata' : (source.osmDescription || attraction.osmDescription) ? 'OpenStreetMap' : 'OpenStreetMap tags';
-  return { ...attraction, photo, history, historySource };
+  return { ...attraction, photo: source.photo ?? photo, photoStatus: source.photoStatus ?? (source.photo || photo ? 'checked' : attraction.photoStatus), history, historySource };
 }
 
 function completeness(attraction: Attraction) {
@@ -261,6 +355,8 @@ export function buildAttractionOverpassQuery(latitude: number, longitude: number
     `nwr["tourism"~"${tourism}"]${around}`,
     `nwr["historic"~"${historic}"]["wikipedia"]${around}`,
     `nwr["historic"~"${historic}"]["wikidata"]${around}`,
+    `nwr["amenity"="place_of_worship"]["wikipedia"]${around}`,
+    `nwr["amenity"="place_of_worship"]["wikidata"]${around}`,
   ];
   return `[out:json][timeout:15];(${selectors.join(';')};);out center tags;`;
 }

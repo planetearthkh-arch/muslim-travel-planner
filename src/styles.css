@@ -722,6 +722,24 @@ button:disabled {
   text-align: center;
 }
 .attraction-placeholder small { display: block; color: #31534c; font-weight: 700; }
+.attraction-placeholder.loading {
+  background: linear-gradient(110deg, #e8f7f1 8%, #f6fffb 18%, #e8f7f1 33%);
+  background-size: 200% 100%;
+  animation: attraction-loading 1.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .attraction-placeholder.loading { animation: none; }
+}
+@keyframes attraction-loading {
+  to { background-position-x: -200%; }
+}
+.dev-diagnostics {
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  color: #713f12;
+}
 .attraction-history { color: #17322d; }
 .attraction-detail { grid-column: 1 / -1; }
 .badge.attraction-historic,

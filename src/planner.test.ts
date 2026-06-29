@@ -77,14 +77,23 @@ import {
   canAttachExternalSource,
   categoryExplanation,
   classifyAttraction,
+  commonsFilenameFromImageUrl,
+  commonsFilenameFromTag,
+  commonsImageInfoUrl,
+  commonsSearchUrl,
   dedupeAttractions,
   enrichAttraction,
   filterAttractions,
   isMappedAttraction,
   normalizeAttraction,
   normalizeCommonsImage,
+  selectHighConfidenceCommonsImage,
   sortAttractions,
   summarizeWikipediaExtract,
+  wikidataEnglishDescription,
+  wikidataEntityUrl,
+  wikidataP18Filename,
+  wikipediaSummaryUrl,
   type Attraction,
   type AttractionFilters,
 } from './attractions.js';
@@ -750,6 +759,8 @@ test('discovers structured OpenStreetMap attractions and excludes ordinary place
   assert.equal(isMappedAttraction({ tourism: 'museum' }), true);
   assert.equal(isMappedAttraction({ tourism: 'viewpoint' }), true);
   assert.equal(isMappedAttraction({ natural: 'waterfall', tourism: 'attraction' }), true);
+  assert.equal(isMappedAttraction({ amenity: 'place_of_worship', wikidata: 'Q187702' }), true);
+  assert.equal(isMappedAttraction({ amenity: 'place_of_worship', name: 'Ordinary Chapel' }), false);
   assert.equal(isMappedAttraction({ building: 'yes', name: 'Office' }), false);
   assert.equal(isMappedAttraction({ leisure: 'park' }), false);
 });
@@ -758,6 +769,7 @@ test('classifies attraction categories from structured tags', () => {
   assert.equal(classifyAttraction({ historic: 'castle' }), 'castle');
   assert.equal(classifyAttraction({ historic: 'archaeological_site' }), 'archaeological');
   assert.equal(classifyAttraction({ historic: 'mosque' }), 'religious');
+  assert.equal(classifyAttraction({ amenity: 'place_of_worship', wikidata: 'Q187702' }), 'religious');
   assert.equal(classifyAttraction({ tourism: 'gallery' }), 'gallery');
   assert.equal(classifyAttraction({ leisure: 'nature_reserve' }), 'natural');
 });
@@ -801,6 +813,39 @@ test('handles Wikimedia Commons metadata, licences, and placeholders', () => {
   assert.equal(categoryExplanation('viewpoint'), 'This is a mapped scenic viewpoint overlooking the surrounding area.');
 });
 
+test('builds CORS-compatible attraction image URLs and parses Commons filenames', () => {
+  const commonsUrl = commonsImageInfoUrl('Dome of the Rock.jpg');
+  const wikidataUrl = wikidataEntityUrl('Q123');
+  const searchUrl = commonsSearchUrl({ name: 'Dome of the Rock', category: 'religious', latitude: 31.778, longitude: 35.235 }, 'Jerusalem');
+  assert.equal(new URL(commonsUrl).searchParams.get('origin'), '*');
+  assert.equal(new URL(wikidataUrl).searchParams.get('origin'), '*');
+  assert.equal(new URL(searchUrl).searchParams.get('origin'), '*');
+  assert.equal(new URL(commonsUrl).searchParams.get('titles'), 'File:Dome of the Rock.jpg');
+  assert.equal(commonsFilenameFromTag('File:16-04-04-Felsendom-Tempelberg-Jerusalem-RalfR-WAT 6559-6565.jpg'), '16-04-04-Felsendom-Tempelberg-Jerusalem-RalfR-WAT 6559-6565.jpg');
+  assert.equal(commonsFilenameFromTag('https://commons.wikimedia.org/wiki/File:Islam_art_museum1.JPG'), 'Islam art museum1.JPG');
+  assert.equal(commonsFilenameFromImageUrl('https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Islam_art_museum1.JPG/960px-Islam_art_museum1.JPG'), 'Islam art museum1.JPG');
+  assert.equal(wikipediaSummaryUrl('Tower of David').includes('/Tower_of_David'), true);
+});
+
+test('reads Wikidata P18 and reusable Commons licence metadata', () => {
+  const entity = { entities: { Q1177765: { descriptions: { en: { value: 'ancient citadel' } }, claims: { P18: [{ mainsnak: { datavalue: { value: 'מגדל -דוד.jpg' } } }] } } } };
+  assert.equal(wikidataP18Filename(entity, 'Q1177765'), 'מגדל -דוד.jpg');
+  assert.equal(wikidataEnglishDescription(entity, 'Q1177765'), 'ancient citadel');
+  const commons = { query: { pages: { 1: { title: 'File:מגדל -דוד.jpg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/thumb.jpg', descriptionurl: 'https://commons.wikimedia.org/wiki/File:%D7%9E.jpg', extmetadata: { Artist: { value: '<b>Photographer</b>' }, LicenseShortName: { value: 'CC BY-SA 4.0' }, LicenseUrl: { value: 'https://creativecommons.org/licenses/by-sa/4.0/' } } }] } } } };
+  const photo = normalizeCommonsImage(commons);
+  assert.equal(photo?.title, 'File:מגדל -דוד.jpg');
+  assert.equal(photo?.creator, 'Photographer');
+});
+
+test('accepts high-confidence Commons search results and rejects ambiguous images', () => {
+  const raw = { query: { pages: {
+    1: { title: 'File:Random Jerusalem gate.jpg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/random.jpg', descriptionurl: 'https://commons.wikimedia.org/wiki/File:Random.jpg', extmetadata: { LicenseShortName: { value: 'CC BY-SA 4.0' } } }] },
+    2: { title: 'File:Dome of the Rock exterior.jpg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/dome.jpg', descriptionurl: 'https://commons.wikimedia.org/wiki/File:Dome.jpg', extmetadata: { LicenseShortName: { value: 'CC BY-SA 4.0' } } }] },
+  } } };
+  assert.equal(selectHighConfidenceCommonsImage(raw, { name: 'Dome of the Rock' })?.thumbnailUrl, 'https://upload.wikimedia.org/dome.jpg');
+  assert.equal(selectHighConfidenceCommonsImage(raw, { name: 'Western Wall' }), undefined);
+});
+
 test('creates English summaries from Wikipedia, Wikidata, and OSM descriptions', () => {
   const attraction = normalizeAttraction({ type: 'node', id: 1, lat: 0, lon: 0, tags: { tourism: 'museum', 'description:en': 'OSM English description.' } }, { latitude: 0, longitude: 0 }) as Attraction;
   assert.equal(summarizeWikipediaExtract('Sentence one. Sentence two. Sentence three. Sentence four.').split('.').length <= 4, true);
@@ -808,6 +853,7 @@ test('creates English summaries from Wikipedia, Wikidata, and OSM descriptions',
   assert.equal(enrichAttraction(attraction, { wikidataDescription: 'Wikidata description' }).history, 'Wikidata description');
   assert.equal(enrichAttraction(attraction, { osmDescription: 'OSM description' }).history, 'OSM description');
   assert.equal(enrichAttraction({ ...attraction, osmDescription: '' }).history, 'This is a mapped museum or visitor exhibition site.');
+  assert.equal(enrichAttraction(attraction, { photo: { thumbnailUrl: 'x', sourceUrl: 'y', title: 'Photo', creator: '', license: 'CC BY-SA 4.0', licenseUrl: '', credit: '' }, photoStatus: 'checked' }).photoStatus, 'checked');
 });
 
 test('deduplicates, filters, sorts, and queries attractions', () => {
@@ -828,6 +874,7 @@ test('deduplicates, filters, sorts, and queries attractions', () => {
   assert.equal(query.includes('nwr["tourism"~'), true);
   assert.equal(query.includes('nwr["historic"~'), true);
   assert.equal(query.includes('["wikidata"]'), true);
+  assert.equal(query.includes('nwr["amenity"="place_of_worship"]["wikidata"]'), true);
 });
 
 test('includes attraction state and language labels while keeping content English', () => {
@@ -839,6 +886,23 @@ test('includes attraction state and language labels while keeping content Englis
   assert.equal(labels.id.attractionsTitle.length > 0, true);
   const englishSummary = categoryExplanation('natural');
   assert.equal(/[A-Za-z]/.test(englishSummary), true);
+});
+
+test('attraction page progressively loads images before final missing-image fallback', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes("photoStatus: 'loading'"), true);
+  assert.equal(source.includes("copy.attractionsLoadingPhotos"), true);
+  assert.equal(source.includes("copy.attractionsNoLicensedImage"), true);
+  assert.equal(source.includes('resolveAttractionPhotoAndHistory'), true);
+  assert.equal(source.includes('Attraction enrichment diagnostics'), true);
+});
+
+test('OSM Commons tags and Wikidata P18 can enrich attraction photos', () => {
+  const dome = normalizeAttraction({ type: 'way', id: 4709536, center: { lat: 31.778, lon: 35.235 }, tags: { tourism: 'attraction', 'name:en': 'Dome of the Rock', wikimedia_commons: 'File:16-04-04-Felsendom-Tempelberg-Jerusalem-RalfR-WAT 6559-6565.jpg' } }, { latitude: 31.778, longitude: 35.235 }) as Attraction;
+  const tower = normalizeAttraction({ type: 'relation', id: 136164, center: { lat: 31.776, lon: 35.228 }, tags: { historic: 'castle', 'name:en': 'Tower of David', wikidata: 'Q1177765' } }, { latitude: 31.778, longitude: 35.235 }) as Attraction;
+  assert.equal(commonsFilenameFromTag(dome.commons).startsWith('16-04-04-Felsendom'), true);
+  assert.equal(tower.wikidata, 'Q1177765');
 });
 
 test('rendered prayer-place titles use the shared English-name safety function', async () => {
