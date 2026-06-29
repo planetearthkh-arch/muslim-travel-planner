@@ -655,6 +655,37 @@ button:disabled {
 .badge.car-unknown { background: #e2e8f0; color: #334155; }
 .compact-list { margin: 8px 0 0; padding-inline-start: 20px; color: #31534c; }
 .compact-list li { margin: 4px 0; }
+.hourly-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(130px, 160px);
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x proximity;
+}
+.hour-card {
+  scroll-snap-align: start;
+  display: grid;
+  gap: 5px;
+  min-height: 150px;
+  padding: 12px;
+  border: 1px solid #d9eee7;
+  border-radius: 14px;
+  background: #fbfffd;
+}
+.hour-card.current-hour,
+.selected-weather-day { outline: 3px solid #0f766e; outline-offset: 2px; }
+.weather-icon {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e8f7f1;
+  color: #0f766e;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.weather-current h2 { font-size: clamp(2rem, 8vw, 4rem); margin-bottom: 8px; }
 
 @media (min-width: 800px) {
   .quick-actions { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }

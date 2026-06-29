@@ -55,6 +55,21 @@ import {
   type CarRentalFilters,
   type CarRentalOffice,
 } from './car-rental.js';
+import {
+  buildWeatherUrl,
+  convertPrecipitationFromMm,
+  convertWindFromKmh,
+  formatPrecipitation,
+  formatTemperature,
+  formatWind,
+  hourlyForDay,
+  matchPrayerWeather,
+  selectHourlyForecast,
+  travelWeatherIndicators,
+  validateWeatherResponse,
+  weatherCodeInfo,
+  type WeatherUnits,
+} from './weather.js';
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
@@ -598,6 +613,118 @@ test('builds bounded car-rental Overpass queries and includes language states', 
   assert.equal(labels.en.carRentalNoResults, 'No mapped car-rental offices were found in this area. This does not necessarily mean that none exist.');
   assert.equal(labels.ar.carRentalTitle.length > 0, true);
   assert.equal(labels.id.carRentalTitle.length > 0, true);
+});
+
+const sampleWeatherResponse = () => {
+  const hourlyTimes = Array.from({ length: 72 }, (_, index) => `2026-07-${String(1 + Math.floor(index / 24)).padStart(2, '0')}T${String(index % 24).padStart(2, '0')}:00`);
+  const days = Array.from({ length: 7 }, (_, index) => `2026-07-${String(index + 1).padStart(2, '0')}`);
+  return {
+    latitude: 51.5,
+    longitude: -0.1,
+    timezone: 'Europe/London',
+    current: { time: '2026-07-01T10:00', temperature_2m: 22, apparent_temperature: 23, relative_humidity_2m: 62, precipitation: 0, rain: 0, showers: 0, snowfall: 0, weather_code: 61, cloud_cover: 70, wind_speed_10m: 20, wind_direction_10m: 230, wind_gusts_10m: 55, is_day: 1 },
+    hourly: {
+      time: hourlyTimes,
+      temperature_2m: hourlyTimes.map((_, index) => 20 + index % 5),
+      apparent_temperature: hourlyTimes.map((_, index) => 21 + index % 5),
+      relative_humidity_2m: hourlyTimes.map(() => 60),
+      precipitation_probability: hourlyTimes.map((_, index) => index === 12 ? 70 : 20),
+      precipitation: hourlyTimes.map(() => 0),
+      rain: hourlyTimes.map((_, index) => index === 12 ? 2 : 0),
+      showers: hourlyTimes.map(() => 0),
+      snowfall: hourlyTimes.map(() => 0),
+      weather_code: hourlyTimes.map((_, index) => index === 20 ? 95 : 1),
+      cloud_cover: hourlyTimes.map(() => 40),
+      visibility: hourlyTimes.map((_, index) => index === 5 ? 2500 : 10000),
+      wind_speed_10m: hourlyTimes.map(() => 20),
+      wind_direction_10m: hourlyTimes.map(() => 180),
+      wind_gusts_10m: hourlyTimes.map((_, index) => index === 2 ? 55 : 25),
+      uv_index: hourlyTimes.map((_, index) => index === 13 ? 7 : 1),
+      is_day: hourlyTimes.map((_, index) => index % 24 > 5 && index % 24 < 21 ? 1 : 0),
+    },
+    daily: {
+      time: days,
+      weather_code: [0, 61, 71, 95, 2, 3, 45],
+      temperature_2m_max: [30, 22, 8, 25, 26, 27, 28],
+      temperature_2m_min: [18, 15, 1, 17, 18, 19, 20],
+      apparent_temperature_max: [31, 23, 7, 26, 27, 28, 29],
+      apparent_temperature_min: [17, 14, 0, 16, 17, 18, 19],
+      sunrise: days.map((day) => `${day}T05:00`),
+      sunset: days.map((day) => `${day}T21:00`),
+      daylight_duration: days.map(() => 57600),
+      sunshine_duration: days.map(() => 28800),
+      uv_index_max: [7, 4, 2, 5, 6, 7, 3],
+      precipitation_sum: [1, 4, 2, 3, 0, 0, 0],
+      rain_sum: [1, 4, 0, 3, 0, 0, 0],
+      showers_sum: [0, 0, 0, 0, 0, 0, 0],
+      snowfall_sum: [0, 0, 2, 0, 0, 0, 0],
+      precipitation_probability_max: [70, 80, 30, 50, 10, 10, 10],
+      wind_speed_10m_max: [24, 20, 18, 30, 20, 20, 20],
+      wind_gusts_10m_max: [55, 30, 25, 40, 20, 20, 20],
+      wind_direction_10m_dominant: [220, 180, 90, 270, 0, 45, 135],
+    },
+  };
+};
+
+test('validates current, hourly, and daily Open-Meteo weather responses', () => {
+  const forecast = validateWeatherResponse(sampleWeatherResponse(), '2026-07-01T10:05:00.000Z');
+  assert.equal(forecast.current.temperature, 22);
+  assert.equal(forecast.current.isDay, true);
+  assert.equal(forecast.hourly.length, 72);
+  assert.equal(forecast.daily.length, 7);
+  assert.equal(forecast.timezone, 'Europe/London');
+  assert.equal(forecast.daily[0].sunrise, '2026-07-01T05:00');
+  assert.equal(forecast.daily[0].sunset, '2026-07-01T21:00');
+});
+
+test('rejects missing or malformed weather API data', () => {
+  assert.throws(() => validateWeatherResponse(null), /Malformed/);
+  assert.throws(() => validateWeatherResponse({ hourly: {}, daily: {} }), /Missing current/);
+  assert.throws(() => validateWeatherResponse({ current: {}, daily: {} }), /Missing hourly/);
+  assert.throws(() => validateWeatherResponse({ current: {}, hourly: {} }), /Missing daily/);
+});
+
+test('interprets WMO weather codes without exposing raw codes', () => {
+  assert.equal(weatherCodeInfo(0, labels.en).label, labels.en.weatherClear);
+  assert.equal(weatherCodeInfo(61, labels.en).label, labels.en.weatherRain);
+  assert.equal(weatherCodeInfo(71, labels.en).label, labels.en.weatherSnow);
+  assert.equal(weatherCodeInfo(95, labels.en).label, labels.en.weatherThunderstorm);
+});
+
+test('formats weather units and builds configurable Open-Meteo URLs', () => {
+  const units: WeatherUnits = { temperature: 'fahrenheit', wind: 'mph', precipitation: 'inch' };
+  const url = buildWeatherUrl(1, 2, units, 'https://weather.example/forecast');
+  assert.equal(url.includes('temperature_unit=fahrenheit'), true);
+  assert.equal(url.includes('wind_speed_unit=mph'), true);
+  assert.equal(url.includes('precipitation_unit=inch'), true);
+  assert.equal(formatTemperature(72, units), '72°F');
+  assert.equal(formatWind(10, units), '10 mph');
+  assert.equal(Number(convertWindFromKmh(36, 'ms').toFixed(1)), 10);
+  assert.equal(Number(convertWindFromKmh(10, 'knots').toFixed(2)), 5.4);
+  assert.equal(Number(convertPrecipitationFromMm(25.4, 'inch').toFixed(2)), 1);
+  assert.equal(formatPrecipitation(1, units), '1.00 in');
+});
+
+test('selects hourly, daily, travel-indicator, cached, and prayer weather data', () => {
+  const forecast = validateWeatherResponse(sampleWeatherResponse());
+  assert.equal(selectHourlyForecast(forecast.hourly, '2026-07-01T10:00', 24).length, 24);
+  assert.equal(hourlyForDay(forecast.hourly, '2026-07-02').length, 24);
+  const indicators = travelWeatherIndicators(forecast, labels.en);
+  assert.equal(indicators.includes(labels.en.weatherIndicatorUv), true);
+  assert.equal(indicators.includes(labels.en.weatherIndicatorWind), true);
+  assert.equal(indicators.includes(labels.en.weatherIndicatorRain), true);
+  const matched = matchPrayerWeather({ Fajr: '05:10', Dhuhr: '13:05' }, forecast.hourly);
+  assert.equal(matched.length, 2);
+  assert.equal(matched[0].forecast?.time.includes('05:00'), true);
+});
+
+test('includes weather state and language labels', () => {
+  assert.equal(labels.en.weatherLocationDenied.includes('denied'), true);
+  assert.equal(labels.en.weatherTimedOut.includes('timed out'), true);
+  assert.equal(labels.en.weatherCached.includes('Cached'), true);
+  assert.equal(labels.en.weatherNoCached.includes('No cached'), true);
+  assert.equal(labels.ar.weatherTitle.length > 0, true);
+  assert.equal(labels.id.weatherTitle.length > 0, true);
 });
 
 test('rendered prayer-place titles use the shared English-name safety function', async () => {

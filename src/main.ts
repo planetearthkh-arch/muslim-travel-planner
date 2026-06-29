@@ -37,6 +37,25 @@ import {
   type CarRentalSort,
 } from './car-rental.js';
 import {
+  OPEN_METEO_FORECAST_URL,
+  WEATHER_CACHE_MS,
+  buildWeatherUrl,
+  formatPrecipitation,
+  formatTemperature,
+  formatWind,
+  hourlyForDay,
+  matchPrayerWeather,
+  packingSuggestions,
+  selectHourlyForecast,
+  travelWeatherIndicators,
+  validateWeatherResponse,
+  weatherCodeInfo,
+  windDirectionLabel,
+  type WeatherForecast,
+  type WeatherPoint,
+  type WeatherUnits,
+} from './weather.js';
+import {
   CURRENCY_CACHE_MS,
   FRANKFURTER_BASE_URL,
   RATE_CACHE_MS,
@@ -80,14 +99,14 @@ import {
 import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental';
+type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'weather';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#weather' ? 'weather' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -473,6 +492,8 @@ type ToiletMode = 'map' | 'list';
 type CarRentalStatus = RestaurantStatus;
 type CarRentalMode = 'map' | 'list';
 type CarRentalSearchKind = 'destination' | 'airport' | 'station';
+type WeatherStatus = 'idle' | 'requesting' | 'loading' | 'ready' | 'updated' | 'denied' | 'unavailable' | 'service-unavailable' | 'timeout' | 'invalid' | 'offline' | 'cached' | 'no-cache' | 'unsupported';
+type WeatherLocation = { latitude: number; longitude: number; label: string; country?: string; timezone?: string };
 
 type OverpassResponse = { elements?: Array<{ type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> }> };
 type NominatimResult = { lat: string; lon: string; display_name: string };
@@ -538,6 +559,19 @@ let carRentalError = '';
 let carRentalSearchTimer: number | undefined;
 let carRentalSearchSequence = 0;
 const carRentalCache = new Map<string, { expires: number; results: CarRentalOffice[] }>();
+let weatherStatus: WeatherStatus = 'idle';
+let weatherLocation: WeatherLocation | undefined;
+let weatherManualQuery = '';
+let weatherForecast: WeatherForecast | null = null;
+let weatherError = '';
+let weatherHours = 24;
+let weatherSelectedDay = '';
+let weatherRequestSequence = 0;
+let weatherUnits: WeatherUnits = {
+  temperature: (localStorage.getItem('mtp-weather-temp') as WeatherUnits['temperature']) || 'celsius',
+  wind: (localStorage.getItem('mtp-weather-wind') as WeatherUnits['wind']) || 'kmh',
+  precipitation: (localStorage.getItem('mtp-weather-precip') as WeatherUnits['precipitation']) || 'mm',
+};
 
 function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
   const controller = new AbortController();
@@ -1674,6 +1708,253 @@ function bindCarRentalPage() {
   });
 }
 
+function selectedWeatherCity() {
+  const match = weatherLocation ? cities.find((city) => city.city === weatherLocation?.label || `${city.city}, ${city.country}` === weatherLocation?.label) : undefined;
+  return match ?? selectedCity();
+}
+
+function weatherCacheKey(location: WeatherLocation) {
+  return `mtp-weather-${location.latitude.toFixed(3)}-${location.longitude.toFixed(3)}-${weatherUnits.temperature}-${weatherUnits.wind}-${weatherUnits.precipitation}`;
+}
+
+function weatherStatusMessage(copy: typeof labels[Language]) {
+  if (weatherStatus === 'requesting') return copy.weatherRequestingLocation;
+  if (weatherStatus === 'loading') return copy.weatherLoading;
+  if (weatherStatus === 'updated') return copy.weatherUpdated;
+  if (weatherStatus === 'denied') return copy.weatherLocationDenied;
+  if (weatherStatus === 'unavailable') return copy.weatherLocationUnavailable;
+  if (weatherStatus === 'service-unavailable') return weatherError || copy.weatherUnavailable;
+  if (weatherStatus === 'timeout') return copy.weatherTimedOut;
+  if (weatherStatus === 'invalid') return copy.weatherInvalid;
+  if (weatherStatus === 'offline') return copy.weatherOffline;
+  if (weatherStatus === 'cached') return copy.weatherCached;
+  if (weatherStatus === 'no-cache') return copy.weatherNoCached;
+  if (weatherStatus === 'unsupported') return copy.weatherUnsupported;
+  return '';
+}
+
+async function loadWeather(location: WeatherLocation, force = false) {
+  weatherLocation = location;
+  const cacheKey = weatherCacheKey(location);
+  const cached = readJsonCache<WeatherForecast>(localStorage, cacheKey, WEATHER_CACHE_MS);
+  if (cached && !force) {
+    weatherForecast = { ...cached, cached: true };
+    weatherStatus = 'cached';
+    weatherPage();
+    return;
+  }
+  const sequence = ++weatherRequestSequence;
+  weatherStatus = 'loading';
+  weatherError = '';
+  weatherPage();
+  try {
+    const forecast = validateWeatherResponse(await requestJson<unknown>(buildWeatherUrl(location.latitude, location.longitude, weatherUnits), { headers: { Accept: 'application/json' } }, 9000));
+    if (sequence !== weatherRequestSequence) return;
+    weatherForecast = forecast;
+    weatherSelectedDay = forecast.daily[0]?.date ?? '';
+    writeJsonCache(localStorage, cacheKey, forecast);
+    weatherStatus = 'updated';
+  } catch (error) {
+    const fallback = readJsonCache<WeatherForecast>(localStorage, cacheKey, 7 * 24 * 60 * 60 * 1000);
+    if (fallback) {
+      weatherForecast = { ...fallback, cached: true };
+      weatherStatus = navigator.onLine ? 'cached' : 'offline';
+    } else {
+      weatherForecast = null;
+      weatherStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : error instanceof Error && /Missing|Malformed/.test(error.message) ? 'invalid' : 'service-unavailable';
+      weatherError = error instanceof Error ? error.message : '';
+    }
+  }
+  weatherPage();
+}
+
+function destinationWeatherLocation(city = selectedCity()): WeatherLocation {
+  return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, country: city.country, timezone: city.timezone };
+}
+
+function requestWeatherLocation() {
+  if (!navigator.geolocation) {
+    weatherStatus = 'unavailable';
+    weatherPage();
+    return;
+  }
+  weatherStatus = 'requesting';
+  weatherPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => void loadWeather({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (error) => {
+      weatherStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      weatherPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+async function searchWeatherDestination() {
+  const query = weatherManualQuery.trim();
+  if (!query) return;
+  weatherStatus = 'loading';
+  weatherPage();
+  try {
+    const city = cities.find((candidate) => candidate.city.toLowerCase() === query.toLowerCase());
+    if (city) {
+      await loadWeather(destinationWeatherLocation(city), true);
+      return;
+    }
+    const center = await resolveRestaurantDestination(query);
+    if (!center) {
+      weatherStatus = 'unsupported';
+      weatherPage();
+      return;
+    }
+    await loadWeather({ latitude: center.latitude, longitude: center.longitude, label: center.label }, true);
+  } catch (error) {
+    console.error(error);
+    weatherStatus = 'service-unavailable';
+    weatherError = labels[lang].weatherUnavailable;
+    weatherPage();
+  }
+}
+
+function formatWeatherTime(value: string, options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat(localeForLanguage(lang), options).format(new Date(value));
+}
+
+function weatherRows(forecast: WeatherForecast, copy: typeof labels[Language]) {
+  const today = forecast.daily[0];
+  const condition = weatherCodeInfo(forecast.current.weatherCode, copy);
+  const rainSnow = forecast.current.snowfall > 0 ? formatPrecipitation(forecast.current.snowfall, weatherUnits) : forecast.current.rain > 0 || forecast.current.precipitation > 0 ? formatPrecipitation(forecast.current.rain || forecast.current.precipitation, weatherUnits) : '0';
+  const rows = [
+    [copy.weatherCondition, `${condition.icon} ${condition.label}`],
+    [copy.weatherFeelsLike, formatTemperature(forecast.current.apparentTemperature, weatherUnits)],
+    [copy.weatherHighLow, today ? `${formatTemperature(today.temperatureMax, weatherUnits)} / ${formatTemperature(today.temperatureMin, weatherUnits)}` : ''],
+    [copy.weatherRainSnow, rainSnow],
+    [copy.weatherHumidity, `${forecast.current.humidity}%`],
+    [copy.weatherWind, `${formatWind(forecast.current.windSpeed, weatherUnits)} ${windDirectionLabel(forecast.current.windDirection)}`],
+    [copy.weatherGusts, formatWind(forecast.current.windGusts, weatherUnits)],
+    [copy.weatherCloud, `${forecast.current.cloudCover}%`],
+    [copy.weatherUv, String(selectHourlyForecast(forecast.hourly, forecast.current.time, 1)[0]?.uvIndex ?? '')],
+    [copy.weatherVisibility, forecast.hourly[0]?.visibility ? `${Math.round(forecast.hourly[0].visibility / 1000)} km` : ''],
+    [copy.weatherSunrise, today?.sunrise ? formatWeatherTime(today.sunrise) : ''],
+    [copy.weatherSunset, today?.sunset ? formatWeatherTime(today.sunset) : ''],
+    [copy.weatherDayNight, forecast.current.isDay ? copy.weatherDaylight : copy.weatherNight],
+    [copy.weatherLastUpdated, formatWeatherTime(forecast.retrievedAt, { dateStyle: 'medium', timeStyle: 'short' })],
+  ].filter(([, value]) => Boolean(value));
+  return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+}
+
+function hourlyWeatherList(forecast: WeatherForecast, copy: typeof labels[Language]) {
+  const hours = weatherSelectedDay ? hourlyForDay(forecast.hourly, weatherSelectedDay) : selectHourlyForecast(forecast.hourly, forecast.current.time, weatherHours);
+  return `<div class="hourly-strip" role="list" aria-label="${copy.weatherHourly}">${hours.slice(0, weatherHours).map((hour, index) => {
+    const info = weatherCodeInfo(hour.weatherCode, copy);
+    const current = index === 0 && !weatherSelectedDay ? ' current-hour' : '';
+    return `<article class="hour-card${current}" role="listitem" aria-label="${info.label}">
+      <strong>${formatWeatherTime(hour.time)}</strong><span class="weather-icon" aria-hidden="true">${info.icon}</span><span>${formatTemperature(hour.temperature, weatherUnits)}</span><small>${copy.weatherFeelsLike}: ${formatTemperature(hour.apparentTemperature, weatherUnits)}</small><small>${hour.precipitationProbability}%</small><small>${formatWind(hour.windSpeed, weatherUnits)}</small>${hour.isDay ? `<small>${copy.weatherUv}: ${hour.uvIndex}</small>` : ''}
+    </article>`;
+  }).join('')}</div>`;
+}
+
+function dailyWeatherList(forecast: WeatherForecast, copy: typeof labels[Language]) {
+  return `<div class="place-list">${forecast.daily.map((day) => {
+    const info = weatherCodeInfo(day.weatherCode, copy);
+    return `<article class="card weather-day ${weatherSelectedDay === day.date ? 'selected-weather-day' : ''}">
+      <div class="card-top"><span>${formatWeatherTime(`${day.date}T12:00`, { weekday: 'short', month: 'short', day: 'numeric' })}</span><span class="badge verified">${info.icon} ${info.label}</span></div>
+      <h3>${formatTemperature(day.temperatureMax, weatherUnits)} / ${formatTemperature(day.temperatureMin, weatherUnits)}</h3>
+      <p>${copy.weatherFeelsLike}: ${formatTemperature(day.apparentMax, weatherUnits)} / ${formatTemperature(day.apparentMin, weatherUnits)} · ${day.precipitationProbabilityMax}%</p>
+      <p>${copy.weatherRainSnow}: ${formatPrecipitation(day.rainSum + day.showersSum + day.snowfallSum, weatherUnits)} · ${copy.weatherWind}: ${formatWind(day.windSpeedMax, weatherUnits)} · ${copy.weatherGusts}: ${formatWind(day.windGustsMax, weatherUnits)} · ${copy.weatherUv}: ${day.uvIndexMax}</p>
+      <p>${copy.weatherSunrise}: ${formatWeatherTime(day.sunrise)} · ${copy.weatherSunset}: ${formatWeatherTime(day.sunset)}</p>
+      <button type="button" class="ghost" data-weather-day="${day.date}">${copy.weatherHourly}</button>
+    </article>`;
+  }).join('')}</div>`;
+}
+
+function travelWeatherSection(forecast: WeatherForecast, copy: typeof labels[Language]) {
+  const indicators = travelWeatherIndicators(forecast, copy);
+  const suggestions = packingSuggestions(forecast, copy);
+  return `<div class="destination-box"><h2>${copy.weatherTravel}</h2><p>${copy.weatherTravelNotice}</p><div class="chips">${indicators.length ? indicators.map((item) => `<span class="chip">${item}</span>`).join('') : `<span class="chip">${copy.weatherCondition}: ${weatherCodeInfo(forecast.current.weatherCode, copy).label}</span>`}</div><h3>${copy.weatherPacking}</h3><ul class="compact-list">${suggestions.map((item) => `<li>${item}</li>`).join('')}</ul></div>`;
+}
+
+function prayerWeatherSection(forecast: WeatherForecast, copy: typeof labels[Language]) {
+  const city = selectedWeatherCity();
+  const prayerTimes = calculatePrayerDisplay(city, prefs.prayerMethod, prefs.startDate, localeForLanguage(lang));
+  const matches = matchPrayerWeather(prayerTimes, forecast.hourly).filter((item) => item.prayer !== 'Sunrise');
+  if (!matches.length) return '';
+  return `<section class="destination-box"><h2>${copy.weatherPrayer}</h2><div class="place-list">${matches.map((item) => {
+    const point = item.forecast as WeatherPoint;
+    const info = weatherCodeInfo(point.weatherCode, copy);
+    return `<article class="card"><div class="card-top"><span>${item.prayer} · ${item.time}</span><span class="badge sample">${point.isDay ? copy.weatherDaylight : copy.weatherNight}</span></div><p>${info.icon} ${info.label} · ${formatTemperature(point.temperature, weatherUnits)} · ${point.precipitationProbability}% · ${formatWind(point.windSpeed, weatherUnits)}</p></article>`;
+  }).join('')}</div></section>`;
+}
+
+function weatherPage() {
+  if (!root) return;
+  cityMap?.remove();
+  cityMap = undefined;
+  prayerMap?.remove();
+  prayerMap = undefined;
+  restaurantMap?.remove();
+  restaurantMap = undefined;
+  toiletMap?.remove();
+  toiletMap = undefined;
+  carRentalMap?.remove();
+  carRentalMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const forecast = weatherForecast;
+  const location = weatherLocation ?? destinationWeatherLocation();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `
+    <main dir="${dir}" class="app prayer-app weather-app">
+      <section class="hero prayer-hero">
+        ${languageSelector()}
+        <p class="eyebrow">${copy.weatherOpen}</p>
+        <h1>${copy.weatherTitle}</h1>
+        <p>${copy.weatherSubtitle}</p>
+        <button type="button" class="ghost hero-action" id="back-from-weather">${copy.weatherBack}</button>
+      </section>
+      <section class="panel prayer-panel" aria-live="polite">
+        <p class="notice prayer-notice">${copy.weatherNotice}</p>
+        <div class="prayer-actions">
+          <button type="button" id="use-weather-location">${copy.weatherUseLocation}</button>
+          <button type="button" id="use-weather-destination" class="ghost">${copy.weatherUseDestination}</button>
+          <button type="button" id="refresh-weather" class="ghost">${copy.weatherRefresh}</button>
+          <form id="manual-weather-search" class="manual-search"><label>${copy.weatherManualSearch}<input id="weather-manual-query" list="weather-cities" value="${esc(weatherManualQuery)}" placeholder="${copy.weatherManualPlaceholder}" /></label><button type="submit">${copy.weatherSearch}</button></form>
+        </div>
+        <datalist id="weather-cities">${cities.map((city) => `<option value="${city.city}">${city.country}</option>`).join('')}</datalist>
+        <div class="chips" aria-label="${copy.weatherRecentDestinations}">${[selectedCity(), ...cities.filter((city) => city.city !== selectedCity().city).slice(0, 5)].map((city) => `<button type="button" class="chip" data-weather-city="${esc(city.city)}">${city.city}</button>`).join('')}</div>
+        <div class="prayer-filters">
+          <label>${copy.weatherTempUnit}<select id="weather-temp-unit"><option value="celsius" ${weatherUnits.temperature === 'celsius' ? 'selected' : ''}>${copy.weatherCelsius}</option><option value="fahrenheit" ${weatherUnits.temperature === 'fahrenheit' ? 'selected' : ''}>${copy.weatherFahrenheit}</option></select></label>
+          <label>${copy.weatherWindUnit}<select id="weather-wind-unit"><option value="kmh" ${weatherUnits.wind === 'kmh' ? 'selected' : ''}>${copy.weatherKmh}</option><option value="mph" ${weatherUnits.wind === 'mph' ? 'selected' : ''}>${copy.weatherMph}</option><option value="ms" ${weatherUnits.wind === 'ms' ? 'selected' : ''}>${copy.weatherMs}</option><option value="knots" ${weatherUnits.wind === 'knots' ? 'selected' : ''}>${copy.weatherKnots}</option></select></label>
+          <label>${copy.weatherPrecipUnit}<select id="weather-precip-unit"><option value="mm" ${weatherUnits.precipitation === 'mm' ? 'selected' : ''}>${copy.weatherMm}</option><option value="inch" ${weatherUnits.precipitation === 'inch' ? 'selected' : ''}>${copy.weatherInch}</option></select></label>
+        </div>
+        <p class="prayer-status ${weatherStatus}" role="status">${weatherStatusMessage(copy)}</p>
+        <div class="destination-box"><h2>${esc(location.label)}</h2><p>${copy.weatherLocalTime}: ${forecast ? formatWeatherTime(forecast.current.time, { dateStyle: 'medium', timeStyle: 'short' }) : ''}</p><p>${copy.weatherTimezone}: ${forecast?.timezone ?? location.timezone ?? ''}</p><p>${copy.weatherCoordinates}: ${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}</p></div>
+        ${forecast ? `<section class="card weather-current" aria-label="${copy.weatherCurrent}"><div class="card-top"><span>${copy.weatherCurrent}</span><span class="badge ${forecast.cached ? 'unverified' : 'verified'}">${forecast.cached ? copy.weatherCached : copy.weatherUpdated}</span></div><h2>${formatTemperature(forecast.current.temperature, weatherUnits)}</h2>${weatherRows(forecast, copy)}</section><section><div class="result-header"><h2>${copy.weatherHourly}</h2><button type="button" class="ghost" id="toggle-weather-hours">${weatherHours === 24 ? copy.weatherExpand48 : copy.weatherShow24}</button></div>${hourlyWeatherList(forecast, copy)}</section><section><h2>${copy.weatherDaily}</h2>${dailyWeatherList(forecast, copy)}</section>${travelWeatherSection(forecast, copy)}${prayerWeatherSection(forecast, copy)}` : `<div class="empty-actions"><button type="button" id="retry-weather" class="ghost">${copy.weatherRetry}</button><button type="button" id="another-weather-city">${copy.weatherSearchAnother}</button></div>`}
+        <p class="map-status"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">${copy.weatherAttribution}</a> · <a href="${OPEN_METEO_FORECAST_URL}" target="_blank" rel="noopener noreferrer">Open-Meteo API</a></p>
+      </section>
+    </main>`;
+  bindWeatherPage();
+}
+
+function bindWeatherPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; weatherPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-weather')?.addEventListener('click', () => { view = 'planner'; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#use-weather-location')?.addEventListener('click', requestWeatherLocation);
+  document.querySelector<HTMLButtonElement>('#use-weather-destination')?.addEventListener('click', () => void loadWeather(destinationWeatherLocation(), true));
+  document.querySelector<HTMLButtonElement>('#refresh-weather')?.addEventListener('click', () => { if (weatherLocation) void loadWeather(weatherLocation, true); else void loadWeather(destinationWeatherLocation(), true); });
+  document.querySelector<HTMLButtonElement>('#retry-weather')?.addEventListener('click', () => { if (weatherLocation) void loadWeather(weatherLocation, true); else void loadWeather(destinationWeatherLocation(), true); });
+  document.querySelector<HTMLButtonElement>('#another-weather-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#weather-manual-query')?.focus());
+  document.querySelector<HTMLFormElement>('#manual-weather-search')?.addEventListener('submit', (event) => { event.preventDefault(); weatherManualQuery = document.querySelector<HTMLInputElement>('#weather-manual-query')?.value ?? ''; void searchWeatherDestination(); });
+  document.querySelector<HTMLButtonElement>('#toggle-weather-hours')?.addEventListener('click', () => { weatherHours = weatherHours === 24 ? 48 : 24; weatherSelectedDay = ''; weatherPage(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-weather-day]').forEach((button) => button.addEventListener('click', () => { weatherSelectedDay = button.dataset.weatherDay ?? ''; weatherHours = 24; weatherPage(); }));
+  document.querySelectorAll<HTMLButtonElement>('[data-weather-city]').forEach((button) => button.addEventListener('click', () => { const city = cities.find((candidate) => candidate.city === button.dataset.weatherCity); if (city) void loadWeather(destinationWeatherLocation(city), true); }));
+  document.querySelector<HTMLSelectElement>('#weather-temp-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, temperature: (event.target as HTMLSelectElement).value as WeatherUnits['temperature'] }; localStorage.setItem('mtp-weather-temp', weatherUnits.temperature); if (weatherLocation) void loadWeather(weatherLocation, true); });
+  document.querySelector<HTMLSelectElement>('#weather-wind-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, wind: (event.target as HTMLSelectElement).value as WeatherUnits['wind'] }; localStorage.setItem('mtp-weather-wind', weatherUnits.wind); if (weatherLocation) void loadWeather(weatherLocation, true); });
+  document.querySelector<HTMLSelectElement>('#weather-precip-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, precipitation: (event.target as HTMLSelectElement).value as WeatherUnits['precipitation'] }; localStorage.setItem('mtp-weather-precip', weatherUnits.precipitation); if (weatherLocation) void loadWeather(weatherLocation, true); });
+}
+
 function selectedCity() {
   return cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
 }
@@ -1939,6 +2220,10 @@ function render() {
     carRentalPage();
     return;
   }
+  if (view === 'weather') {
+    weatherPage();
+    return;
+  }
   document.body.classList.remove('map-expanded');
   const copy = labels[lang];
   const dir = languageDirection(lang);
@@ -1966,6 +2251,7 @@ function render() {
         <article class="quick-action"><div><h2>${copy.halalRestaurantsTitle}</h2><p>${copy.halalRestaurantsSubtitle}</p></div><button type="button" id="open-halal-restaurants">${copy.halalRestaurantsOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.toiletsTitle}</h2><p>${copy.toiletsSubtitle}</p></div><button type="button" id="open-public-toilets">${copy.toiletsOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.carRentalTitle}</h2><p>${copy.carRentalSubtitle}</p></div><button type="button" id="open-car-rental">${copy.carRentalOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.weatherTitle}</h2><p>${copy.weatherSubtitle}</p></div><button type="button" id="open-weather">${copy.weatherOpen}</button></article>
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
@@ -2034,6 +2320,12 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#open-car-rental')?.addEventListener('click', () => {
     view = 'car-rental';
     if (window.location.hash !== '#car-rental') window.location.hash = 'car-rental';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-weather')?.addEventListener('click', () => {
+    view = 'weather';
+    if (window.location.hash !== '#weather') window.location.hash = 'weather';
+    void loadWeather(destinationWeatherLocation());
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {

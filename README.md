@@ -23,6 +23,13 @@ A first working prototype of a privacy-first, worldwide Muslim travel-planning w
 - The app does not bulk-download, prefetch, or manually cache map tiles, does not use paid map APIs, Google Maps, Mapbox, API keys, or location tracking, and does not request the user’s precise location.
 - If Leaflet or map tiles fail to load, the page shows graceful fallback text instead of blocking itinerary planning.
 
+## Weather provider
+
+- Weather forecasts use the public Open-Meteo forecast endpoint for this non-commercial prototype.
+- Before adding subscriptions, advertising, paid promotions, or other commercial use, configure a commercial Open-Meteo plan or a separate weather-provider adapter.
+- Weather provider URLs and credentials must be supplied through configuration.
+- API secrets must never be committed to GitHub.
+
 ## Run locally
 
 ```bash
