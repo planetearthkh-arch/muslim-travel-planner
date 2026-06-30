@@ -46,8 +46,10 @@ export type Attraction = {
   wheelchair: 'yes' | 'limited' | 'no' | 'unknown';
   fee: 'free' | 'paid' | 'unknown';
   wikipedia: string;
+  wikipediaRaw: string;
   wikidata: string;
   commons: string;
+  aliases: string[];
   osmDescription: string;
   history: string;
   historySource: string;
@@ -96,6 +98,16 @@ function wikipediaTitle(tags: OsmTags) {
   return title.replace(/_/g, ' ').trim();
 }
 
+export function parseWikipediaTag(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return { language: '', title: '' };
+  const parts = trimmed.split(':');
+  if (parts.length > 1 && /^[a-z][a-z-]{1,12}$/i.test(parts[0])) {
+    return { language: parts[0].toLowerCase(), title: parts.slice(1).join(':').replace(/_/g, ' ').trim() };
+  }
+  return { language: 'en', title: trimmed.replace(/_/g, ' ').trim() };
+}
+
 function fallbackName(category: AttractionCategory) {
   if (category === 'historic') return 'Historic Attraction';
   if (category === 'museum') return 'Museum';
@@ -113,6 +125,21 @@ export function attractionName(tags: OsmTags, category: AttractionCategory) {
   const display = ensureLatinDisplayName(candidate, undefined);
   const unnamed = /^Unnamed Quiet Prayer Space$|^Unnamed Mosque$|^Unnamed Prayer Room$/.test(display);
   return display && !unnamed ? display : fallbackName(category);
+}
+
+function attractionAliases(tags: OsmTags) {
+  return [
+    tags['name:en'],
+    tags.official_name,
+    tags['official_name:en'],
+    tags.short_name,
+    tags['short_name:en'],
+    tags.alt_name,
+    tags['alt_name:en'],
+    tags.int_name,
+    tags.old_name,
+    tags['old_name:en'],
+  ].filter((value): value is string => Boolean(value));
 }
 
 function fee(tags: OsmTags): Attraction['fee'] {
@@ -138,6 +165,7 @@ export function normalizeAttraction(element: OverpassElement, origin: { latitude
   const name = attractionName(tags, category);
   const openingHours = tags.opening_hours ?? '';
   const wikiTitle = wikipediaTitle(tags);
+  const rawWikipedia = tags['wikipedia:en'] ?? tags.wikipedia ?? '';
   return {
     id: `${element.type}-${element.id}`,
     name,
@@ -154,8 +182,10 @@ export function normalizeAttraction(element: OverpassElement, origin: { latitude
     wheelchair: wheelchair(tags),
     fee: fee(tags),
     wikipedia: wikiTitle,
+    wikipediaRaw: rawWikipedia,
     wikidata: tags.wikidata ?? '',
     commons: tags.wikimedia_commons ?? '',
+    aliases: [...new Set(attractionAliases(tags).map((alias) => ensureLatinDisplayName(alias, undefined)).filter(Boolean))],
     osmDescription: tags['description:en'] ?? '',
     history: '',
     historySource: '',
@@ -222,6 +252,15 @@ export function commonsFilenameFromTag(value: string) {
   return '';
 }
 
+export function commonsCategoryFromTag(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const withoutUrl = trimmed.includes('/wiki/') ? trimmed.split('/wiki/').pop() ?? trimmed : trimmed;
+  const decoded = decodeURIComponent(withoutUrl.replace(/_/g, ' '));
+  if (/^category:/i.test(decoded)) return decoded.replace(/^category:/i, '').trim();
+  return '';
+}
+
 export function commonsFilenameFromImageUrl(value: string) {
   try {
     const url = new URL(value);
@@ -250,7 +289,7 @@ export function wikidataEntityUrl(wikidataId: string) {
   const params = new URLSearchParams({
     action: 'wbgetentities',
     ids: wikidataId,
-    props: 'claims|descriptions',
+    props: 'claims|descriptions|labels|aliases|sitelinks',
     languages: 'en',
     format: 'json',
     origin: '*',
@@ -259,11 +298,33 @@ export function wikidataEntityUrl(wikidataId: string) {
 }
 
 export function wikipediaSummaryUrl(title: string) {
-  return `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+  return wikipediaSummaryUrlFor('en', title);
 }
 
-export function commonsSearchUrl(attraction: Pick<Attraction, 'name' | 'category' | 'latitude' | 'longitude'>, cityName: string) {
-  const search = `"${attraction.name}" ${cityName} ${attraction.category}`;
+export function wikipediaSummaryUrlFor(language: string, title: string) {
+  const safeLanguage = /^[a-z][a-z-]{1,12}$/i.test(language) ? language.toLowerCase() : 'en';
+  return `https://${safeLanguage}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+}
+
+export function commonsCategoryImagesUrl(category: string, thumbnailWidth = 720) {
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    origin: '*',
+    generator: 'categorymembers',
+    gcmtitle: `Category:${category}`,
+    gcmtype: 'file',
+    gcmlimit: '20',
+    prop: 'imageinfo',
+    iiprop: 'url|extmetadata',
+    iiurlwidth: String(thumbnailWidth),
+  });
+  return `https://commons.wikimedia.org/w/api.php?${params.toString()}`;
+}
+
+export function commonsSearchUrl(attraction: Pick<Attraction, 'name' | 'category' | 'aliases' | 'latitude' | 'longitude'>, cityName: string, countryName = '') {
+  const bestName = [attraction.name, ...attraction.aliases].find((name) => normalizeSearchText(name).length >= 4) ?? attraction.name;
+  const search = `"${bestName}" ${cityName} ${countryName} ${attraction.category}`.trim();
   const params = new URLSearchParams({
     action: 'query',
     format: 'json',
@@ -288,6 +349,18 @@ export function wikidataEnglishDescription(raw: any, wikidataId: string) {
   return raw?.entities?.[wikidataId]?.descriptions?.en?.value ?? '';
 }
 
+export function wikidataEnglishTitle(raw: any, wikidataId: string) {
+  return raw?.entities?.[wikidataId]?.sitelinks?.enwiki?.title ?? '';
+}
+
+export function wikidataEnglishLabel(raw: any, wikidataId: string) {
+  return raw?.entities?.[wikidataId]?.labels?.en?.value ?? '';
+}
+
+export function wikidataEnglishAliases(raw: any, wikidataId: string) {
+  return (raw?.entities?.[wikidataId]?.aliases?.en ?? []).map((alias: { value?: string }) => alias.value).filter(Boolean) as string[];
+}
+
 export function normalizeCommonsImage(raw: any): AttractionPhoto | undefined {
   const page = raw?.query?.pages ? Object.values(raw.query.pages)[0] as any : raw;
   const ext = page?.imageinfo?.[0] ?? page;
@@ -303,17 +376,29 @@ export function normalizeCommonsImage(raw: any): AttractionPhoto | undefined {
   return acceptableCommonsLicense(photo) ? photo : undefined;
 }
 
-function normalizeSearchText(value: string) {
+export function firstLicensedCommonsImage(raw: any): AttractionPhoto | undefined {
+  const pages = raw?.query?.pages ? Object.values(raw.query.pages) as any[] : [];
+  return pages.map((page) => normalizeCommonsImage(page)).find(Boolean);
+}
+
+export function normalizeSearchText(value: string) {
   return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/^file:/, '').replace(/\.[a-z0-9]+$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-export function selectHighConfidenceCommonsImage(raw: any, attraction: Pick<Attraction, 'name'>) {
+export function selectHighConfidenceCommonsImage(raw: any, attraction: Pick<Attraction, 'name' | 'aliases' | 'category'>, extraNames: string[] = []) {
   const pages = raw?.query?.pages ? Object.values(raw.query.pages) as any[] : [];
-  const attractionName = normalizeSearchText(attraction.name);
-  if (!attractionName || attractionName.length < 4) return undefined;
+  const names = [attraction.name, ...attraction.aliases, ...extraNames].map(normalizeSearchText).filter((name) => name.length >= 4);
+  const allTokens = new Set(names.flatMap((name) => name.split(' ').filter((token) => token.length >= 4)));
+  if (!names.length && !allTokens.size) return undefined;
   return pages
-    .map((page) => ({ page, photo: normalizeCommonsImage(page) }))
-    .find(({ page, photo }) => photo && normalizeSearchText(page.title ?? '').includes(attractionName))?.photo;
+    .map((page) => {
+      const title = normalizeSearchText(page.title ?? '');
+      const exactName = names.some((name) => title.includes(name) || name.includes(title));
+      const tokenMatches = [...allTokens].filter((token) => title.includes(token)).length;
+      return { page, photo: normalizeCommonsImage(page), score: Number(exactName) * 4 + tokenMatches };
+    })
+    .filter(({ photo, score }) => photo && score >= 2)
+    .sort((a, b) => b.score - a.score)[0]?.photo;
 }
 
 export function enrichAttraction(attraction: Attraction, source: { wikipediaExtract?: string; wikidataDescription?: string; osmDescription?: string; commonsImage?: any; photo?: AttractionPhoto; photoStatus?: AttractionPhotoStatus } = {}) {

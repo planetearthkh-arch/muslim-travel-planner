@@ -58,6 +58,8 @@ import {
 import {
   buildAttractionOverpassBatches,
   categoryExplanation,
+  commonsCategoryFromTag,
+  commonsCategoryImagesUrl,
   commonsFilenameFromImageUrl,
   commonsFilenameFromTag,
   commonsImageInfoUrl,
@@ -65,14 +67,19 @@ import {
   dedupeAttractions,
   enrichAttraction,
   filterAttractions,
+  firstLicensedCommonsImage,
   normalizeAttraction,
   normalizeCommonsImage,
+  parseWikipediaTag,
   selectHighConfidenceCommonsImage,
   sortAttractions,
   wikidataEnglishDescription,
+  wikidataEnglishAliases,
+  wikidataEnglishLabel,
+  wikidataEnglishTitle,
   wikidataEntityUrl,
   wikidataP18Filename,
-  wikipediaSummaryUrl,
+  wikipediaSummaryUrlFor,
   type Attraction,
   type AttractionQueryBatch,
   type AttractionPhoto,
@@ -617,6 +624,8 @@ let attractionEnrichmentSequence = 0;
 let selectedAttractionId = '';
 let attractionDiagnostics: string[] = [];
 const attractionCache = new Map<string, { expires: number; results: Attraction[] }>();
+const attractionEnrichmentCache = new Map<string, { expires: number; result: Attraction }>();
+let attractionCacheKey = '';
 
 function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
   const controller = new AbortController();
@@ -2115,21 +2124,37 @@ async function commonsPhotoFromFilename(filename: string) {
   return normalizeCommonsImage(data);
 }
 
-async function wikipediaAttractionSummary(attraction: Attraction) {
-  if (!attraction.wikipedia) return { wikipediaExtract: '', photo: undefined as AttractionPhoto | undefined };
-  const summary = await attractionJson<{ extract?: string; originalimage?: { source?: string }; thumbnail?: { source?: string } }>(wikipediaSummaryUrl(attraction.wikipedia), `Wikipedia summary ${attraction.wikipedia}`);
+async function commonsPhotoFromCategory(category: string, attraction: Attraction, extraNames: string[]) {
+  if (!category) return undefined;
+  const data = await attractionJson<unknown>(commonsCategoryImagesUrl(category), `Commons category ${category}`);
+  return selectHighConfidenceCommonsImage(data, attraction, extraNames) ?? firstLicensedCommonsImage(data);
+}
+
+async function wikipediaAttractionSummary(title: string, language = 'en') {
+  if (!title) return { wikipediaExtract: '', photo: undefined as AttractionPhoto | undefined, wikidata: '', englishTitle: '' };
+  const summary = await attractionJson<{ extract?: string; wikibase_item?: string; lang?: string; title?: string; originalimage?: { source?: string }; thumbnail?: { source?: string } }>(wikipediaSummaryUrlFor(language, title), `Wikipedia summary ${language}:${title}`);
   const imageUrl = summary.originalimage?.source ?? summary.thumbnail?.source ?? '';
   const filename = commonsFilenameFromImageUrl(imageUrl);
   let photo: AttractionPhoto | undefined;
   if (filename) photo = await commonsPhotoFromFilename(filename);
-  return { wikipediaExtract: summary.extract ?? '', photo };
+  const wikipediaExtract = language === 'en' ? summary.extract ?? '' : '';
+  return { wikipediaExtract, photo, wikidata: summary.wikibase_item ?? '', englishTitle: language === 'en' ? summary.title ?? title : '' };
+}
+
+function attractionEnrichmentKey(attraction: Attraction) {
+  return attraction.wikidata || attraction.wikipediaRaw || attraction.commons || attraction.sourceUrl;
 }
 
 async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName: string) {
+  const cacheKey = attractionEnrichmentKey(attraction);
+  const cached = attractionEnrichmentCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return { ...cached.result, distanceKm: attraction.distanceKm };
   let photo: AttractionPhoto | undefined;
   let wikipediaExtract = '';
   let wikidataDescription = '';
+  const extraNames = [...attraction.aliases];
   const commonsFilename = commonsFilenameFromTag(attraction.commons);
+  const commonsCategory = commonsCategoryFromTag(attraction.commons);
   if (commonsFilename) {
     try {
       photo = await commonsPhotoFromFilename(commonsFilename);
@@ -2137,19 +2162,46 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
       photo = undefined;
     }
   }
-  if (attraction.wikidata) {
+  if (!photo && commonsCategory) {
     try {
-      const entity = await attractionJson<unknown>(wikidataEntityUrl(attraction.wikidata), `Wikidata entity ${attraction.wikidata}`);
-      wikidataDescription = wikidataEnglishDescription(entity, attraction.wikidata);
-      const p18 = wikidataP18Filename(entity, attraction.wikidata);
+      photo = await commonsPhotoFromCategory(commonsCategory, attraction, extraNames);
+    } catch {
+      photo = undefined;
+    }
+  }
+  let wikidataId = attraction.wikidata;
+  if (!wikidataId && attraction.wikipediaRaw) {
+    try {
+      const parsed = parseWikipediaTag(attraction.wikipediaRaw);
+      const summary = await wikipediaAttractionSummary(parsed.title, parsed.language);
+      wikidataId = summary.wikidata;
+      if (!photo) photo = summary.photo;
+    } catch {
+      wikidataId = '';
+    }
+  }
+  if (wikidataId) {
+    try {
+      const entity = await attractionJson<unknown>(wikidataEntityUrl(wikidataId), `Wikidata entity ${wikidataId}`);
+      wikidataDescription = wikidataEnglishDescription(entity, wikidataId);
+      extraNames.push(wikidataEnglishLabel(entity, wikidataId), wikidataEnglishTitle(entity, wikidataId), ...wikidataEnglishAliases(entity, wikidataId));
+      const p18 = wikidataP18Filename(entity, wikidataId);
       if (!photo && p18) photo = await commonsPhotoFromFilename(p18);
+      if (!wikipediaExtract) {
+        const englishTitle = wikidataEnglishTitle(entity, wikidataId);
+        if (englishTitle) {
+          const summary = await wikipediaAttractionSummary(englishTitle, 'en');
+          wikipediaExtract = summary.wikipediaExtract;
+          if (!photo) photo = summary.photo;
+        }
+      }
     } catch {
       wikidataDescription = '';
     }
   }
   if (attraction.wikipedia) {
     try {
-      const summary = await wikipediaAttractionSummary(attraction);
+      const summary = await wikipediaAttractionSummary(attraction.wikipedia, 'en');
       wikipediaExtract = summary.wikipediaExtract;
       if (!photo) photo = summary.photo;
     } catch {
@@ -2158,17 +2210,20 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
   }
   if (!photo) {
     try {
-      const search = await attractionJson<unknown>(commonsSearchUrl(attraction, cityName), `Commons exact-name search ${attraction.name}`);
-      photo = selectHighConfidenceCommonsImage(search, attraction);
+      const countryName = attractionCenter?.label?.split(',').slice(1).join(',').trim() ?? selectedCity().country;
+      const search = await attractionJson<unknown>(commonsSearchUrl(attraction, cityName, countryName), `Commons exact-name search ${attraction.name}`);
+      photo = selectHighConfidenceCommonsImage(search, attraction, extraNames);
     } catch {
       photo = undefined;
     }
   }
-  return enrichAttraction(attraction, { wikipediaExtract, wikidataDescription, osmDescription: attraction.osmDescription, photo, photoStatus: 'checked' });
+  const result = enrichAttraction(attraction, { wikipediaExtract, wikidataDescription, osmDescription: attraction.osmDescription, photo, photoStatus: 'checked' });
+  attractionEnrichmentCache.set(cacheKey, { expires: Date.now() + 24 * 60 * 60 * 1000, result });
+  return result;
 }
 
 async function progressiveAttractionEnrichment(sequence: number) {
-  const candidates = attractionResults.slice(0, 80);
+  const candidates = attractionResults.filter((attraction) => attraction.photoStatus !== 'checked' && attraction.photoStatus !== 'error');
   if (!candidates.length) return;
   attractionResults = attractionResults.map((attraction) => candidates.some((candidate) => candidate.id === attraction.id) ? { ...attraction, photoStatus: 'loading' } : attraction);
   attractionStatus = 'photos';
@@ -2180,10 +2235,12 @@ async function progressiveAttractionEnrichment(sequence: number) {
       const current = attractionResults.find((candidate) => candidate.id === attraction.id) ?? attraction;
       const updated = await resolveAttractionPhotoAndHistory(current, cityName);
       attractionResults = attractionResults.map((candidate) => candidate.id === attraction.id ? updated : candidate);
+      if (attractionCacheKey) attractionCache.set(attractionCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
       attractionsPage();
     } catch (error) {
       recordAttractionDiagnostic(`Attraction enrichment ${attraction.name}`, error);
       attractionResults = attractionResults.map((candidate) => candidate.id === attraction.id ? { ...candidate, photoStatus: 'error' } : candidate);
+      if (attractionCacheKey) attractionCache.set(attractionCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
       attractionsPage();
     }
     await new Promise((resolve) => window.setTimeout(resolve, 250));
@@ -2198,11 +2255,15 @@ async function searchAttractions(center: PrayerCenter) {
   attractionCenter = center;
   attractionMapMoved = false;
   const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${attractionRadiusKm}`;
+  attractionCacheKey = cacheKey;
   const cached = attractionCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     attractionResults = cached.results;
     attractionStatus = attractionResults.length ? 'cached' : 'empty';
     attractionsPage();
+    if (attractionResults.some((attraction) => attraction.photoStatus !== 'checked' && attraction.photoStatus !== 'error')) {
+      void progressiveAttractionEnrichment(++attractionEnrichmentSequence);
+    }
     return;
   }
   const sequence = ++attractionSearchSequence;

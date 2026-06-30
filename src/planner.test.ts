@@ -78,6 +78,8 @@ import {
   canAttachExternalSource,
   categoryExplanation,
   classifyAttraction,
+  commonsCategoryFromTag,
+  commonsCategoryImagesUrl,
   commonsFilenameFromImageUrl,
   commonsFilenameFromTag,
   commonsImageInfoUrl,
@@ -85,13 +87,18 @@ import {
   dedupeAttractions,
   enrichAttraction,
   filterAttractions,
+  firstLicensedCommonsImage,
   isMappedAttraction,
   normalizeAttraction,
   normalizeCommonsImage,
+  parseWikipediaTag,
   selectHighConfidenceCommonsImage,
   sortAttractions,
   summarizeWikipediaExtract,
   wikidataEnglishDescription,
+  wikidataEnglishAliases,
+  wikidataEnglishLabel,
+  wikidataEnglishTitle,
   wikidataEntityUrl,
   wikidataP18Filename,
   wikipediaSummaryUrl,
@@ -816,22 +823,30 @@ test('handles Wikimedia Commons metadata, licences, and placeholders', () => {
 
 test('builds CORS-compatible attraction image URLs and parses Commons filenames', () => {
   const commonsUrl = commonsImageInfoUrl('Dome of the Rock.jpg');
+  const categoryUrl = commonsCategoryImagesUrl('Dome of the Rock');
   const wikidataUrl = wikidataEntityUrl('Q123');
-  const searchUrl = commonsSearchUrl({ name: 'Dome of the Rock', category: 'religious', latitude: 31.778, longitude: 35.235 }, 'Jerusalem');
+  const searchUrl = commonsSearchUrl({ name: 'Dome of the Rock', aliases: ['Qubbat al-Sakhra'], category: 'religious', latitude: 31.778, longitude: 35.235 }, 'Jerusalem', 'Palestine');
   assert.equal(new URL(commonsUrl).searchParams.get('origin'), '*');
+  assert.equal(new URL(categoryUrl).searchParams.get('origin'), '*');
+  assert.equal(new URL(categoryUrl).searchParams.get('gcmtitle'), 'Category:Dome of the Rock');
   assert.equal(new URL(wikidataUrl).searchParams.get('origin'), '*');
   assert.equal(new URL(searchUrl).searchParams.get('origin'), '*');
   assert.equal(new URL(commonsUrl).searchParams.get('titles'), 'File:Dome of the Rock.jpg');
   assert.equal(commonsFilenameFromTag('File:16-04-04-Felsendom-Tempelberg-Jerusalem-RalfR-WAT 6559-6565.jpg'), '16-04-04-Felsendom-Tempelberg-Jerusalem-RalfR-WAT 6559-6565.jpg');
+  assert.equal(commonsCategoryFromTag('Category:Dome_of_the_Rock'), 'Dome of the Rock');
   assert.equal(commonsFilenameFromTag('https://commons.wikimedia.org/wiki/File:Islam_art_museum1.JPG'), 'Islam art museum1.JPG');
   assert.equal(commonsFilenameFromImageUrl('https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Islam_art_museum1.JPG/960px-Islam_art_museum1.JPG'), 'Islam art museum1.JPG');
   assert.equal(wikipediaSummaryUrl('Tower of David').includes('/Tower_of_David'), true);
+  assert.deepEqual(parseWikipediaTag('ar:قبة_الصخرة'), { language: 'ar', title: 'قبة الصخرة' });
 });
 
 test('reads Wikidata P18 and reusable Commons licence metadata', () => {
-  const entity = { entities: { Q1177765: { descriptions: { en: { value: 'ancient citadel' } }, claims: { P18: [{ mainsnak: { datavalue: { value: 'מגדל -דוד.jpg' } } }] } } } };
+  const entity = { entities: { Q1177765: { labels: { en: { value: 'Tower of David' } }, aliases: { en: [{ value: 'Jerusalem Citadel' }] }, sitelinks: { enwiki: { title: 'Tower of David' } }, descriptions: { en: { value: 'ancient citadel' } }, claims: { P18: [{ mainsnak: { datavalue: { value: 'מגדל -דוד.jpg' } } }] } } } };
   assert.equal(wikidataP18Filename(entity, 'Q1177765'), 'מגדל -דוד.jpg');
   assert.equal(wikidataEnglishDescription(entity, 'Q1177765'), 'ancient citadel');
+  assert.equal(wikidataEnglishLabel(entity, 'Q1177765'), 'Tower of David');
+  assert.equal(wikidataEnglishTitle(entity, 'Q1177765'), 'Tower of David');
+  assert.deepEqual(wikidataEnglishAliases(entity, 'Q1177765'), ['Jerusalem Citadel']);
   const commons = { query: { pages: { 1: { title: 'File:מגדל -דוד.jpg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/thumb.jpg', descriptionurl: 'https://commons.wikimedia.org/wiki/File:%D7%9E.jpg', extmetadata: { Artist: { value: '<b>Photographer</b>' }, LicenseShortName: { value: 'CC BY-SA 4.0' }, LicenseUrl: { value: 'https://creativecommons.org/licenses/by-sa/4.0/' } } }] } } } };
   const photo = normalizeCommonsImage(commons);
   assert.equal(photo?.title, 'File:מגדל -דוד.jpg');
@@ -841,10 +856,11 @@ test('reads Wikidata P18 and reusable Commons licence metadata', () => {
 test('accepts high-confidence Commons search results and rejects ambiguous images', () => {
   const raw = { query: { pages: {
     1: { title: 'File:Random Jerusalem gate.jpg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/random.jpg', descriptionurl: 'https://commons.wikimedia.org/wiki/File:Random.jpg', extmetadata: { LicenseShortName: { value: 'CC BY-SA 4.0' } } }] },
-    2: { title: 'File:Dome of the Rock exterior.jpg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/dome.jpg', descriptionurl: 'https://commons.wikimedia.org/wiki/File:Dome.jpg', extmetadata: { LicenseShortName: { value: 'CC BY-SA 4.0' } } }] },
+    2: { title: 'File:Qubbat al-Sakhra exterior.jpg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/dome.jpg', descriptionurl: 'https://commons.wikimedia.org/wiki/File:Dome.jpg', extmetadata: { LicenseShortName: { value: 'CC BY-SA 4.0' } } }] },
   } } };
-  assert.equal(selectHighConfidenceCommonsImage(raw, { name: 'Dome of the Rock' })?.thumbnailUrl, 'https://upload.wikimedia.org/dome.jpg');
-  assert.equal(selectHighConfidenceCommonsImage(raw, { name: 'Western Wall' }), undefined);
+  assert.equal(selectHighConfidenceCommonsImage(raw, { name: 'Dome of the Rock', aliases: ['Qubbat al-Sakhra'], category: 'religious' })?.thumbnailUrl, 'https://upload.wikimedia.org/dome.jpg');
+  assert.equal(selectHighConfidenceCommonsImage(raw, { name: 'Western Wall', aliases: [], category: 'religious' }), undefined);
+  assert.equal(firstLicensedCommonsImage(raw)?.thumbnailUrl, 'https://upload.wikimedia.org/random.jpg');
 });
 
 test('creates English summaries from Wikipedia, Wikidata, and OSM descriptions', () => {
@@ -914,6 +930,9 @@ test('attraction page progressively loads images before final missing-image fall
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
   const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
   assert.equal(source.includes("photoStatus: 'loading'"), true);
+  assert.equal(source.includes('attractionResults.filter((attraction) => attraction.photoStatus'), true);
+  assert.equal(source.includes('attractionResults.slice(0, 80)'), false);
+  assert.equal(source.includes('attractionEnrichmentCache'), true);
   assert.equal(source.includes("copy.attractionsLoadingPhotos"), true);
   assert.equal(source.includes("copy.attractionsNoLicensedImage"), true);
   assert.equal(source.includes('resolveAttractionPhotoAndHistory'), true);
