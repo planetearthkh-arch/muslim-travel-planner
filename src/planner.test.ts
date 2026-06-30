@@ -182,6 +182,38 @@ test('generates prayer, attraction, travel, and halal-conscious meal items', () 
   assert.equal(items.some((i) => i.kind === 'meal' && i.details.includes('Unverified')), true);
 });
 
+test('Generate Itinerary button controls planner generation workflow', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes('let generatedPrefs: PlannerPreferences | null = null'), true);
+  assert.equal(source.includes('const items = generatedPrefs && generatedCity ? generateItinerary(generatedPrefs, replan, lang) : []'), true);
+  assert.equal(source.includes('plannerValidation || (visibleCities.length ? copy.generatePrompt : copy.noCities)'), true);
+  assert.equal(source.includes('const next = readPlannerDraftFromForm()'), true);
+  assert.equal(source.includes('generatedPrefs = { ...next, interests: [...next.interests] }'), true);
+  assert.equal(source.includes('plannerAnnouncement = copy.itineraryReady'), true);
+  assert.equal(source.includes("document.querySelector('#planner-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' })"), true);
+  assert.equal(source.includes("document.querySelector<HTMLSelectElement>('[data-region=\"filter\"]')?.addEventListener"), true);
+  assert.equal(source.includes('const visible = selectedRegion ? cities.filter((candidate) => candidate.region === selectedRegion) : cities'), true);
+  assert.equal(source.includes('prefs = { ...prefs, city: visible[0].city }'), true);
+  assert.equal(source.includes("plannerValidation = '';\n    plannerAnnouncement = '';\n    render();"), true);
+  assert.equal(source.includes("if (key === 'city' || key === 'prayerMethod' || key === 'startDate') {\n      athanStatus = '';"), true);
+  assert.equal(source.includes('generateItinerary(prefs, replan, lang)'), false);
+  assert.equal(source.includes('replan = Number(button.dataset.replan)'), true);
+  assert.equal(source.includes('generateItinerary(generatedPrefs, replan, lang)'), true);
+});
+
+test('planner validation and pre-generation messages are translated', () => {
+  assert.equal(labels.en.generatePrompt, 'Choose your destination and preferences, then press Generate Itinerary.');
+  assert.equal(labels.en.invalidEndDate, 'End date cannot be before the start date.');
+  assert.equal(labels.en.invalidEndTime, 'End time cannot be before the start time on a one-day trip.');
+  assert.equal(labels.en.invalidGroupSize, 'Group size must be at least 1.');
+  assert.equal(labels.en.invalidCity, 'Choose a supported city before generating an itinerary.');
+  assert.equal(labels.ar.generatePrompt.length > 0, true);
+  assert.equal(labels.ar.itineraryReady.length > 0, true);
+  assert.equal(labels.id.generatePrompt.length > 0, true);
+  assert.equal(labels.id.itineraryReady.length > 0, true);
+});
+
 test('supports switching among English, Arabic, and Bahasa Indonesia', () => {
   assert.deepEqual(languages.map((language) => language.code), ['en', 'ar', 'id']);
   assert.equal(nextLanguage('en'), 'ar');

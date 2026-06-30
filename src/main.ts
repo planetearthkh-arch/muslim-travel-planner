@@ -168,6 +168,9 @@ let prefs: PlannerPreferences = {
   accessibilityNeeds: '',
   halalPreference: 'strictly labelled',
 };
+let generatedPrefs: PlannerPreferences | null = null;
+let plannerValidation = '';
+let plannerAnnouncement = '';
 
 let currencies: CurrencyInfo[] = fallbackCurrencies;
 let currencySearch = '';
@@ -264,10 +267,10 @@ function mapSection(city: (typeof cities)[number], copy: typeof labels[Language]
   </section>`;
 }
 
-function athanSection(city: (typeof cities)[number]) {
+function athanSection(city: (typeof cities)[number], planPrefs: PlannerPreferences = prefs) {
   const copy = athanLabels[lang];
   const locale = localeForLanguage(lang);
-  const times = calculatePrayerDisplay(city, prefs.prayerMethod, prefs.startDate, locale);
+  const times = calculatePrayerDisplay(city, planPrefs.prayerMethod, planPrefs.startDate, locale);
   const prayerRows = prayerOrder.map((prayer) => `<div class="prayer-time"><strong>${prayerLabels[lang][prayer]}</strong><span>${times[prayer]}</span></div>`).join('');
   const deviceNotice = isNativeAthanAvailable() ? copy.androidNotice : copy.browserNotice;
   return `<section class="panel athan-panel" aria-label="${copy.title}">
@@ -2527,6 +2530,29 @@ function selectedCity() {
   return cities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? cities[0];
 }
 
+function cityForPreferences(planPrefs: PlannerPreferences) {
+  return cities.find((candidate) => candidate.city.toLowerCase() === planPrefs.city.toLowerCase());
+}
+
+function plannerValidationMessage(planPrefs: PlannerPreferences, copy: typeof labels[Language]) {
+  if (!cityForPreferences(planPrefs)) return copy.invalidCity;
+  if (!Number.isFinite(planPrefs.groupSize) || planPrefs.groupSize < 1) return copy.invalidGroupSize;
+  if (planPrefs.startDate && planPrefs.endDate && planPrefs.endDate < planPrefs.startDate) return copy.invalidEndDate;
+  if (planPrefs.startDate && planPrefs.endDate && planPrefs.startDate === planPrefs.endDate && planPrefs.endHour < planPrefs.startHour) return copy.invalidEndTime;
+  return '';
+}
+
+function readPlannerDraftFromForm() {
+  let next = { ...prefs };
+  document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-field]').forEach((element) => {
+    const key = element.dataset.field as keyof PlannerPreferences;
+    const value = element instanceof HTMLInputElement && element.type === 'checkbox' ? element.checked : element.value;
+    next = { ...next, [key]: key === 'groupSize' ? Number(value) : key === 'interests' ? String(value).split(',').map((interest) => interest.trim()).filter(Boolean) : value } as PlannerPreferences;
+  });
+  prefs = next;
+  return next;
+}
+
 async function loadCurrencies() {
   const cached = readJsonCache<CurrencyInfo[]>(localStorage, 'mtp-currencies', CURRENCY_CACHE_MS);
   if (cached?.length) currencies = cached;
@@ -2800,11 +2826,10 @@ function render() {
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const visibleCities = selectedRegion ? cities.filter((candidate) => candidate.region === selectedRegion) : cities;
-  if (!visibleCities.some((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase())) {
-    prefs = { ...prefs, city: visibleCities[0]?.city ?? cities[0].city };
-  }
-  const city = selectedCity();
-  const items = generateItinerary(prefs, replan, lang);
+  const draftCity = cityForPreferences(prefs) ?? cities[0];
+  const selectedFormCity = visibleCities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? visibleCities[0] ?? draftCity;
+  const generatedCity = generatedPrefs ? cityForPreferences(generatedPrefs) : undefined;
+  const items = generatedPrefs && generatedCity ? generateItinerary(generatedPrefs, replan, lang) : [];
   document.documentElement.lang = lang;
   document.documentElement.dir = dir;
   root.innerHTML = `
@@ -2829,7 +2854,7 @@ function render() {
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">
           <label>${copy.region}<select data-region="filter"><option value="">${copy.allRegions}</option>${regionOptions.map((region) => `<option value="${region}" ${selectedRegion === region ? 'selected' : ''}>${regionLabels[lang][region]}</option>`).join('')}</select></label>
-          <label>${copy.city}<select data-field="city">${visibleCities.map((candidate) => `<option value="${candidate.city}" ${candidate.city === city.city ? 'selected' : ''}>${candidate.city}, ${candidate.country}</option>`).join('')}</select></label>
+          <label>${copy.city}<select data-field="city">${visibleCities.map((candidate) => `<option value="${candidate.city}" ${candidate.city === selectedFormCity.city ? 'selected' : ''}>${candidate.city}, ${candidate.country}</option>`).join('')}</select></label>
         </div>
         <label class="compact">${copy.cityAutocomplete}<input data-field="city" list="cities" value="${esc(prefs.city)}" placeholder="${copy.cityPlaceholder}" /></label>
         <datalist id="cities">${visibleCities.map((candidate) => `<option value="${candidate.city}">${candidate.country}</option>`).join('')}</datalist>
@@ -2845,11 +2870,14 @@ function render() {
         ${choiceSelect('halalPreference', copy.halalPreference, ['strictly labelled', 'vegetarian/seafood options', 'flexible'], optionLabels.halalPreference[lang])}
         <button id="plan">${copy.plan}</button>
       </section>
-      <section class="panel results" aria-live="polite">
-        <div class="result-header"><div><h2>${city.city}, ${city.country}</h2><p>${regionLabels[lang][city.region]} · ${city.timezone}</p><p>${copy.transportEstimatesAre} <strong>${statusLabels[lang].Sample}</strong>: ${copy.walking} ${city.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${city.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${city.transportEstimates.taxi} ${copy.minutesShort}.</p></div><div class="legend"><strong>${copy.legend}</strong>${statusBadge('Sample')}${statusBadge('Unverified')}${statusBadge('Verified')}</div></div>
-        ${athanSection(city)}
-        ${mapSection(city, copy)}
-        ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span>${statusBadge(item.status)}</div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.evidence ? `<p class="evidence">${copy.evidenceNote}: ${item.place.evidence}</p>` : ''}${item.place?.facility ? `<p>${copy.women}: ${statusBadge(item.place.facility.womenPrayerSpace)} ${copy.wudu}: ${statusBadge(item.place.facility.wudu)} ${copy.accessibility}: ${statusBadge(item.place.facility.accessibility)}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, city.city, city.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${visibleCities.length ? copy.emptyState : copy.noCities}</p>`}
+      <section class="panel results" id="planner-results" aria-live="polite">
+        <p class="sr-only" role="status">${esc(plannerAnnouncement)}</p>
+        ${generatedPrefs && generatedCity ? `
+          <div class="result-header"><div><h2>${generatedCity.city}, ${generatedCity.country}</h2><p>${regionLabels[lang][generatedCity.region]} · ${generatedCity.timezone}</p><p>${copy.transportEstimatesAre} <strong>${statusLabels[lang].Sample}</strong>: ${copy.walking} ${generatedCity.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${generatedCity.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${generatedCity.transportEstimates.taxi} ${copy.minutesShort}.</p></div><div class="legend"><strong>${copy.legend}</strong>${statusBadge('Sample')}${statusBadge('Unverified')}${statusBadge('Verified')}</div></div>
+          ${athanSection(generatedCity, generatedPrefs)}
+          ${mapSection(generatedCity, copy)}
+          ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span>${statusBadge(item.status)}</div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.evidence ? `<p class="evidence">${copy.evidenceNote}: ${item.place.evidence}</p>` : ''}${item.place?.facility ? `<p>${copy.women}: ${statusBadge(item.place.facility.womenPrayerSpace)} ${copy.wudu}: ${statusBadge(item.place.facility.wudu)} ${copy.accessibility}: ${statusBadge(item.place.facility.accessibility)}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, generatedCity.city, generatedCity.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${copy.emptyState}</p>`}
+        ` : `<p class="${plannerValidation ? 'error' : 'notice'}">${esc(plannerValidation || (visibleCities.length ? copy.generatePrompt : copy.noCities))}</p>`}
       </section>
     </main>`;
   bind();
@@ -2908,8 +2936,20 @@ function bind() {
     render();
   });
   document.querySelector('#plan')?.addEventListener('click', () => {
+    const copy = labels[lang];
+    const next = readPlannerDraftFromForm();
+    plannerValidation = plannerValidationMessage(next, copy);
+    plannerAnnouncement = '';
+    if (plannerValidation) {
+      render();
+      document.querySelector('#planner-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    generatedPrefs = { ...next, interests: [...next.interests] };
     replan = 0;
+    plannerAnnouncement = copy.itineraryReady;
     render();
+    document.querySelector('#planner-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   document.querySelector<HTMLButtonElement>('#enable-athan')?.addEventListener('click', async () => {
     const copy = athanLabels[lang];
@@ -2956,21 +2996,28 @@ function bind() {
   document.querySelector<HTMLSelectElement>('[data-region="filter"]')?.addEventListener('change', (event) => {
     const filter = event.target as HTMLSelectElement;
     selectedRegion = filter.value as Region | '';
-    replan = 0;
+    const visible = selectedRegion ? cities.filter((candidate) => candidate.region === selectedRegion) : cities;
+    if (visible.length && !visible.some((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase())) {
+      prefs = { ...prefs, city: visible[0].city };
+    }
+    plannerValidation = '';
+    plannerAnnouncement = '';
     render();
   });
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-field]').forEach((element) => element.addEventListener('change', () => {
     const key = element.dataset.field as keyof PlannerPreferences;
     const value = element instanceof HTMLInputElement && element.type === 'checkbox' ? element.checked : element.value;
     prefs = { ...prefs, [key]: key === 'groupSize' ? Number(value) : key === 'interests' ? String(value).split(',').map((interest) => interest.trim()).filter(Boolean) : value } as PlannerPreferences;
+    plannerValidation = '';
+    plannerAnnouncement = '';
     if (key === 'city' || key === 'prayerMethod' || key === 'startDate') {
-      replan = 0;
       athanStatus = '';
       render();
     }
   }));
   document.querySelectorAll<HTMLButtonElement>('[data-replan]').forEach((button) => button.addEventListener('click', () => {
     replan = Number(button.dataset.replan);
+    plannerAnnouncement = '';
     render();
   }));
 }
