@@ -1170,10 +1170,53 @@ test('attraction search uses fallback endpoints, partial batches, and retry-only
   assert.equal(source.includes('function overpassEndpoints()'), true);
   assert.equal(source.includes('mtp-overpass-fallback-endpoint'), true);
   assert.equal(source.includes('requestAttractionBatch(batch)'), true);
-  assert.equal(source.includes('buildAttractionOverpassBatches(center.latitude, center.longitude, attractionRadiusKm)'), true);
+  assert.equal(source.includes('buildAttractionOverpassBatches(searchCenter.latitude, searchCenter.longitude, searchRadius)'), true);
   assert.equal(source.includes('dedupeAttractions([...attractionResults, ...normalized])'), true);
   assert.equal(source.includes('HTTP (406|408|429|500|502|503|504)'), true);
   assert.equal(source.includes("attractionStatus === 'timeout' ? ''"), true);
+});
+
+test('prayer-space searches ignore stale success and error completions', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes('let prayerSearchSequence = 0'), true);
+  assert.equal(source.includes('async function searchPrayerPlaces(center: PrayerCenter, sequence = ++prayerSearchSequence)'), true);
+  assert.equal(source.includes('const searchRadius = prayerRadiusKm'), true);
+  assert.equal(source.includes('const isCurrentPrayerSearch = () => sequence === prayerSearchSequence'), true);
+  assert.equal(source.includes('if (!isCurrentPrayerSearch()) return;\n    prayerResults = [...deduped.values()]'), true);
+  assert.equal(source.includes("if (!isCurrentPrayerSearch()) return;\n    prayerStatus = 'service-unavailable'"), true);
+  assert.equal(source.includes('void searchPrayerPlaces({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }, sequence)'), true);
+  assert.equal(source.includes('await searchPrayerPlaces({ latitude: Number(first.lat), longitude: Number(first.lon), label: first.display_name }, sequence)'), true);
+});
+
+test('audited async feature searches isolate stale completions', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes('const isCurrentRestaurantSearch = () => sequence === restaurantSearchSequence'), true);
+  assert.equal(source.includes('if (!isCurrentRestaurantSearch()) return;\n    if (cached)'), true);
+  assert.equal(source.includes('const isCurrentToiletSearch = () => sequence === toiletSearchSequence'), true);
+  assert.equal(source.includes('if (!isCurrentToiletSearch()) return;\n    if (cached)'), true);
+  assert.equal(source.includes('const isCurrentCarRentalSearch = () => sequence === carRentalSearchSequence'), true);
+  assert.equal(source.includes('if (!isCurrentCarRentalSearch()) return;\n    if (cached)'), true);
+  assert.equal(source.includes('const requestUnits = { ...weatherUnits }'), true);
+  assert.equal(source.includes('const isCurrentWeatherRequest = () => sequence === weatherRequestSequence'), true);
+  assert.equal(source.includes('if (!isCurrentWeatherRequest()) return;\n    const fallback'), true);
+  assert.equal(source.includes('const activeCacheKey = attractionCacheKey'), true);
+  assert.equal(source.includes('if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey) return;\n      attractionResults = attractionResults.map'), true);
+});
+
+test('money rate and history requests are tied to the active pair and range', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes('let rateRequestSequence = 0'), true);
+  assert.equal(source.includes('let historyRequestSequence = 0'), true);
+  assert.equal(source.includes('const requestFromCurrency = fromCurrency'), true);
+  assert.equal(source.includes('const requestToCurrency = toCurrency'), true);
+  assert.equal(source.includes('const isCurrentRateRequest = () => sequence === rateRequestSequence && requestFromCurrency === fromCurrency && requestToCurrency === toCurrency'), true);
+  assert.equal(source.includes('historyRequestSequence += 1'), true);
+  assert.equal(source.includes('void loadHistory(requestFromCurrency, requestToCurrency)'), true);
+  assert.equal(source.includes('const requestHistoryDays = historyDays'), true);
+  assert.equal(source.includes('const isCurrentHistoryRequest = () => sequence === historyRequestSequence && historyFromCurrency === fromCurrency && historyToCurrency === toCurrency && requestHistoryDays === historyDays'), true);
 });
 
 test('map-search failure states render retry actions without endless loading', async () => {

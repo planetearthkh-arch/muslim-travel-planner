@@ -566,6 +566,7 @@ let prayerWheelchairOnly = false;
 let prayerMapMoved = false;
 let prayerError = '';
 let prayerSearchTimer: number | undefined;
+let prayerSearchSequence = 0;
 const prayerCache = new Map<string, { expires: number; results: PrayerPlace[] }>();
 let restaurantStatus: RestaurantStatus = 'idle';
 let restaurantMode: RestaurantMode = 'map';
@@ -640,6 +641,8 @@ let attractionDiagnostics: string[] = [];
 const attractionCache = new Map<string, { expires: number; results: Attraction[] }>();
 const attractionEnrichmentCache = new Map<string, { expires: number; result: Attraction }>();
 let attractionCacheKey = '';
+let rateRequestSequence = 0;
+let historyRequestSequence = 0;
 
 function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
   const controller = new AbortController();
@@ -693,12 +696,16 @@ function browserDirectionsUrl(place: PrayerPlace) {
 
 function overpassUrl() { return localStorage.getItem('mtp-overpass-endpoint') ?? 'https://overpass-api.de/api/interpreter'; }
 
-async function searchPrayerPlaces(center: PrayerCenter) {
+async function searchPrayerPlaces(center: PrayerCenter, sequence = ++prayerSearchSequence) {
+  const searchCenter = { ...center };
+  const searchRadius = prayerRadiusKm;
+  const isCurrentPrayerSearch = () => sequence === prayerSearchSequence;
   prayerCenter = center;
   prayerMapMoved = false;
-  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${prayerRadiusKm}`;
+  const cacheKey = `${searchCenter.latitude.toFixed(4)},${searchCenter.longitude.toFixed(4)},${searchRadius}`;
   const cached = prayerCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
+    if (!isCurrentPrayerSearch()) return;
     prayerResults = cached.results;
     prayerStatus = prayerResults.length ? 'ready' : 'empty';
     prayerPage();
@@ -708,26 +715,32 @@ async function searchPrayerPlaces(center: PrayerCenter) {
   prayerError = '';
   prayerPage();
   try {
-    const body = buildOverpassQuery(center.latitude, center.longitude, prayerRadiusKm);
+    const body = buildOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
     const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 18000);
+    if (!isCurrentPrayerSearch()) return;
     const deduped = new Map<string, PrayerPlace>();
     for (const element of data.elements ?? []) {
-      const place = normalizePrayerPlace(element, center);
+      const place = normalizePrayerPlace(element, searchCenter);
       if (place) deduped.set(place.id, place);
     }
+    if (!isCurrentPrayerSearch()) return;
     prayerResults = [...deduped.values()].sort((a, b) => a.distanceKm - b.distanceKm);
     prayerCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: prayerResults });
     prayerStatus = prayerResults.length ? 'ready' : 'empty';
   } catch (error) {
     console.error(error);
+    if (!isCurrentPrayerSearch()) return;
     prayerStatus = 'service-unavailable';
     prayerError = labels[lang].prayerServiceUnavailable;
   }
+  if (!isCurrentPrayerSearch()) return;
   prayerPage();
 }
 
 function requestPrayerLocation() {
+  const sequence = ++prayerSearchSequence;
   if (!navigator.geolocation) {
+    if (sequence !== prayerSearchSequence) return;
     prayerStatus = 'unavailable';
     prayerPage();
     return;
@@ -735,8 +748,12 @@ function requestPrayerLocation() {
   prayerStatus = 'requesting';
   prayerPage();
   navigator.geolocation.getCurrentPosition(
-    (position) => void searchPrayerPlaces({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (position) => {
+      if (sequence !== prayerSearchSequence) return;
+      void searchPrayerPlaces({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }, sequence);
+    },
     (error) => {
+      if (sequence !== prayerSearchSequence) return;
       prayerStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       prayerPage();
     },
@@ -747,21 +764,26 @@ function requestPrayerLocation() {
 async function searchPrayerDestination() {
   const query = prayerManualQuery.trim();
   if (!query) return;
+  const sequence = ++prayerSearchSequence;
+  const isCurrentPrayerSearch = () => sequence === prayerSearchSequence;
   prayerStatus = 'searching';
   prayerPage();
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
     const data = await requestJson<NominatimResult[]>(url, { headers: { Accept: 'application/json' } }, 12000);
+    if (!isCurrentPrayerSearch()) return;
     const first = data[0];
     if (!first) {
+      if (!isCurrentPrayerSearch()) return;
       prayerStatus = 'empty';
       prayerResults = [];
       prayerPage();
       return;
     }
-    await searchPrayerPlaces({ latitude: Number(first.lat), longitude: Number(first.lon), label: first.display_name });
+    await searchPrayerPlaces({ latitude: Number(first.lat), longitude: Number(first.lon), label: first.display_name }, sequence);
   } catch (error) {
     console.error(error);
+    if (!isCurrentPrayerSearch()) return;
     prayerStatus = 'service-unavailable';
     prayerError = labels[lang].prayerServiceUnavailable;
     prayerPage();
@@ -950,33 +972,39 @@ async function resolveRestaurantDestination(query: string): Promise<PrayerCenter
 }
 
 async function searchHalalRestaurants(center: PrayerCenter) {
-  restaurantCenter = center;
+  const sequence = ++restaurantSearchSequence;
+  const searchCenter = { ...center };
+  const searchRadius = restaurantRadiusKm;
+  const isCurrentRestaurantSearch = () => sequence === restaurantSearchSequence;
+  restaurantCenter = searchCenter;
   restaurantMapMoved = false;
   selectedRestaurantId = '';
-  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${restaurantRadiusKm}`;
+  const cacheKey = `${searchCenter.latitude.toFixed(4)},${searchCenter.longitude.toFixed(4)},${searchRadius}`;
   const cached = restaurantCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
+    if (!isCurrentRestaurantSearch()) return;
     restaurantResults = cached.results;
     restaurantStatus = restaurantResults.length ? 'cached' : 'empty';
     halalRestaurantsPage();
     return;
   }
-  const sequence = ++restaurantSearchSequence;
   restaurantStatus = 'searching';
   restaurantError = '';
   halalRestaurantsPage();
   try {
-    const body = buildHalalOverpassQuery(center.latitude, center.longitude, restaurantRadiusKm);
+    const body = buildHalalOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
     const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 20000);
-    if (sequence !== restaurantSearchSequence) return;
+    if (!isCurrentRestaurantSearch()) return;
     const normalized = (data.elements ?? [])
-      .map((element) => normalizeHalalRestaurant(element, center, true))
+      .map((element) => normalizeHalalRestaurant(element, searchCenter, true))
       .filter((place): place is HalalRestaurant => Boolean(place));
+    if (!isCurrentRestaurantSearch()) return;
     restaurantResults = dedupeRestaurants(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 350);
     restaurantCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: restaurantResults });
     restaurantStatus = normalized.length > 350 ? 'too-many' : restaurantResults.length ? 'ready' : 'empty';
   } catch (error) {
     console.error(error);
+    if (!isCurrentRestaurantSearch()) return;
     if (cached) {
       restaurantResults = cached.results;
       restaurantStatus = navigator.onLine ? 'cached' : 'offline';
@@ -986,6 +1014,7 @@ async function searchHalalRestaurants(center: PrayerCenter) {
       restaurantError = labels[lang].halalServiceUnavailable;
     }
   }
+  if (!isCurrentRestaurantSearch()) return;
   halalRestaurantsPage();
 }
 
@@ -1010,10 +1039,13 @@ function requestRestaurantLocation() {
 async function searchRestaurantDestination() {
   const query = restaurantManualQuery.trim();
   if (!query) return;
+  const sequence = ++restaurantSearchSequence;
+  const isCurrentRestaurantSearch = () => sequence === restaurantSearchSequence;
   restaurantStatus = 'searching';
   halalRestaurantsPage();
   try {
     const center = await resolveRestaurantDestination(query);
+    if (!isCurrentRestaurantSearch()) return;
     if (!center) {
       restaurantResults = [];
       restaurantStatus = 'empty';
@@ -1023,6 +1055,7 @@ async function searchRestaurantDestination() {
     await searchHalalRestaurants(center);
   } catch (error) {
     console.error(error);
+    if (!isCurrentRestaurantSearch()) return;
     restaurantStatus = 'service-unavailable';
     restaurantError = labels[lang].halalServiceUnavailable;
     halalRestaurantsPage();
@@ -1241,31 +1274,37 @@ function filteredToiletResults() {
 }
 
 async function searchPublicToilets(center: PrayerCenter) {
-  toiletCenter = center;
+  const sequence = ++toiletSearchSequence;
+  const searchCenter = { ...center };
+  const searchRadius = toiletRadiusKm;
+  const isCurrentToiletSearch = () => sequence === toiletSearchSequence;
+  toiletCenter = searchCenter;
   toiletMapMoved = false;
-  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${toiletRadiusKm}`;
+  const cacheKey = `${searchCenter.latitude.toFixed(4)},${searchCenter.longitude.toFixed(4)},${searchRadius}`;
   const cached = toiletCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
+    if (!isCurrentToiletSearch()) return;
     toiletResults = cached.results;
     toiletStatus = toiletResults.length ? 'cached' : 'empty';
     publicToiletsPage();
     return;
   }
-  const sequence = ++toiletSearchSequence;
   toiletStatus = 'searching';
   toiletError = '';
   publicToiletsPage();
   try {
-    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body: buildToiletOverpassQuery(center.latitude, center.longitude, toiletRadiusKm) }, 20000);
-    if (sequence !== toiletSearchSequence) return;
+    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body: buildToiletOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius) }, 20000);
+    if (!isCurrentToiletSearch()) return;
     const normalized = (data.elements ?? [])
-      .map((element) => normalizePublicToilet(element, center))
+      .map((element) => normalizePublicToilet(element, searchCenter))
       .filter((toilet): toilet is PublicToilet => Boolean(toilet));
+    if (!isCurrentToiletSearch()) return;
     toiletResults = dedupeToilets(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 350);
     toiletCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: toiletResults });
     toiletStatus = normalized.length > 350 ? 'too-many' : toiletResults.length ? 'ready' : 'empty';
   } catch (error) {
     console.error(error);
+    if (!isCurrentToiletSearch()) return;
     if (cached) {
       toiletResults = cached.results;
       toiletStatus = navigator.onLine ? 'cached' : 'offline';
@@ -1275,6 +1314,7 @@ async function searchPublicToilets(center: PrayerCenter) {
       toiletError = labels[lang].toiletsServiceUnavailable;
     }
   }
+  if (!isCurrentToiletSearch()) return;
   publicToiletsPage();
 }
 
@@ -1299,10 +1339,13 @@ function requestToiletLocation() {
 async function searchToiletDestination() {
   const query = toiletManualQuery.trim();
   if (!query) return;
+  const sequence = ++toiletSearchSequence;
+  const isCurrentToiletSearch = () => sequence === toiletSearchSequence;
   toiletStatus = 'searching';
   publicToiletsPage();
   try {
     const center = await resolveRestaurantDestination(query);
+    if (!isCurrentToiletSearch()) return;
     if (!center) {
       toiletResults = [];
       toiletStatus = 'empty';
@@ -1312,6 +1355,7 @@ async function searchToiletDestination() {
     await searchPublicToilets(center);
   } catch (error) {
     console.error(error);
+    if (!isCurrentToiletSearch()) return;
     toiletStatus = 'service-unavailable';
     toiletError = labels[lang].toiletsServiceUnavailable;
     publicToiletsPage();
@@ -1520,32 +1564,38 @@ function filteredCarRentalResults() {
 }
 
 async function searchCarRentalOffices(center: PrayerCenter) {
-  carRentalCenter = center;
+  const sequence = ++carRentalSearchSequence;
+  const searchCenter = { ...center };
+  const searchRadius = carRentalRadiusKm;
+  const isCurrentCarRentalSearch = () => sequence === carRentalSearchSequence;
+  carRentalCenter = searchCenter;
   carRentalMapMoved = false;
-  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${carRentalRadiusKm}`;
+  const cacheKey = `${searchCenter.latitude.toFixed(4)},${searchCenter.longitude.toFixed(4)},${searchRadius}`;
   const cached = carRentalCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
+    if (!isCurrentCarRentalSearch()) return;
     carRentalResults = cached.results;
     carRentalStatus = carRentalResults.length ? 'cached' : 'empty';
     carRentalPage();
     return;
   }
-  const sequence = ++carRentalSearchSequence;
   carRentalStatus = 'searching';
   carRentalError = '';
   carRentalPage();
   try {
-    const body = buildCarRentalOverpassQuery(center.latitude, center.longitude, carRentalRadiusKm);
+    const body = buildCarRentalOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
     const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 20000);
-    if (sequence !== carRentalSearchSequence) return;
+    if (!isCurrentCarRentalSearch()) return;
     const normalized = (data.elements ?? [])
-      .map((element) => normalizeCarRentalOffice(element, center))
+      .map((element) => normalizeCarRentalOffice(element, searchCenter))
       .filter((office): office is CarRentalOffice => Boolean(office));
+    if (!isCurrentCarRentalSearch()) return;
     carRentalResults = dedupeCarRentalOffices(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 350);
     carRentalCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: carRentalResults });
     carRentalStatus = normalized.length > 350 ? 'too-many' : carRentalResults.length ? 'ready' : 'empty';
   } catch (error) {
     console.error(error);
+    if (!isCurrentCarRentalSearch()) return;
     if (cached) {
       carRentalResults = cached.results;
       carRentalStatus = navigator.onLine ? 'cached' : 'offline';
@@ -1555,6 +1605,7 @@ async function searchCarRentalOffices(center: PrayerCenter) {
       carRentalError = labels[lang].carRentalServiceUnavailable;
     }
   }
+  if (!isCurrentCarRentalSearch()) return;
   carRentalPage();
 }
 
@@ -1579,12 +1630,15 @@ function requestCarRentalLocation() {
 async function searchCarRentalDestination() {
   const rawQuery = carRentalManualQuery.trim();
   if (!rawQuery) return;
+  const sequence = ++carRentalSearchSequence;
+  const isCurrentCarRentalSearch = () => sequence === carRentalSearchSequence;
   const suffix = carRentalSearchKind === 'airport' ? ' airport' : carRentalSearchKind === 'station' ? ' station' : '';
   const query = `${rawQuery}${rawQuery.toLowerCase().includes(suffix.trim()) ? '' : suffix}`.trim();
   carRentalStatus = 'searching';
   carRentalPage();
   try {
     const center = await resolveRestaurantDestination(query);
+    if (!isCurrentCarRentalSearch()) return;
     if (!center) {
       carRentalResults = [];
       carRentalStatus = 'empty';
@@ -1594,6 +1648,7 @@ async function searchCarRentalDestination() {
     await searchCarRentalOffices({ ...center, label: carRentalSearchKind === 'airport' ? `${center.label} ${labels[lang].carRentalAirportSearch}` : center.label });
   } catch (error) {
     console.error(error);
+    if (!isCurrentCarRentalSearch()) return;
     carRentalStatus = 'service-unavailable';
     carRentalError = labels[lang].carRentalServiceUnavailable;
     carRentalPage();
@@ -1781,8 +1836,8 @@ function selectedWeatherCity() {
   return match ?? selectedCity();
 }
 
-function weatherCacheKey(location: WeatherLocation) {
-  return `mtp-weather-${location.latitude.toFixed(3)}-${location.longitude.toFixed(3)}-${weatherUnits.temperature}-${weatherUnits.wind}-${weatherUnits.precipitation}`;
+function weatherCacheKey(location: WeatherLocation, units = weatherUnits) {
+  return `mtp-weather-${location.latitude.toFixed(3)}-${location.longitude.toFixed(3)}-${units.temperature}-${units.wind}-${units.precipitation}`;
 }
 
 function weatherStatusMessage(copy: typeof labels[Language]) {
@@ -1802,28 +1857,34 @@ function weatherStatusMessage(copy: typeof labels[Language]) {
 }
 
 async function loadWeather(location: WeatherLocation, force = false) {
-  weatherLocation = location;
-  const cacheKey = weatherCacheKey(location);
+  const sequence = ++weatherRequestSequence;
+  const requestLocation = { ...location };
+  const requestUnits = { ...weatherUnits };
+  const isCurrentWeatherRequest = () => sequence === weatherRequestSequence;
+  weatherLocation = requestLocation;
+  const cacheKey = weatherCacheKey(requestLocation, requestUnits);
   const cached = readJsonCache<WeatherForecast>(localStorage, cacheKey, WEATHER_CACHE_MS);
   if (cached && !force) {
+    if (!isCurrentWeatherRequest()) return;
     weatherForecast = { ...cached, cached: true };
     weatherStatus = 'cached';
     weatherPage();
     return;
   }
-  const sequence = ++weatherRequestSequence;
   weatherStatus = 'loading';
   weatherError = '';
   weatherPage();
   try {
-    const forecast = validateWeatherResponse(await requestJson<unknown>(buildWeatherUrl(location.latitude, location.longitude, weatherUnits), { headers: { Accept: 'application/json' } }, 9000));
-    if (sequence !== weatherRequestSequence) return;
+    const forecast = validateWeatherResponse(await requestJson<unknown>(buildWeatherUrl(requestLocation.latitude, requestLocation.longitude, requestUnits), { headers: { Accept: 'application/json' } }, 9000));
+    if (!isCurrentWeatherRequest()) return;
     weatherForecast = forecast;
     weatherSelectedDay = forecast.daily[0]?.date ?? '';
     writeJsonCache(localStorage, cacheKey, forecast);
     weatherStatus = 'updated';
   } catch (error) {
+    if (!isCurrentWeatherRequest()) return;
     const fallback = readJsonCache<WeatherForecast>(localStorage, cacheKey, 7 * 24 * 60 * 60 * 1000);
+    if (!isCurrentWeatherRequest()) return;
     if (fallback) {
       weatherForecast = { ...fallback, cached: true };
       weatherStatus = navigator.onLine ? 'cached' : 'offline';
@@ -1833,6 +1894,7 @@ async function loadWeather(location: WeatherLocation, force = false) {
       weatherError = error instanceof Error ? error.message : '';
     }
   }
+  if (!isCurrentWeatherRequest()) return;
   weatherPage();
 }
 
@@ -1861,15 +1923,19 @@ function requestWeatherLocation() {
 async function searchWeatherDestination() {
   const query = weatherManualQuery.trim();
   if (!query) return;
+  const sequence = ++weatherRequestSequence;
+  const isCurrentWeatherRequest = () => sequence === weatherRequestSequence;
   weatherStatus = 'loading';
   weatherPage();
   try {
     const city = cities.find((candidate) => candidate.city.toLowerCase() === query.toLowerCase());
     if (city) {
+      if (!isCurrentWeatherRequest()) return;
       await loadWeather(destinationWeatherLocation(city), true);
       return;
     }
     const center = await resolveRestaurantDestination(query);
+    if (!isCurrentWeatherRequest()) return;
     if (!center) {
       weatherStatus = 'unsupported';
       weatherPage();
@@ -1878,6 +1944,7 @@ async function searchWeatherDestination() {
     await loadWeather({ latitude: center.latitude, longitude: center.longitude, label: center.label }, true);
   } catch (error) {
     console.error(error);
+    if (!isCurrentWeatherRequest()) return;
     weatherStatus = 'service-unavailable';
     weatherError = labels[lang].weatherUnavailable;
     weatherPage();
@@ -2245,6 +2312,7 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
 async function progressiveAttractionEnrichment(sequence: number) {
   const candidates = attractionResults.filter((attraction) => attraction.photoStatus !== 'checked' && attraction.photoStatus !== 'error');
   if (!candidates.length) return;
+  const activeCacheKey = attractionCacheKey;
   attractionResults = attractionResults.map((attraction) => candidates.some((candidate) => candidate.id === attraction.id) ? { ...attraction, photoStatus: 'loading' } : attraction);
   attractionStatus = 'photos';
   attractionsPage();
@@ -2254,13 +2322,15 @@ async function progressiveAttractionEnrichment(sequence: number) {
     try {
       const current = attractionResults.find((candidate) => candidate.id === attraction.id) ?? attraction;
       const updated = await resolveAttractionPhotoAndHistory(current, cityName);
+      if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey) return;
       attractionResults = attractionResults.map((candidate) => candidate.id === attraction.id ? updated : candidate);
-      if (attractionCacheKey) attractionCache.set(attractionCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
+      if (activeCacheKey) attractionCache.set(activeCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
       attractionsPage();
     } catch (error) {
+      if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey) return;
       recordAttractionDiagnostic(`Attraction enrichment ${attraction.name}`, error);
       attractionResults = attractionResults.map((candidate) => candidate.id === attraction.id ? { ...candidate, photoStatus: 'error' } : candidate);
-      if (attractionCacheKey) attractionCache.set(attractionCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
+      if (activeCacheKey) attractionCache.set(activeCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
       attractionsPage();
     }
     await new Promise((resolve) => window.setTimeout(resolve, 250));
@@ -2272,12 +2342,18 @@ async function progressiveAttractionEnrichment(sequence: number) {
 }
 
 async function searchAttractions(center: PrayerCenter) {
-  attractionCenter = center;
+  const sequence = ++attractionSearchSequence;
+  const searchCenter = { ...center };
+  const searchRadius = attractionRadiusKm;
+  const isCurrentAttractionSearch = () => sequence === attractionSearchSequence;
+  attractionEnrichmentSequence += 1;
+  attractionCenter = searchCenter;
   attractionMapMoved = false;
-  const cacheKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)},${attractionRadiusKm}`;
+  const cacheKey = `${searchCenter.latitude.toFixed(4)},${searchCenter.longitude.toFixed(4)},${searchRadius}`;
   attractionCacheKey = cacheKey;
   const cached = attractionCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
+    if (!isCurrentAttractionSearch()) return;
     attractionResults = cached.results;
     attractionStatus = attractionResults.length ? 'cached' : 'empty';
     attractionsPage();
@@ -2286,7 +2362,6 @@ async function searchAttractions(center: PrayerCenter) {
     }
     return;
   }
-  const sequence = ++attractionSearchSequence;
   attractionResults = [];
   attractionStatus = 'searching';
   attractionError = '';
@@ -2299,20 +2374,21 @@ async function searchAttractions(center: PrayerCenter) {
     attractionsPage();
   }, 14000);
   try {
-    const batches = buildAttractionOverpassBatches(center.latitude, center.longitude, attractionRadiusKm);
+    const batches = buildAttractionOverpassBatches(searchCenter.latitude, searchCenter.longitude, searchRadius);
     let successfulBatches = 0;
     let lastError: unknown;
     for (const batch of batches) {
-      if (sequence !== attractionSearchSequence) return;
+      if (!isCurrentAttractionSearch()) return;
       try {
         const data = await requestAttractionBatch(batch);
-        if (sequence !== attractionSearchSequence) return;
+        if (!isCurrentAttractionSearch()) return;
         successfulBatches += 1;
         const normalized = (data.elements ?? [])
-          .map((element) => normalizeAttraction(element, center))
+          .map((element) => normalizeAttraction(element, searchCenter))
           .filter((attraction): attraction is Attraction => Boolean(attraction))
-          .filter((attraction) => attraction.distanceKm <= attractionRadiusKm)
+          .filter((attraction) => attraction.distanceKm <= searchRadius)
           .map((attraction) => enrichAttraction(attraction, { osmDescription: attraction.osmDescription }));
+        if (!isCurrentAttractionSearch()) return;
         attractionResults = dedupeAttractions([...attractionResults, ...normalized]).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 250);
         attractionStatus = attractionResults.length ? 'ready' : 'searching';
         attractionCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
@@ -2321,7 +2397,7 @@ async function searchAttractions(center: PrayerCenter) {
         lastError = error;
       }
     }
-    if (sequence !== attractionSearchSequence) return;
+    if (!isCurrentAttractionSearch()) return;
     if (attractionResults.length) {
       attractionStatus = 'ready';
       attractionCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
@@ -2335,7 +2411,7 @@ async function searchAttractions(center: PrayerCenter) {
     return;
   } catch (error) {
     console.error(error);
-    if (sequence !== attractionSearchSequence) return;
+    if (!isCurrentAttractionSearch()) return;
     if (cached) {
       attractionResults = cached.results;
       attractionStatus = navigator.onLine ? 'cached' : 'offline';
@@ -2371,14 +2447,19 @@ function requestAttractionLocation() {
 async function searchAttractionDestination() {
   const query = attractionManualQuery.trim();
   if (!query) return;
+  const sequence = ++attractionSearchSequence;
+  const isCurrentAttractionSearch = () => sequence === attractionSearchSequence;
+  attractionEnrichmentSequence += 1;
   const city = cities.find((candidate) => candidate.city.toLowerCase() === query.toLowerCase());
   if (city) {
+    if (!isCurrentAttractionSearch()) return;
     await searchAttractions(destinationAttractionCenter(city));
     return;
   }
   attractionStatus = 'searching';
   attractionsPage();
   const center = await resolveRestaurantDestination(query);
+  if (!isCurrentAttractionSearch()) return;
   if (center) await searchAttractions(center);
   else {
     attractionResults = [];
@@ -2624,23 +2705,32 @@ async function loadCurrencies() {
 }
 
 async function loadPairRate(useCache = true) {
+  const sequence = ++rateRequestSequence;
+  const requestFromCurrency = fromCurrency;
+  const requestToCurrency = toCurrency;
+  const isCurrentRateRequest = () => sequence === rateRequestSequence && requestFromCurrency === fromCurrency && requestToCurrency === toCurrency;
   if (fromCurrency === toCurrency) {
-    rate = { base: fromCurrency, quote: toCurrency, rate: 1, date: new Date().toISOString().slice(0, 10), refreshedAt: new Date().toISOString(), cached: false };
+    historyRequestSequence += 1;
+    rate = { base: requestFromCurrency, quote: requestToCurrency, rate: 1, date: new Date().toISOString().slice(0, 10), refreshedAt: new Date().toISOString(), cached: false };
+    historySummary = null;
     moneyStatus = 'updated';
     render();
     return;
   }
-  const key = cacheKeyForRate(fromCurrency, toCurrency);
+  const key = cacheKeyForRate(requestFromCurrency, requestToCurrency);
   const cached = readJsonCache<PairRate>(localStorage, key, RATE_CACHE_MS);
   moneyStatus = 'loadingRate';
   moneyError = '';
   render();
   try {
-    rate = validateRateResponse(await requestJson<unknown>(`${FRANKFURTER_BASE_URL}/rate/${fromCurrency}/${toCurrency}`, { headers: { Accept: 'application/json' } }, 7000), fromCurrency, toCurrency);
+    const loaded = validateRateResponse(await requestJson<unknown>(`${FRANKFURTER_BASE_URL}/rate/${requestFromCurrency}/${requestToCurrency}`, { headers: { Accept: 'application/json' } }, 7000), requestFromCurrency, requestToCurrency);
+    if (!isCurrentRateRequest()) return;
+    rate = loaded;
     writeJsonCache(localStorage, key, rate);
     moneyStatus = 'updated';
-    void loadHistory();
+    void loadHistory(requestFromCurrency, requestToCurrency);
   } catch (error) {
+    if (!isCurrentRateRequest()) return;
     const fallback = useCache ? cached : null;
     if (fallback) {
       rate = { ...fallback, cached: true };
@@ -2651,24 +2741,32 @@ async function loadPairRate(useCache = true) {
       moneyError = error instanceof Error ? error.message : '';
     }
   }
+  if (!isCurrentRateRequest()) return;
   render();
 }
 
-async function loadHistory() {
-  if (fromCurrency === toCurrency) {
+async function loadHistory(historyFromCurrency = fromCurrency, historyToCurrency = toCurrency) {
+  const sequence = ++historyRequestSequence;
+  const requestHistoryDays = historyDays;
+  const isCurrentHistoryRequest = () => sequence === historyRequestSequence && historyFromCurrency === fromCurrency && historyToCurrency === toCurrency && requestHistoryDays === historyDays;
+  if (historyFromCurrency === historyToCurrency) {
+    if (!isCurrentHistoryRequest()) return;
     historySummary = null;
     return;
   }
   const end = new Date();
   const start = new Date(end);
-  start.setDate(end.getDate() - historyDays);
+  start.setDate(end.getDate() - requestHistoryDays);
   const iso = (date: Date) => date.toISOString().slice(0, 10);
   try {
     const body = await requestJson<Array<{ date: string; base: string; quote: string; rate: number }>>(`${FRANKFURTER_BASE_URL}/rates?from=${iso(start)}&to=${iso(end)}`, { headers: { Accept: 'application/json' } }, 7000);
-    historySummary = historyStats(body, toCurrency, fromCurrency);
+    if (!isCurrentHistoryRequest()) return;
+    historySummary = historyStats(body, historyToCurrency, historyFromCurrency);
   } catch {
+    if (!isCurrentHistoryRequest()) return;
     historySummary = null;
   }
+  if (!isCurrentHistoryRequest()) return;
   render();
 }
 
