@@ -1,10 +1,11 @@
 import { ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { distanceKm } from './prayer-spaces.js';
+import { openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
 export type FoodPlaceType = 'restaurant' | 'fast_food' | 'cafe' | 'food_court';
 export type HalalStatus = 'halal-only' | 'halal-options' | 'certification-listed' | 'legacy-halal' | 'possible-unverified';
-export type RestaurantOpenState = 'open' | 'closed' | 'unknown';
+export type RestaurantOpenState = OpeningState;
 
 export type HalalRestaurant = {
   id: string;
@@ -97,52 +98,9 @@ function tagBoolean(tags: OsmTags, key: string) {
   return yes(tags[key]);
 }
 
-export function openingState(openingHours: string | undefined, now = new Date()): RestaurantOpenState {
-  const value = openingHours?.trim();
-  if (!value) return 'unknown';
-  if (value === '24/7') return 'open';
-  if (/off|closed/i.test(value) && !/\d/.test(value)) return 'closed';
-  if (!/^\s*(Mo|Tu|We|Th|Fr|Sa|Su|PH|24\/7|[-,;:\d\s]+)+/i.test(value)) return 'unknown';
+export { openingState };
 
-  const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-  const today = dayNames[now.getDay()];
-  const yesterday = dayNames[(now.getDay() + 6) % 7];
-  const minutesNow = now.getHours() * 60 + now.getMinutes();
-
-  const dayMatches = (expr: string, day: string) => {
-    if (!/[A-Z][a-z]/.test(expr)) return true;
-    return expr.split(',').some((part) => {
-      const trimmed = part.trim();
-      if (trimmed.includes('-')) {
-        const [start, end] = trimmed.split('-');
-        const s = dayNames.indexOf(start);
-        const e = dayNames.indexOf(end);
-        const d = dayNames.indexOf(day);
-        return s <= e ? d >= s && d <= e : d >= s || d <= e;
-      }
-      return trimmed === day;
-    });
-  };
-
-  const periodOpen = (start: number, end: number, checkMinutes: number, crossesMidnight: boolean, checkingYesterday: boolean) => {
-    if (crossesMidnight) return checkingYesterday ? checkMinutes < end : checkMinutes >= start;
-    return !checkingYesterday && checkMinutes >= start && checkMinutes < end;
-  };
-
-  for (const rule of value.split(';')) {
-    const match = rule.match(/^\s*([A-Za-z,\-\s]*)\s*(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
-    if (!match) continue;
-    const [, days, sh, sm, eh, em] = match;
-    const start = Number(sh) * 60 + Number(sm);
-    const end = Number(eh) * 60 + Number(em);
-    const crosses = end <= start;
-    if (dayMatches(days, today) && periodOpen(start, end, minutesNow, crosses, false)) return 'open';
-    if (crosses && dayMatches(days, yesterday) && periodOpen(start, end, minutesNow, crosses, true)) return 'open';
-  }
-  return /\d{1,2}:\d{2}-\d{1,2}:\d{2}/.test(value) ? 'closed' : 'unknown';
-}
-
-export function normalizeHalalRestaurant(element: OverpassElement, origin: { latitude: number; longitude: number }, includePossible = false): HalalRestaurant | undefined {
+export function normalizeHalalRestaurant(element: OverpassElement, origin: { latitude: number; longitude: number; timezone?: string }, includePossible = false): HalalRestaurant | undefined {
   const tags = element.tags ?? {};
   const latitude = element.lat ?? element.center?.lat;
   const longitude = element.lon ?? element.center?.lon;
@@ -163,7 +121,7 @@ export function normalizeHalalRestaurant(element: OverpassElement, origin: { lat
     cuisine: parseCuisine(tags.cuisine),
     address: formatAddress(tags),
     openingHours,
-    openState: openingState(openingHours),
+    openState: openingState(openingHours, origin.timezone),
     phone: tags.phone ?? tags.contact_phone ?? tags['contact:phone'] ?? '',
     website: safeExternalUrl(tags.website ?? tags.contact_website ?? tags['contact:website']),
     menu: safeExternalUrl(tags.menu ?? tags['contact:menu']),

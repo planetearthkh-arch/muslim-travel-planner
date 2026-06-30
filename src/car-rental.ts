@@ -1,5 +1,5 @@
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
-import { openingState, type RestaurantOpenState } from './halal-restaurants.js';
+import { isAlwaysOpen, openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
 export type CarRentalLocationType = 'airport' | 'city' | 'railway' | 'bus' | 'hotel' | 'independent' | 'unknown';
@@ -27,7 +27,7 @@ export type CarRentalOffice = {
   distanceKm: number;
   address: string;
   openingHours: string;
-  openState: RestaurantOpenState;
+  openState: OpeningState;
   phone: string;
   email: string;
   website: string;
@@ -107,7 +107,7 @@ function rentalName(tags: OsmTags, locationType: CarRentalLocationType) {
   return 'Car Rental Office';
 }
 
-export function normalizeCarRentalOffice(element: OverpassElement, origin: { latitude: number; longitude: number; label?: string }): CarRentalOffice | undefined {
+export function normalizeCarRentalOffice(element: OverpassElement, origin: { latitude: number; longitude: number; label?: string; timezone?: string }): CarRentalOffice | undefined {
   const tags = element.tags ?? {};
   if (!isCarRentalOffice(tags)) return undefined;
   const latitude = element.lat ?? element.center?.lat;
@@ -130,7 +130,7 @@ export function normalizeCarRentalOffice(element: OverpassElement, origin: { lat
     distanceKm: distanceKm(origin.latitude, origin.longitude, latitude, longitude),
     address: formatAddress(tags),
     openingHours,
-    openState: openingState(openingHours),
+    openState: openingState(openingHours, origin.timezone),
     phone: tags.phone ?? tags['contact:phone'] ?? '',
     email: tags.email ?? tags['contact:email'] ?? '',
     website,
@@ -156,7 +156,7 @@ export function filterCarRentalOffices(offices: CarRentalOffice[], filters: CarR
     if (filters.type !== 'all' && office.locationType !== filters.type) return false;
     if (filters.atAirport && office.locationType !== 'airport') return false;
     if (filters.openNow && office.openState !== 'open') return false;
-    if (filters.open24 && office.openingHours !== '24/7') return false;
+    if (filters.open24 && !isAlwaysOpen(office.openingHours)) return false;
     if (filters.website && !office.website && !office.bookingUrl) return false;
     if (filters.phone && !office.phone) return false;
     if (filters.wheelchair && office.wheelchair !== 'yes') return false;

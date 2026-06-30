@@ -639,7 +639,7 @@ test('deduplicates node and way records for the same physical restaurant', () =>
 });
 
 test('filters and sorts halal restaurants by cuisine, open-now, and nearest', () => {
-  const origin = { latitude: 0, longitude: 0 };
+  const origin = { latitude: 0, longitude: 0, timezone: 'UTC' };
   const restaurants = [
     normalizeHalalRestaurant({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'only', name: 'Far Arabic', cuisine: 'arabic;burgers', opening_hours: '24/7' } }, origin),
     normalizeHalalRestaurant({ type: 'node', id: 2, lat: 0.01, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'yes', name: 'Near Pizza', cuisine: 'pizza', opening_hours: 'Mo-Su 00:00-24:00' } }, origin),
@@ -654,13 +654,57 @@ test('filters and sorts halal restaurants by cuisine, open-now, and nearest', ()
 
 test('handles invalid opening hours, missing address, fallback names, and transliteration', () => {
   const origin = { latitude: 0, longitude: 0 };
-  assert.equal(openingState('not real hours'), 'unknown');
-  assert.equal(openingState('24/7'), 'open');
+  assert.equal(openingState('not real hours', 'UTC'), 'unknown');
+  assert.equal(openingState('24/7', 'UTC'), 'open');
+  assert.equal(openingState('24/7', undefined), 'unknown');
   const fallback = normalizeHalalRestaurant({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'food_court', 'diet:halal': 'only' } }, origin);
   const transliterated = normalizeHalalRestaurant({ type: 'node', id: 2, lat: 0, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'only', name: 'مطعم النور' } }, origin);
   assert.equal(fallback?.address, '');
   assert.equal(fallback?.name, 'Unnamed Halal Food Court');
   assert.equal(latinOnly(transliterated?.name ?? ''), true);
+});
+
+test('parses opening hours using destination-local timezone with fixed dates', () => {
+  const mondayMorningUtc = new Date('2026-07-06T09:30:00Z');
+  assert.equal(openingState('Mo 09:00-18:00', 'UTC', mondayMorningUtc), 'open');
+  assert.equal(openingState('Mo 09:00-18:00', 'UTC', new Date('2026-07-06T18:30:00Z')), 'closed');
+  assert.equal(openingState('Mo-Fr 09:00-18:00', 'UTC', mondayMorningUtc), 'open');
+  assert.equal(openingState('Mo,We,Fr 09:00-18:00', 'UTC', mondayMorningUtc), 'open');
+  assert.equal(openingState('Mo 09:00-12:00,13:00-18:00', 'UTC', new Date('2026-07-06T12:30:00Z')), 'closed');
+  assert.equal(openingState('Mo 09:00-12:00,13:00-18:00', 'UTC', new Date('2026-07-06T13:30:00Z')), 'open');
+  assert.equal(openingState('Mo 09:00-12:00; Mo 13:00-18:00', 'UTC', new Date('2026-07-06T13:30:00Z')), 'open');
+  assert.equal(openingState('Mo-Fr 09:00-18:00; Sa 10:00-14:00', 'UTC', new Date('2026-07-11T11:00:00Z')), 'open');
+  assert.equal(openingState('Mo 18:00-02:00', 'UTC', new Date('2026-07-06T19:00:00Z')), 'open');
+  assert.equal(openingState('Mo 18:00-02:00', 'UTC', new Date('2026-07-07T01:00:00Z')), 'open');
+  assert.equal(openingState('Mo 18:00-02:00; We 20:00-23:00', 'UTC', new Date('2026-07-08T21:00:00Z')), 'open');
+  assert.equal(openingState('24/7', 'UTC', mondayMorningUtc), 'open');
+  assert.equal(openingState('Mo-Su 00:00-24:00', 'UTC', mondayMorningUtc), 'open');
+  assert.equal(openingState('closed', 'UTC', mondayMorningUtc), 'closed');
+  assert.equal(openingState('off', 'UTC', mondayMorningUtc), 'closed');
+  assert.equal(openingState('Mo-Fr 09:00-18:00; PH off', 'UTC', mondayMorningUtc), 'unknown');
+  assert.equal(openingState('Mo 09:00-18:00', undefined, mondayMorningUtc), 'unknown');
+});
+
+test('opening hours respect Tokyo, London, and New York destination timezones', () => {
+  assert.equal(openingState('Mo 09:00-18:00', 'Asia/Tokyo', new Date('2026-07-06T00:30:00Z')), 'open');
+  assert.equal(openingState('Mo 09:00-18:00', 'Europe/London', new Date('2026-07-06T08:30:00Z')), 'open');
+  assert.equal(openingState('Mo 09:00-18:00', 'America/New_York', new Date('2026-07-06T13:30:00Z')), 'open');
+  assert.equal(openingState('Mo 08:00-18:00', 'Asia/Tokyo', new Date('2026-07-05T23:30:00Z')), 'open');
+  assert.equal(openingState('Mo 08:00-18:00', 'UTC', new Date('2026-07-05T23:30:00Z')), 'closed');
+});
+
+test('open-now filtering uses confirmed destination-local opening state across mapped features', () => {
+  const origin = { latitude: 0, longitude: 0, timezone: 'UTC' };
+  const prayer = normalizePrayerPlace({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'Open Mosque', opening_hours: 'Mo 09:00-18:00' } }, origin);
+  const restaurant = normalizeHalalRestaurant({ type: 'node', id: 2, lat: 0, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'only', name: 'Open Grill', opening_hours: 'Mo-Su 00:00-24:00' } }, origin);
+  const toilet = normalizePublicToilet({ type: 'node', id: 3, lat: 0, lon: 0, tags: { amenity: 'toilets', name: 'Open WC', opening_hours: 'Mo-Su 00:00-24:00' } }, origin);
+  const office = normalizeCarRentalOffice({ type: 'node', id: 4, lat: 0, lon: 0, tags: { amenity: 'car_rental', name: 'Open Cars', opening_hours: 'Mo-Su 00:00-24:00' } }, { ...origin, label: 'City Centre' });
+  const attraction = normalizeAttraction({ type: 'node', id: 5, lat: 0, lon: 0, tags: { tourism: 'museum', 'name:en': 'Open Museum', opening_hours: 'Mo-Su 00:00-24:00' } }, origin);
+  assert.equal(openingState(prayer?.openingHours, origin.timezone, new Date('2026-07-06T10:00:00Z')), 'open');
+  assert.equal(filterRestaurants([restaurant].filter(Boolean) as HalalRestaurant[], { status: 'reliable', type: 'all', cuisine: '', openNow: true, takeaway: false, delivery: false, wheelchair: false }).length, 1);
+  assert.equal(filterToilets([toilet].filter(Boolean) as PublicToilet[], { access: 'all', free: false, paid: false, openNow: true, open24: true, wheelchair: false, limitedWheelchair: false, changing: false, female: false, male: false, unisex: false, handwashing: false, shower: false, drinkingWater: false, seated: false, squat: false }).length, 1);
+  assert.equal(filterCarRentalOffices([office].filter(Boolean) as CarRentalOffice[], { type: 'all', openNow: true, open24: true, website: false, phone: false, wheelchair: false, atAirport: false }).length, 1);
+  assert.equal(filterAttractions([attraction].filter(Boolean) as Attraction[], { category: 'all', photo: false, history: false, openNow: true, free: false, wheelchair: false }).length, 1);
 });
 
 test('includes halal restaurant timeout, cache, denial, empty, and language labels', () => {
@@ -702,7 +746,7 @@ test('interprets public toilet fees, wheelchair access, and baby-changing tags',
 });
 
 test('normalizes public toilets from node, way, and relation coordinates', () => {
-  const origin = { latitude: 51.5, longitude: -0.1 };
+  const origin = { latitude: 51.5, longitude: -0.1, timezone: 'Europe/London' };
   const node = normalizePublicToilet({ type: 'node', id: 1, lat: 51.501, lon: -0.101, tags: { amenity: 'toilets', name: 'Station WC', fee: 'no', opening_hours: '24/7', male: 'yes', female: 'yes', unisex: 'yes', handwashing: 'yes', shower: 'yes', drinking_water: 'yes', 'toilets:position:seated': 'yes' } }, origin);
   const way = normalizePublicToilet({ type: 'way', id: 2, center: { lat: 51.502, lon: -0.102 }, tags: { building: 'toilets', wheelchair: 'limited', changing_table: 'yes', 'toilets:position:squat': 'yes' } }, origin);
   const relation = normalizePublicToilet({ type: 'relation', id: 3, center: { lat: 51.503, lon: -0.103 }, tags: { amenity: 'cafe', name: 'Museum Cafe', toilets: 'yes', 'toilets:access': 'customers', fee: 'yes' } }, origin);
@@ -721,12 +765,12 @@ test('normalizes public toilets from node, way, and relation coordinates', () =>
   assert.equal(node?.drinkingWater, true);
   assert.equal(node?.seated, true);
   assert.equal(way?.squat, true);
-  assert.equal(openingState(node?.openingHours ?? ''), 'open');
+  assert.equal(openingState(node?.openingHours ?? '', origin.timezone), 'open');
   assert.equal(Number((node?.distanceKm ?? 0).toFixed(2)) > 0, true);
 });
 
 test('deduplicates, filters, and sorts public toilets', () => {
-  const origin = { latitude: 0, longitude: 0 };
+  const origin = { latitude: 0, longitude: 0, timezone: 'UTC' };
   const toilets = [
     normalizePublicToilet({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { amenity: 'toilets', name: 'Far WC', fee: 'yes', wheelchair: 'yes', opening_hours: '24/7' } }, origin),
     normalizePublicToilet({ type: 'way', id: 2, center: { lat: 0.01, lon: 0 }, tags: { amenity: 'toilets', name: 'Near WC', fee: 'no', wheelchair: 'limited' } }, origin),
@@ -781,7 +825,7 @@ test('classifies structured car-rental office tags and excludes other vehicle se
 });
 
 test('normalizes car-rental offices from node, area centre, and multipolygon centre coordinates', () => {
-  const origin = { latitude: 51.5, longitude: -0.1, label: 'London Heathrow Airport' };
+  const origin = { latitude: 51.5, longitude: -0.1, label: 'London Heathrow Airport', timezone: 'Europe/London' };
   const node = normalizeCarRentalOffice({ type: 'node', id: 1, lat: 51.501, lon: -0.101, tags: { amenity: 'car_rental', name: 'Airport Cars', opening_hours: '24/7', website: 'https://example.com', phone: '+44123', wheelchair: 'yes' } }, origin);
   const way = normalizeCarRentalOffice({ type: 'way', id: 2, center: { lat: 51.502, lon: -0.102 }, tags: { amenity: 'car_rental', brand: 'Brand Rent', operator: 'Local Operator', opening_hours: 'not real hours' } }, origin);
   const relation = normalizeCarRentalOffice({ type: 'relation', id: 3, center: { lat: 51.503, lon: -0.103 }, tags: { type: 'multipolygon', amenity: 'car_rental', 'operator:en': 'Rail Rent', railway: 'station' } }, { latitude: 51.5, longitude: -0.1, label: 'Central Station' });
@@ -794,7 +838,7 @@ test('normalizes car-rental offices from node, area centre, and multipolygon cen
   assert.equal(node?.wheelchair, 'yes');
   assert.equal(way?.brand, 'Brand Rent');
   assert.equal(way?.operator, 'Local Operator');
-  assert.equal(openingState(way?.openingHours ?? ''), 'unknown');
+  assert.equal(openingState(way?.openingHours ?? '', origin.timezone), 'unknown');
   assert.equal(Number((node?.distanceKm ?? 0).toFixed(2)) > 0, true);
 });
 
@@ -819,7 +863,7 @@ test('classifies car-rental office context without broad assumptions', () => {
 });
 
 test('deduplicates, filters, and sorts car-rental offices', () => {
-  const origin = { latitude: 0, longitude: 0, label: 'Airport' };
+  const origin = { latitude: 0, longitude: 0, label: 'Airport', timezone: 'UTC' };
   const offices = [
     normalizeCarRentalOffice({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { amenity: 'car_rental', name: 'Far Airport', website: 'https://rent.example', opening_hours: '24/7' } }, origin),
     normalizeCarRentalOffice({ type: 'way', id: 2, center: { lat: 0.01, lon: 0 }, tags: { amenity: 'car_rental', name: 'Near City', phone: '+1', wheelchair: 'yes' } }, { ...origin, label: 'City Centre' }),
@@ -1124,7 +1168,7 @@ test('creates English summaries from Wikipedia, Wikidata, and OSM descriptions',
 });
 
 test('deduplicates, filters, sorts, and queries attractions', () => {
-  const origin = { latitude: 0, longitude: 0 };
+  const origin = { latitude: 0, longitude: 0, timezone: 'UTC' };
   const attractions = [
     enrichAttraction(normalizeAttraction({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { tourism: 'museum', 'name:en': 'Far Museum', opening_hours: '24/7' } }, origin) as Attraction, { wikipediaExtract: 'A museum.' }),
     normalizeAttraction({ type: 'way', id: 2, center: { lat: 0.01, lon: 0 }, tags: { tourism: 'viewpoint', 'name:en': 'Near View', fee: 'no', wheelchair: 'yes' } }, origin),
@@ -1203,6 +1247,19 @@ test('audited async feature searches isolate stale completions', async () => {
   assert.equal(source.includes('if (!isCurrentWeatherRequest()) return;\n    const fallback'), true);
   assert.equal(source.includes('const activeCacheKey = attractionCacheKey'), true);
   assert.equal(source.includes('if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey) return;\n      attractionResults = attractionResults.map'), true);
+});
+
+test('mapped feature opening status is recalculated with captured destination timezone', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes('type PrayerCenter = { latitude: number; longitude: number; label: string; timezone?: string }'), true);
+  assert.equal(source.includes('label: `${city.city}, ${city.country}`, timezone: city.timezone'), true);
+  assert.equal(source.includes('refreshOpenState(cached.results, searchCenter.timezone)'), true);
+  assert.equal(source.includes('timezone: restaurantCenter?.timezone'), true);
+  assert.equal(source.includes('timezone: toiletCenter?.timezone'), true);
+  assert.equal(source.includes('timezone: carRentalCenter?.timezone'), true);
+  assert.equal(source.includes('timezone: attractionCenter?.timezone'), true);
+  assert.equal(source.includes('openingState(place.openingHours, prayerCenter?.timezone)'), true);
 });
 
 test('money rate and history requests are tied to the active pair and range', async () => {

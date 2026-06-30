@@ -1,5 +1,5 @@
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
-import { openingState, type RestaurantOpenState } from './halal-restaurants.js';
+import { openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
 export type AttractionCategory = 'historic' | 'museum' | 'gallery' | 'monument' | 'archaeological' | 'castle' | 'religious' | 'viewpoint' | 'natural' | 'park' | 'zoo' | 'theme' | 'artwork' | 'cultural' | 'other';
@@ -41,7 +41,7 @@ export type Attraction = {
   distanceKm: number;
   address: string;
   openingHours: string;
-  openState: RestaurantOpenState;
+  openState: OpeningState;
   website: string;
   phone: string;
   wheelchair: 'yes' | 'limited' | 'no' | 'unknown';
@@ -156,7 +156,7 @@ function wheelchair(tags: OsmTags): Attraction['wheelchair'] {
   return 'unknown';
 }
 
-export function normalizeAttraction(element: OverpassElement, origin: { latitude: number; longitude: number }): Attraction | undefined {
+export function normalizeAttraction(element: OverpassElement, origin: { latitude: number; longitude: number; timezone?: string }): Attraction | undefined {
   const tags = element.tags ?? {};
   if (!isMappedAttraction(tags)) return undefined;
   const latitude = element.lat ?? element.center?.lat;
@@ -177,7 +177,7 @@ export function normalizeAttraction(element: OverpassElement, origin: { latitude
     distanceKm: distanceKm(origin.latitude, origin.longitude, latitude, longitude),
     address: formatAddress(tags),
     openingHours,
-    openState: openingState(openingHours),
+    openState: openingState(openingHours, origin.timezone),
     website: safeExternalUrl(tags.website ?? tags['contact:website']),
     phone: tags.phone ?? tags['contact:phone'] ?? '',
     wheelchair: wheelchair(tags),

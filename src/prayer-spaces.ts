@@ -1,4 +1,5 @@
 import { transliterate } from 'transliteration';
+import { openingState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
 export type PrayerPlaceType = 'mosque' | 'prayer-room' | 'quiet-space' | 'islamic-centre';
@@ -210,14 +211,8 @@ export function facilityStatus(tags: OsmTags, keys: string[]): PrayerVerificatio
   return keys.some((key) => hasAffirmingValue(tags[key])) ? 'Verified' : 'Unverified';
 }
 
-export function isReliablyOpenNow(tags: OsmTags, now = new Date()) {
-  const value = tags.opening_hours?.trim();
-  if (!value) return undefined;
-  if (value === '24/7') return true;
-  if (/off|closed/i.test(value)) return false;
-  if (/^Mo-Su\s+00:00-24:00$/i.test(value)) return true;
-  void now;
-  return undefined;
+export function isReliablyOpenNow(tags: OsmTags, timeZone: string | undefined, now = new Date()) {
+  return openingState(tags.opening_hours, timeZone, now) === 'open';
 }
 
 export function normalizePrayerPlace(element: OverpassElement, origin: { latitude: number; longitude: number }): PrayerPlace | undefined {

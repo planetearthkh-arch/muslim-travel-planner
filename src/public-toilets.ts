@@ -1,5 +1,5 @@
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
-import { openingState, type RestaurantOpenState } from './halal-restaurants.js';
+import { isAlwaysOpen, openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
 export type ToiletAccess = 'public' | 'customers' | 'restricted' | 'unknown';
@@ -22,7 +22,7 @@ export type PublicToilet = {
   fee: ToiletFee;
   feeAmount: string;
   openingHours: string;
-  openState: RestaurantOpenState;
+  openState: OpeningState;
   wheelchair: WheelchairAccess;
   changingTable: 'yes' | 'limited' | 'no' | 'unknown';
   changingLocation: string;
@@ -130,7 +130,7 @@ function toiletName(tags: OsmTags, kind: ToiletKind) {
   return 'Public Toilets';
 }
 
-export function normalizePublicToilet(element: OverpassElement, origin: { latitude: number; longitude: number }): PublicToilet | undefined {
+export function normalizePublicToilet(element: OverpassElement, origin: { latitude: number; longitude: number; timezone?: string }): PublicToilet | undefined {
   const tags = element.tags ?? {};
   const latitude = element.lat ?? element.center?.lat;
   const longitude = element.lon ?? element.center?.lon;
@@ -154,7 +154,7 @@ export function normalizePublicToilet(element: OverpassElement, origin: { latitu
     fee: feeData.fee,
     feeAmount: feeData.amount,
     openingHours,
-    openState: openingState(openingHours),
+    openState: openingState(openingHours, origin.timezone),
     wheelchair: wheelchairAccess(tags),
     changingTable: changingTable(tags),
     changingLocation: tags['changing_table:location'] ?? '',
@@ -194,7 +194,7 @@ export function filterToilets(toilets: PublicToilet[], filters: ToiletFilters) {
     if (filters.free && toilet.fee !== 'free') return false;
     if (filters.paid && toilet.fee !== 'paid') return false;
     if (filters.openNow && toilet.openState !== 'open') return false;
-    if (filters.open24 && toilet.openingHours !== '24/7') return false;
+    if (filters.open24 && !isAlwaysOpen(toilet.openingHours)) return false;
     if (filters.wheelchair && toilet.wheelchair !== 'yes') return false;
     if (filters.limitedWheelchair && toilet.wheelchair !== 'limited') return false;
     if (filters.changing && toilet.changingTable !== 'yes') return false;

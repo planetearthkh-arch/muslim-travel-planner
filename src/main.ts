@@ -2,6 +2,7 @@ import { cities } from './data.js';
 import { generateItinerary } from './planner.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
 import { buildOverpassQuery, ensureLatinDisplayName, getEnglishPlaceName, isReliablyOpenNow, normalizePrayerPlace, type PrayerPlace, type PrayerPlaceType } from './prayer-spaces.js';
+import { openingState, type OpeningState } from './opening-hours.js';
 import {
   buildHalalOverpassQuery,
   cuisineOptions,
@@ -531,7 +532,7 @@ type PrayerLocationStatus = 'idle' | 'requesting' | 'ready' | 'denied' | 'unavai
 type PrayerMode = 'map' | 'list';
 type PrayerFilter = 'all' | PrayerPlaceType;
 type PrayerSort = 'distance' | 'name' | 'open';
-type PrayerCenter = { latitude: number; longitude: number; label: string };
+type PrayerCenter = { latitude: number; longitude: number; label: string; timezone?: string };
 type RestaurantStatus = PrayerLocationStatus | 'too-many' | 'cached' | 'offline' | 'timeout';
 type RestaurantMode = 'map' | 'list';
 type RestaurantSort = 'distance' | 'name' | 'status' | 'open' | 'cuisine';
@@ -671,16 +672,26 @@ function prayerStatusMessage(copy: typeof labels[Language]) {
   return copy.prayerNotice;
 }
 
+function openingStatusLabel(state: OpeningState, copy: typeof labels[Language]) {
+  if (state === 'open') return copy.halalOpen;
+  if (state === 'closed') return copy.halalClosed;
+  return copy.halalOpeningUnavailable;
+}
+
+function refreshOpenState<T extends { openingHours: string; openState: OpeningState }>(items: T[], timeZone: string | undefined) {
+  return items.map((item) => ({ ...item, openState: openingState(item.openingHours, timeZone) }));
+}
+
 function filteredPrayerResults() {
   let results = [...prayerResults];
   if (prayerFilter !== 'all') results = results.filter((place) => place.type === prayerFilter);
-  if (prayerOpenOnly) results = results.filter((place) => place.openingHours && isReliablyOpenNow({ opening_hours: place.openingHours }) === true);
+  if (prayerOpenOnly) results = results.filter((place) => place.openingHours && isReliablyOpenNow({ opening_hours: place.openingHours }, prayerCenter?.timezone) === true);
   if (prayerWomenOnly) results = results.filter((place) => place.womenPrayerArea === 'Verified');
   if (prayerWuduOnly) results = results.filter((place) => place.wudu === 'Verified');
   if (prayerWheelchairOnly) results = results.filter((place) => place.wheelchair === 'Verified');
   results.sort((a, b) => {
     if (prayerSort === 'name') return a.name.localeCompare(b.name);
-    if (prayerSort === 'open') return Number(isReliablyOpenNow({ opening_hours: b.openingHours }) === true) - Number(isReliablyOpenNow({ opening_hours: a.openingHours }) === true) || a.distanceKm - b.distanceKm;
+    if (prayerSort === 'open') return Number(isReliablyOpenNow({ opening_hours: b.openingHours }, prayerCenter?.timezone) === true) - Number(isReliablyOpenNow({ opening_hours: a.openingHours }, prayerCenter?.timezone) === true) || a.distanceKm - b.distanceKm;
     return a.distanceKm - b.distanceKm;
   });
   return results;
@@ -700,7 +711,7 @@ async function searchPrayerPlaces(center: PrayerCenter, sequence = ++prayerSearc
   const searchCenter = { ...center };
   const searchRadius = prayerRadiusKm;
   const isCurrentPrayerSearch = () => sequence === prayerSearchSequence;
-  prayerCenter = center;
+  prayerCenter = searchCenter;
   prayerMapMoved = false;
   const cacheKey = `${searchCenter.latitude.toFixed(4)},${searchCenter.longitude.toFixed(4)},${searchRadius}`;
   const cached = prayerCache.get(cacheKey);
@@ -769,6 +780,11 @@ async function searchPrayerDestination() {
   prayerStatus = 'searching';
   prayerPage();
   try {
+    const city = cities.find((candidate) => `${candidate.city} ${candidate.country}`.toLowerCase().includes(query.toLowerCase()) || candidate.city.toLowerCase() === query.toLowerCase());
+    if (city) {
+      await searchPrayerPlaces({ latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone }, sequence);
+      return;
+    }
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
     const data = await requestJson<NominatimResult[]>(url, { headers: { Accept: 'application/json' } }, 12000);
     if (!isCurrentPrayerSearch()) return;
@@ -829,12 +845,14 @@ function prayerResultCard(place: PrayerPlace, copy: typeof labels[Language]) {
   const verified = (value: string) => value === 'Verified' ? copy.prayerVerified : copy.prayerUnverified;
   const missing = (value: string) => value || copy.prayerUnknown;
   const displayName = ensureLatinDisplayName(getEnglishPlaceName(place), place.type);
+  const openLabel = openingStatusLabel(openingState(place.openingHours, prayerCenter?.timezone), copy);
   return `<article class="card prayer-place-card" aria-label="${esc(displayName)}">
     <div class="card-top"><span>${place.distanceKm.toFixed(1)} km · ${prayerTypeLabel(place.type, copy)}</span><span class="badge ${place.verification === 'Verified' ? 'verified' : 'unverified'}">${verified(place.verification)}</span></div>
     <h3>${esc(displayName)}</h3>
     <dl class="place-details">
       <div><dt>${copy.prayerAddress}</dt><dd>${esc(missing(place.address))}</dd></div>
       <div><dt>${copy.prayerOpeningHours}</dt><dd>${esc(missing(place.openingHours))}</dd></div>
+      <div><dt>${copy.halalOpen}</dt><dd>${openLabel}</dd></div>
       <div><dt>${copy.prayerWomen}</dt><dd>${verified(place.womenPrayerArea)}</dd></div>
       <div><dt>${copy.prayerWudu}</dt><dd>${verified(place.wudu)}</dd></div>
       <div><dt>${copy.prayerWheelchair}</dt><dd>${verified(place.wheelchair)}</dd></div>
@@ -912,7 +930,7 @@ function bindPrayerPage() {
   document.querySelector<HTMLInputElement>('#filter-wheelchair')?.addEventListener('change', (event) => { prayerWheelchairOnly = (event.target as HTMLInputElement).checked; prayerPage(); });
   document.querySelector<HTMLButtonElement>('#retry-prayer')?.addEventListener('click', () => { if (prayerCenter) void searchPrayerPlaces(prayerCenter); else requestPrayerLocation(); });
   document.querySelector<HTMLButtonElement>('#increase-radius')?.addEventListener('click', () => { const next = prayerRadii.find((radius) => radius > prayerRadiusKm); if (next) prayerRadiusKm = next; if (prayerCenter) void searchPrayerPlaces(prayerCenter); });
-  document.querySelector<HTMLButtonElement>('#search-this-area')?.addEventListener('click', () => { const center = prayerMap?.getCenter?.(); if (!center) return; debouncedPrayerSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].prayerSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#search-this-area')?.addEventListener('click', () => { const center = prayerMap?.getCenter?.(); if (!center) return; debouncedPrayerSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].prayerSearchThisArea, timezone: prayerCenter?.timezone }); });
 }
 
 function halalStatusLabel(status: HalalStatus, copy: typeof labels[Language]) {
@@ -960,7 +978,7 @@ async function resolveRestaurantDestination(query: string): Promise<PrayerCenter
   const trimmed = query.trim();
   if (!trimmed) return undefined;
   const city = cities.find((candidate) => `${candidate.city} ${candidate.country}`.toLowerCase().includes(trimmed.toLowerCase()) || candidate.city.toLowerCase() === trimmed.toLowerCase());
-  if (city) return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}` };
+  if (city) return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone };
   const cached = destinationCache.get(trimmed.toLowerCase());
   if (cached && cached.expires > Date.now()) return cached.center;
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=en&q=${encodeURIComponent(trimmed)}`;
@@ -983,7 +1001,7 @@ async function searchHalalRestaurants(center: PrayerCenter) {
   const cached = restaurantCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     if (!isCurrentRestaurantSearch()) return;
-    restaurantResults = cached.results;
+    restaurantResults = refreshOpenState(cached.results, searchCenter.timezone);
     restaurantStatus = restaurantResults.length ? 'cached' : 'empty';
     halalRestaurantsPage();
     return;
@@ -1006,7 +1024,7 @@ async function searchHalalRestaurants(center: PrayerCenter) {
     console.error(error);
     if (!isCurrentRestaurantSearch()) return;
     if (cached) {
-      restaurantResults = cached.results;
+      restaurantResults = refreshOpenState(cached.results, searchCenter.timezone);
       restaurantStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       restaurantResults = [];
@@ -1125,7 +1143,7 @@ function restaurantDetails(place: HalalRestaurant, copy: typeof labels[Language]
 }
 
 function restaurantCard(restaurant: HalalRestaurant, copy: typeof labels[Language]) {
-  const openLabel = restaurant.openState === 'open' ? copy.halalOpen : restaurant.openState === 'closed' ? copy.halalClosed : copy.halalOpeningUnavailable;
+  const openLabel = openingStatusLabel(restaurant.openState, copy);
   const notice = restaurant.halalStatus === 'certification-listed' ? `${copy.halalCertificationNotice}: ${esc(restaurant.certification)}` : restaurant.halalStatus === 'legacy-halal' ? copy.halalLegacyNotice : restaurant.halalStatus === 'possible-unverified' ? copy.halalPossibleNotice : '';
   return `<article class="card restaurant-card ${selectedRestaurantId === restaurant.id ? 'selected' : ''}" aria-label="${esc(restaurant.name)}">
     <div class="card-top"><span>${restaurant.distanceKm.toFixed(1)} km · ${foodTypeLabel(restaurant.type, copy)}</span><span class="badge halal-${restaurant.halalStatus}">${halalStatusLabel(restaurant.halalStatus, copy)}</span></div>
@@ -1221,7 +1239,7 @@ function bindHalalRestaurantsPage() {
   document.querySelector<HTMLButtonElement>('#retry-halal')?.addEventListener('click', () => { if (restaurantCenter) void searchHalalRestaurants(restaurantCenter); else requestRestaurantLocation(); });
   document.querySelector<HTMLButtonElement>('#increase-halal-radius')?.addEventListener('click', () => { const next = prayerRadii.find((radius) => radius > restaurantRadiusKm); if (next) restaurantRadiusKm = next; if (restaurantCenter) void searchHalalRestaurants(restaurantCenter); });
   document.querySelector<HTMLButtonElement>('#another-halal-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#halal-manual-query')?.focus());
-  document.querySelector<HTMLButtonElement>('#halal-search-this-area')?.addEventListener('click', () => { const center = restaurantMap?.getCenter?.(); if (!center) return; debouncedRestaurantSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].halalSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#halal-search-this-area')?.addEventListener('click', () => { const center = restaurantMap?.getCenter?.(); if (!center) return; debouncedRestaurantSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].halalSearchThisArea, timezone: restaurantCenter?.timezone }); });
   document.querySelector<HTMLButtonElement>('#halal-recentre')?.addEventListener('click', requestRestaurantLocation);
   document.querySelector<HTMLButtonElement>('#halal-fit-results')?.addEventListener('click', () => {
     const results = filteredRestaurantResults();
@@ -1284,7 +1302,7 @@ async function searchPublicToilets(center: PrayerCenter) {
   const cached = toiletCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     if (!isCurrentToiletSearch()) return;
-    toiletResults = cached.results;
+    toiletResults = refreshOpenState(cached.results, searchCenter.timezone);
     toiletStatus = toiletResults.length ? 'cached' : 'empty';
     publicToiletsPage();
     return;
@@ -1306,7 +1324,7 @@ async function searchPublicToilets(center: PrayerCenter) {
     console.error(error);
     if (!isCurrentToiletSearch()) return;
     if (cached) {
-      toiletResults = cached.results;
+      toiletResults = refreshOpenState(cached.results, searchCenter.timezone);
       toiletStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       toiletResults = [];
@@ -1437,7 +1455,7 @@ function toiletDetails(toilet: PublicToilet, copy: typeof labels[Language]) {
 }
 
 function toiletCard(toilet: PublicToilet, copy: typeof labels[Language]) {
-  const openLabel = toilet.openState === 'open' ? copy.halalOpen : toilet.openState === 'closed' ? copy.halalClosed : copy.halalOpeningUnavailable;
+  const openLabel = openingStatusLabel(toilet.openState, copy);
   return `<article class="card toilet-card" aria-label="${esc(toilet.name)}">
     <div class="card-top"><span>${toilet.distanceKm.toFixed(1)} km · ${toiletKindLabel(toilet, copy)}</span><span class="badge toilet-${toilet.access}">${toiletAccessLabel(toilet.access, copy)}</span></div>
     <h3>${esc(toilet.name)}</h3>
@@ -1524,7 +1542,7 @@ function bindPublicToiletsPage() {
   document.querySelector<HTMLButtonElement>('#retry-toilets')?.addEventListener('click', () => { if (toiletCenter) void searchPublicToilets(toiletCenter); else requestToiletLocation(); });
   document.querySelector<HTMLButtonElement>('#increase-toilet-radius')?.addEventListener('click', () => { const next = toiletRadii.find((radius) => radius > toiletRadiusKm); if (next) toiletRadiusKm = next; if (toiletCenter) void searchPublicToilets(toiletCenter); });
   document.querySelector<HTMLButtonElement>('#another-toilet-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#toilet-manual-query')?.focus());
-  document.querySelector<HTMLButtonElement>('#toilet-search-this-area')?.addEventListener('click', () => { const center = toiletMap?.getCenter?.(); if (!center) return; debouncedToiletSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].toiletsSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#toilet-search-this-area')?.addEventListener('click', () => { const center = toiletMap?.getCenter?.(); if (!center) return; debouncedToiletSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].toiletsSearchThisArea, timezone: toiletCenter?.timezone }); });
   document.querySelector<HTMLButtonElement>('#toilet-recentre')?.addEventListener('click', requestToiletLocation);
   document.querySelector<HTMLButtonElement>('#toilet-fit-results')?.addEventListener('click', () => {
     const results = filteredToiletResults();
@@ -1574,7 +1592,7 @@ async function searchCarRentalOffices(center: PrayerCenter) {
   const cached = carRentalCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     if (!isCurrentCarRentalSearch()) return;
-    carRentalResults = cached.results;
+    carRentalResults = refreshOpenState(cached.results, searchCenter.timezone);
     carRentalStatus = carRentalResults.length ? 'cached' : 'empty';
     carRentalPage();
     return;
@@ -1597,7 +1615,7 @@ async function searchCarRentalOffices(center: PrayerCenter) {
     console.error(error);
     if (!isCurrentCarRentalSearch()) return;
     if (cached) {
-      carRentalResults = cached.results;
+      carRentalResults = refreshOpenState(cached.results, searchCenter.timezone);
       carRentalStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       carRentalResults = [];
@@ -1721,7 +1739,7 @@ function carRentalDetails(office: CarRentalOffice, copy: typeof labels[Language]
 }
 
 function carRentalCard(office: CarRentalOffice, copy: typeof labels[Language]) {
-  const openLabel = office.openState === 'open' ? copy.halalOpen : office.openState === 'closed' ? copy.halalClosed : copy.halalOpeningUnavailable;
+  const openLabel = openingStatusLabel(office.openState, copy);
   return `<article class="card car-rental-card" aria-label="${esc(office.name)}">
     <div class="card-top"><span>${office.distanceKm.toFixed(1)} km · ${carRentalTypeLabel(office.locationType, copy)}</span><span class="badge car-${office.locationType}">${office.locationType === 'airport' ? 'AIR' : 'CAR'} ${carRentalTypeLabel(office.locationType, copy)}</span></div>
     <h3>${esc(office.name)}</h3>
@@ -1820,7 +1838,7 @@ function bindCarRentalPage() {
   document.querySelector<HTMLButtonElement>('#retry-car-rental')?.addEventListener('click', () => { if (carRentalCenter) void searchCarRentalOffices(carRentalCenter); else requestCarRentalLocation(); });
   document.querySelector<HTMLButtonElement>('#increase-car-rental-radius')?.addEventListener('click', () => { const next = carRentalRadii.find((radius) => radius > carRentalRadiusKm); if (next) carRentalRadiusKm = next; if (carRentalCenter) void searchCarRentalOffices(carRentalCenter); });
   document.querySelector<HTMLButtonElement>('#another-car-rental-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#car-rental-manual-query')?.focus());
-  document.querySelector<HTMLButtonElement>('#car-rental-search-this-area')?.addEventListener('click', () => { const center = carRentalMap?.getCenter?.(); if (!center) return; debouncedCarRentalSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].carRentalSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#car-rental-search-this-area')?.addEventListener('click', () => { const center = carRentalMap?.getCenter?.(); if (!center) return; debouncedCarRentalSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].carRentalSearchThisArea, timezone: carRentalCenter?.timezone }); });
   document.querySelector<HTMLButtonElement>('#car-rental-recentre')?.addEventListener('click', requestCarRentalLocation);
   document.querySelector<HTMLButtonElement>('#car-rental-fit-results')?.addEventListener('click', () => {
     const results = filteredCarRentalResults();
@@ -2166,7 +2184,7 @@ function filteredAttractionResults() {
 }
 
 function destinationAttractionCenter(city = selectedCity()): PrayerCenter {
-  return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}` };
+  return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone };
 }
 
 async function attractionJson<T>(url: string, stage: string, milliseconds = 7000) {
@@ -2354,7 +2372,7 @@ async function searchAttractions(center: PrayerCenter) {
   const cached = attractionCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     if (!isCurrentAttractionSearch()) return;
-    attractionResults = cached.results;
+    attractionResults = refreshOpenState(cached.results, searchCenter.timezone);
     attractionStatus = attractionResults.length ? 'cached' : 'empty';
     attractionsPage();
     if (attractionResults.some((attraction) => attraction.photoStatus !== 'checked' && attraction.photoStatus !== 'error')) {
@@ -2413,7 +2431,7 @@ async function searchAttractions(center: PrayerCenter) {
     console.error(error);
     if (!isCurrentAttractionSearch()) return;
     if (cached) {
-      attractionResults = cached.results;
+      attractionResults = refreshOpenState(cached.results, searchCenter.timezone);
       attractionStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       attractionResults = [];
@@ -2524,7 +2542,7 @@ function attractionDetailsRows(attraction: Attraction, copy: typeof labels[Langu
     [copy.attractionsCategory, attractionCategoryLabel(attraction.category, copy)],
     [copy.prayerAddress, attraction.address],
     [copy.prayerOpeningHours, attraction.openingHours || copy.halalOpeningUnavailable],
-    [copy.halalOpen, attraction.openState === 'open' ? copy.halalOpen : attraction.openState === 'closed' ? copy.halalClosed : ''],
+    [copy.halalOpen, openingStatusLabel(attraction.openState, copy)],
     [copy.prayerWebsite, attraction.website ? `<a href="${esc(attraction.website)}" target="_blank" rel="noopener noreferrer">${esc(attraction.website)}</a>` : ''],
     [copy.prayerTelephone, attraction.phone],
     [copy.toiletsWheelchair, attraction.wheelchair === 'yes' ? copy.toiletsWheelchair : attraction.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : ''],
@@ -2613,7 +2631,7 @@ function bindAttractionsPage() {
   document.querySelector<HTMLButtonElement>('#retry-attractions')?.addEventListener('click', () => { if (attractionCenter) void searchAttractions(attractionCenter); else void searchAttractions(destinationAttractionCenter()); });
   document.querySelector<HTMLButtonElement>('#increase-attraction-radius')?.addEventListener('click', () => { const next = attractionRadii.find((radius) => radius > attractionRadiusKm); if (next) attractionRadiusKm = next; if (attractionCenter) void searchAttractions(attractionCenter); });
   document.querySelector<HTMLButtonElement>('#another-attraction-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#attraction-manual-query')?.focus());
-  document.querySelector<HTMLButtonElement>('#attractions-search-this-area')?.addEventListener('click', () => { const center = attractionsMap?.getCenter?.(); if (!center) return; debouncedAttractionSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].toiletsSearchThisArea }); });
+  document.querySelector<HTMLButtonElement>('#attractions-search-this-area')?.addEventListener('click', () => { const center = attractionsMap?.getCenter?.(); if (!center) return; debouncedAttractionSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].toiletsSearchThisArea, timezone: attractionCenter?.timezone }); });
   document.querySelector<HTMLButtonElement>('#attractions-recentre')?.addEventListener('click', requestAttractionLocation);
   document.querySelector<HTMLButtonElement>('#attractions-fit-results')?.addEventListener('click', () => {
     const results = filteredAttractionResults();
