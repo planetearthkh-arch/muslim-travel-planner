@@ -179,7 +179,8 @@ test('generates prayer, attraction, travel, and halal-conscious meal items', () 
   assert.equal(items.some((i) => i.kind === 'prayer'), true);
   assert.equal(items.some((i) => i.kind === 'attraction'), true);
   assert.equal(items.some((i) => i.kind === 'travel'), true);
-  assert.equal(items.some((i) => i.kind === 'meal' && i.details.includes('Unverified')), true);
+  assert.equal(items.some((i) => i.kind === 'meal' && i.details.includes('Halal status has not been independently confirmed')), true);
+  assert.equal(items.some((i) => /Sample|Verified|Unverified/.test(i.details)), false);
 });
 
 test('Generate Itinerary button controls planner generation workflow', async () => {
@@ -200,6 +201,21 @@ test('Generate Itinerary button controls planner generation workflow', async () 
   assert.equal(source.includes('generateItinerary(prefs, replan, lang)'), false);
   assert.equal(source.includes('replan = Number(button.dataset.replan)'), true);
   assert.equal(source.includes('generateItinerary(generatedPrefs, replan, lang)'), true);
+});
+
+test('main planner render hides internal verification labels from itinerary UI', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  const plannerStart = source.indexOf('function render()');
+  const plannerEnd = source.indexOf('function bind()', plannerStart);
+  const plannerRender = source.slice(plannerStart, plannerEnd);
+  assert.equal(plannerRender.includes('copy.prototype'), false);
+  assert.equal(plannerRender.includes('copy.sample'), false);
+  assert.equal(plannerRender.includes('copy.legend'), false);
+  assert.equal(plannerRender.includes("statusBadge('Sample')"), false);
+  assert.equal(plannerRender.includes('statusBadge(item.status)'), false);
+  assert.equal(plannerRender.includes('item.place?.evidence'), false);
+  assert.equal(plannerRender.includes('copy.facilityInfoMayBeIncomplete'), true);
 });
 
 test('planner validation and pre-generation messages are translated', () => {
@@ -233,7 +249,7 @@ test('provides natural Indonesian interface labels without translating place nam
   const items = generateItinerary(prefs, 0, 'id');
   assert.equal(items.some((item) => item.title.includes('Tokyo Camii')), true);
   assert.equal(items.some((item) => item.title.includes('Rentang salat Zuhur')), true);
-  assert.equal(items.some((item) => item.details.includes('Daftar contoh belum diverifikasi')), true);
+  assert.equal(items.some((item) => item.details.includes('Status halal belum dikonfirmasi secara independen')), true);
 });
 
 
