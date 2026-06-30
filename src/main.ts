@@ -853,7 +853,7 @@ function prayerPage() {
         </div>
         <button type="button" id="search-this-area" class="ghost" ${prayerMapMoved ? '' : 'hidden'}>${copy.prayerSearchThisArea}</button>
         ${prayerMode === 'map' ? `<div id="prayer-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
-        ${prayerStatus === 'empty' ? `<div class="empty-actions"><button type="button" id="retry-prayer" class="ghost">${copy.prayerRetry}</button><button type="button" id="increase-radius">${copy.prayerIncreaseRadius}</button></div>` : ''}
+        ${['empty', 'service-unavailable'].includes(prayerStatus) ? `<div class="empty-actions"><button type="button" id="retry-prayer" class="ghost">${copy.prayerRetry}</button><button type="button" id="increase-radius">${copy.prayerIncreaseRadius}</button></div>` : ''}
         <div class="place-list">${results.length ? results.map((place) => prayerResultCard(place, copy)).join('') : prayerStatus === 'ready' ? `<p>${copy.prayerNoResults}</p>` : ''}</div>
       </section>
     </main>`;
@@ -1147,7 +1147,7 @@ function halalRestaurantsPage() {
         </div>
         <div class="legend halal-legend"><strong>${copy.halalLegend}</strong><span class="badge halal-halal-only">${copy.halalOnly}</span><span class="badge halal-halal-options">${copy.halalOptions}</span><span class="badge halal-certification-listed">${copy.halalCertificationListed}</span><span class="badge halal-legacy-halal">${copy.halalLegacy}</span><span class="badge halal-possible-unverified">${copy.halalPossible}</span></div>
         ${restaurantMode === 'map' ? `<div id="halal-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
-        ${(restaurantStatus === 'empty' || !results.length && restaurantResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-halal" class="ghost">${copy.halalRetry}</button><button type="button" id="increase-halal-radius">${copy.halalIncreaseRadius}</button><button type="button" id="another-halal-city" class="ghost">${copy.halalSearchAnotherCity}</button></div>` : ''}
+        ${(['empty', 'timeout', 'service-unavailable', 'offline'].includes(restaurantStatus) || !results.length && restaurantResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-halal" class="ghost">${copy.halalRetry}</button>${restaurantStatus === 'timeout' ? '' : `<button type="button" id="increase-halal-radius">${copy.halalIncreaseRadius}</button>`}<button type="button" id="another-halal-city" class="ghost">${copy.halalSearchAnotherCity}</button></div>` : ''}
         <div class="place-list">${results.length ? results.map((place) => restaurantCard(place, copy)).join('') : restaurantStatus === 'ready' ? `<p>${copy.halalNoReliable}</p>` : ''}</div>
         <p class="map-status">${copy.osmAttribution}</p>
       </section>
@@ -1444,7 +1444,7 @@ function publicToiletsPage() {
         </div>
         <div class="legend halal-legend"><strong>${copy.toiletsLegend}</strong><span class="badge toilet-public">WC ${copy.toiletsPublicAccess}</span><span class="badge toilet-customers">WC ${copy.toiletsCustomersOnly}</span><span class="badge toilet-unknown">WC ${copy.toiletsAccessUnknown}</span><span class="badge toilet-restricted">WC ${copy.toiletsRestricted}</span><span class="badge verified">♿ ${copy.toiletsWheelchair}</span></div>
         ${toiletMode === 'map' ? `<div id="toilet-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
-        ${(toiletStatus === 'empty' || !results.length && toiletResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-toilets" class="ghost">${copy.toiletsRetry}</button><button type="button" id="increase-toilet-radius">${copy.toiletsIncreaseRadius}</button><button type="button" id="another-toilet-city" class="ghost">${copy.toiletsSearchAnotherCity}</button></div>` : ''}
+        ${(['empty', 'timeout', 'service-unavailable', 'offline'].includes(toiletStatus) || !results.length && toiletResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-toilets" class="ghost">${copy.toiletsRetry}</button>${toiletStatus === 'timeout' ? '' : `<button type="button" id="increase-toilet-radius">${copy.toiletsIncreaseRadius}</button>`}<button type="button" id="another-toilet-city" class="ghost">${copy.toiletsSearchAnotherCity}</button></div>` : ''}
         <div class="place-list">${results.length ? results.map((toilet) => toiletCard(toilet, copy)).join('') : toiletStatus === 'ready' ? `<p>${copy.toiletsNoPublic}</p>` : ''}</div>
         <p class="map-status">${copy.osmAttribution}</p>
       </section>
@@ -1727,7 +1727,7 @@ function carRentalPage() {
         </div>
         <div class="legend halal-legend"><strong>${copy.carRentalLegend}</strong><span class="badge car-airport">AIR ${copy.carRentalAirportOffice}</span><span class="badge car-city">CAR ${copy.carRentalCityOffice}</span><span class="badge car-railway">RAIL ${copy.carRentalRailwayOffice}</span><span class="badge car-bus">BUS ${copy.carRentalBusOffice}</span><span class="badge car-hotel">HOTEL ${copy.carRentalHotelDesk}</span><span class="badge car-independent">CAR ${copy.carRentalIndependentOffice}</span></div>
         ${carRentalMode === 'map' ? `<div id="car-rental-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
-        ${(carRentalStatus === 'empty' || !results.length && carRentalResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-car-rental" class="ghost">${copy.carRentalRetry}</button><button type="button" id="increase-car-rental-radius">${copy.carRentalIncreaseRadius}</button><button type="button" id="another-car-rental-city" class="ghost">${copy.carRentalSearchAnother}</button></div>` : ''}
+        ${(['empty', 'timeout', 'service-unavailable', 'offline'].includes(carRentalStatus) || !results.length && carRentalResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-car-rental" class="ghost">${copy.carRentalRetry}</button>${carRentalStatus === 'timeout' ? '' : `<button type="button" id="increase-car-rental-radius">${copy.carRentalIncreaseRadius}</button>`}<button type="button" id="another-car-rental-city" class="ghost">${copy.carRentalSearchAnother}</button></div>` : ''}
         <div class="place-list">${results.length ? results.map((office) => carRentalCard(office, copy)).join('') : carRentalStatus === 'ready' ? `<p>${copy.carRentalNoResults}</p>` : ''}</div>
         ${carRentalChecklist(copy)}
         <p class="map-status">${copy.osmAttribution}</p>

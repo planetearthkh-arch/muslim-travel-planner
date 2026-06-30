@@ -926,6 +926,21 @@ test('attraction search uses fallback endpoints, partial batches, and retry-only
   assert.equal(source.includes("attractionStatus === 'timeout' ? ''"), true);
 });
 
+test('map-search failure states render retry actions without endless loading', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes("['empty', 'service-unavailable'].includes(prayerStatus)"), true);
+  assert.equal(source.includes("['empty', 'timeout', 'service-unavailable', 'offline'].includes(restaurantStatus)"), true);
+  assert.equal(source.includes("restaurantStatus === 'timeout' ? ''"), true);
+  assert.equal(source.includes("['empty', 'timeout', 'service-unavailable', 'offline'].includes(toiletStatus)"), true);
+  assert.equal(source.includes("toiletStatus === 'timeout' ? ''"), true);
+  assert.equal(source.includes("['empty', 'timeout', 'service-unavailable', 'offline'].includes(carRentalStatus)"), true);
+  assert.equal(source.includes("carRentalStatus === 'timeout' ? ''"), true);
+  assert.equal(source.includes('id="retry-halal"'), true);
+  assert.equal(source.includes('id="retry-toilets"'), true);
+  assert.equal(source.includes('id="retry-car-rental"'), true);
+});
+
 test('attraction page progressively loads images before final missing-image fallback', async () => {
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
   const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
