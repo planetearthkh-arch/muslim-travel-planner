@@ -244,6 +244,12 @@ const englishMapNameExpression = [
 const esc = (value: string) => value.replace(/[&<>\"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[character] ?? character);
 const statusBadge = (status: VerificationStatus) => `<span class="badge ${status.toLowerCase()}">${statusLabels[lang][status]}</span>`;
 
+function plannerFacilityStatus(status: VerificationStatus, copy: typeof labels[Language]) {
+  if (status === 'Verified') return copy.facilityAvailable;
+  if (status === 'Unverified') return copy.facilityInfoUnavailable;
+  return copy.facilityEstimatedInfo;
+}
+
 function field(name: keyof PlannerPreferences, value: string, label: string, type = 'text', placeholder = '') {
   return `<label>${label}<input data-field="${String(name)}" type="${type}" value="${esc(value)}" ${placeholder ? `placeholder="${esc(placeholder)}"` : ''} /></label>`;
 }
@@ -2874,7 +2880,7 @@ function render() {
           <div class="result-header"><div><h2>${generatedCity.city}, ${generatedCity.country}</h2><p>${regionLabels[lang][generatedCity.region]} · ${generatedCity.timezone}</p><p>${copy.transportEstimatesAre}: ${copy.walking} ${generatedCity.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${generatedCity.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${generatedCity.transportEstimates.taxi} ${copy.minutesShort}.</p></div></div>
           ${athanSection(generatedCity, generatedPrefs)}
           ${mapSection(generatedCity, copy)}
-          ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span></div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.facility ? `<p>${copy.women} · ${copy.wudu} · ${copy.accessibility}: ${copy.facilityInfoMayBeIncomplete}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, generatedCity.city, generatedCity.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${copy.emptyState}</p>`}
+          ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span></div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.facility ? `<p>${copy.women}: ${plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)} · ${copy.wudu}: ${plannerFacilityStatus(item.place.facility.wudu, copy)} · ${copy.accessibility}: ${plannerFacilityStatus(item.place.facility.accessibility, copy)}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, generatedCity.city, generatedCity.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${copy.emptyState}</p>`}
         ` : `<p class="${plannerValidation ? 'error' : 'notice'}">${esc(plannerValidation || (visibleCities.length ? copy.generatePrompt : copy.noCities))}</p>`}
       </section>
     </main>`;

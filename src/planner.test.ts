@@ -215,7 +215,16 @@ test('main planner render hides internal verification labels from itinerary UI',
   assert.equal(plannerRender.includes("statusBadge('Sample')"), false);
   assert.equal(plannerRender.includes('statusBadge(item.status)'), false);
   assert.equal(plannerRender.includes('item.place?.evidence'), false);
-  assert.equal(plannerRender.includes('copy.facilityInfoMayBeIncomplete'), true);
+  assert.equal(plannerRender.includes('copy.transportEstimatesAre'), true);
+  assert.equal(labels.en.transportEstimatesAre, 'Estimated travel times');
+  assert.equal(labels.ar.transportEstimatesAre, 'أوقات السفر التقديرية');
+  assert.equal(labels.id.transportEstimatesAre, 'Estimasi waktu perjalanan');
+  assert.equal(plannerRender.includes('plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)'), true);
+  assert.equal(labels.en.facilityAvailable, 'Available');
+  assert.equal(labels.en.facilityInfoUnavailable, 'Information unavailable');
+  assert.equal(labels.en.facilityEstimatedInfo, 'Estimated information');
+  assert.equal(labels.ar.facilityAvailable.length > 0, true);
+  assert.equal(labels.id.facilityAvailable.length > 0, true);
 });
 
 test('planner validation and pre-generation messages are translated', () => {
