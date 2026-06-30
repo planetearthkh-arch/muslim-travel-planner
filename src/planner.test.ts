@@ -440,6 +440,41 @@ test('rejects invalid, ambiguous, negative, and extremely large currency input',
   assert.equal(parseAmountInput('100000000000000000000').error, 'tooLarge');
 });
 
+test('money amount and currency search typing update the page without full rerenders', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  const amountStart = source.indexOf("document.querySelector<HTMLInputElement>('#money-amount')");
+  const searchStart = source.indexOf("document.querySelector<HTMLInputElement>('#currency-search')", amountStart);
+  const selectStart = source.indexOf("document.querySelector<HTMLSelectElement>('#from-currency')", searchStart);
+  const amountHandler = source.slice(amountStart, searchStart);
+  const searchHandler = source.slice(searchStart, selectStart);
+  assert.equal(amountHandler.includes('moneyPage()'), false);
+  assert.equal(amountHandler.includes('updateMoneyDynamicSections()'), true);
+  assert.equal(searchHandler.includes('moneyPage()'), false);
+  assert.equal(searchHandler.includes('updateCurrencyOptionLists()'), true);
+  assert.equal(source.includes('function updateMoneyDynamicSections()'), true);
+  assert.equal(source.includes("document.querySelector<HTMLElement>('#money-conversion-result')"), true);
+  assert.equal(source.includes("document.querySelector<HTMLElement>('#money-invalid')"), true);
+  assert.equal(source.includes("document.querySelector<HTMLButtonElement>('#copy-result')"), true);
+  assert.equal(source.includes('function updateCurrencyOptionLists()'), true);
+});
+
+test('money typing regression inputs remain parseable across desktop, mobile, and languages', () => {
+  for (const _width of [390, 430, 1440]) {
+    for (const language of languages.map((item) => item.code)) {
+      assert.equal(parseAmountInput('1').value, 1);
+      assert.equal(parseAmountInput('10').value, 10);
+      assert.equal(parseAmountInput('100').value, 100);
+      assert.equal(parseAmountInput('100\b').value, 100);
+      assert.equal(parseAmountInput('1,234.56').value, 1234.56);
+      assert.equal(parseAmountInput('١٬٢٣٤٫٥٦').value, 1234.56);
+      assert.equal(parseAmountInput('abc').error, 'invalid');
+      assert.equal(labels[language].invalidAmount.length > 0, true);
+      assert.equal(labels[language].searchCurrency.length > 0, true);
+    }
+  }
+});
+
 test('validates Frankfurter currency and rate responses', () => {
   const currencies = normalizeCurrencies([{ iso_code: 'USD', name: 'US Dollar' }, { iso_code: 'EUR', name: 'Euro' }]);
   assert.deepEqual(currencies.map((currency) => currency.code), ['EUR', 'USD']);

@@ -2924,6 +2924,55 @@ function moneyStatusText(copy: typeof labels[Language]) {
   return messages[moneyStatus];
 }
 
+function moneyConversionMarkup(copy: typeof labels[Language]) {
+  const from = currencyByCode(fromCurrency);
+  const to = currencyByCode(toCurrency);
+  const parsed = parseAmountInput(amountInput);
+  const result = parsed.value !== null && rate ? convertAmount(parsed.value, rate.rate) : null;
+  return `
+    <span>${from.flag} ${from.code} ${from.name[lang]} · ${from.symbol}</span>
+    <h2 id="money-conversion-heading">${result ? `${formatCurrencyAmount(result.amount, fromCurrency, lang)} = ${formatCurrencyAmount(result.converted, toCurrency, lang)}` : copy.loadingRate}</h2>
+    <span>${to.flag} ${to.code} ${to.name[lang]} · ${to.symbol}</span>`;
+}
+
+function currencySelectOptions() {
+  const searchable = searchCurrencies(currencies, currencySearch);
+  const options = searchable.map((currency) => `<option value="${currency.code}">${currencyOption(currency)}</option>`).join('');
+  return { from: `<option value="${fromCurrency}">${currencyOption(currencyByCode(fromCurrency))}</option>${options}`, to: `<option value="${toCurrency}">${currencyOption(currencyByCode(toCurrency))}</option>${options}` };
+}
+
+function updateMoneyDynamicSections() {
+  const copy = labels[lang];
+  const parsed = parseAmountInput(amountInput);
+  if (parsed.error && parsed.error !== 'empty') {
+    moneyStatus = 'invalidAmount';
+  } else if (moneyStatus === 'invalidAmount' || moneyStatus === 'copied') {
+    moneyStatus = rate ? 'updated' : 'idle';
+  }
+  const status = document.querySelector<HTMLElement>('#money-status');
+  if (status) status.textContent = `${moneyStatusText(copy)}${fromCurrency === toCurrency ? ` ${copy.sameCurrency}` : ''}`;
+  const invalid = document.querySelector<HTMLElement>('#money-invalid');
+  if (invalid) invalid.hidden = !(parsed.error && parsed.error !== 'empty');
+  const conversion = document.querySelector<HTMLElement>('#money-conversion-result');
+  if (conversion) conversion.innerHTML = moneyConversionMarkup(copy);
+  const copyButton = document.querySelector<HTMLButtonElement>('#copy-result');
+  if (copyButton) copyButton.disabled = parsed.value === null || !rate;
+}
+
+function updateCurrencyOptionLists() {
+  const { from, to } = currencySelectOptions();
+  const fromSelect = document.querySelector<HTMLSelectElement>('#from-currency');
+  if (fromSelect) {
+    fromSelect.innerHTML = from;
+    fromSelect.value = fromCurrency;
+  }
+  const toSelect = document.querySelector<HTMLSelectElement>('#to-currency');
+  if (toSelect) {
+    toSelect.innerHTML = to;
+    toSelect.value = toCurrency;
+  }
+}
+
 function moneyPage() {
   if (!root) return;
   cityMap?.remove();
@@ -2934,14 +2983,10 @@ function moneyPage() {
   const dir = languageDirection(lang);
   const city = selectedCity();
   const local = city.money.localCurrencies[0];
-  const from = currencyByCode(fromCurrency);
-  const to = currencyByCode(toCurrency);
   const parsed = parseAmountInput(amountInput);
   const sameCurrency = fromCurrency === toCurrency;
-  const result = parsed.value !== null && rate ? convertAmount(parsed.value, rate.rate) : null;
-  const searchable = searchCurrencies(currencies, currencySearch);
   const popularButtons = popularCurrencyCodes.map((code) => `<button class="chip" type="button" data-quick="${code}">${code}</button>`).join('');
-  const options = searchable.map((currency) => `<option value="${currency.code}">${currencyOption(currency)}</option>`).join('');
+  const options = currencySelectOptions();
   const summary = historySummary;
   const history = summary ? `<div class="stats">
     <p><strong>${copy.highestRate}</strong><br>${formatPlainNumber(summary.high, lang)}</p>
@@ -2970,8 +3015,8 @@ function moneyPage() {
         </div>
         <label>${copy.amount}<input id="money-amount" inputmode="decimal" value="${esc(amountInput)}" aria-describedby="money-status" /></label>
         <div class="grid">
-          <label>${copy.fromCurrency}<select id="from-currency"><option value="${fromCurrency}">${currencyOption(from)}</option>${options}</select></label>
-          <label>${copy.toCurrency}<select id="to-currency"><option value="${toCurrency}">${currencyOption(to)}</option>${options}</select></label>
+          <label>${copy.fromCurrency}<select id="from-currency">${options.from}</select></label>
+          <label>${copy.toCurrency}<select id="to-currency">${options.to}</select></label>
         </div>
         <label>${copy.searchCurrency}<input id="currency-search" value="${esc(currencySearch)}" /></label>
         <div class="chips" aria-label="${copy.popularCurrencies}">${popularButtons}</div>
@@ -2979,18 +3024,14 @@ function moneyPage() {
           <button type="button" id="swap-currencies" aria-label="${copy.swapCurrencies}">⇄</button>
           <button type="button" class="ghost" id="clear-money">${copy.clear}</button>
           <button type="button" class="ghost" id="refresh-rate">${copy.refreshRates}</button>
-          <button type="button" class="ghost" id="copy-result">${copy.copyResult}</button>
+          <button type="button" class="ghost" id="copy-result" ${parsed.value === null || !rate ? 'disabled' : ''}>${copy.copyResult}</button>
         </div>
         <p id="money-status" class="status" aria-live="polite">${moneyStatusText(copy)}${sameCurrency ? ` ${copy.sameCurrency}` : ''}</p>
-        ${parsed.error && parsed.error !== 'empty' ? `<p class="error">${copy.invalidAmount}</p>` : ''}
+        <p id="money-invalid" class="error" ${parsed.error && parsed.error !== 'empty' ? '' : 'hidden'}>${copy.invalidAmount}</p>
       </section>
       <section class="panel results" aria-live="polite">
         <article class="card">
-          <div class="conversion-result">
-            <span>${from.flag} ${from.code} ${from.name[lang]} · ${from.symbol}</span>
-            <h2>${result ? `${formatCurrencyAmount(result.amount, fromCurrency, lang)} = ${formatCurrencyAmount(result.converted, toCurrency, lang)}` : copy.loadingRate}</h2>
-            <span>${to.flag} ${to.code} ${to.name[lang]} · ${to.symbol}</span>
-          </div>
+          <div class="conversion-result" id="money-conversion-result">${moneyConversionMarkup(copy)}</div>
           ${rate ? `<p>${copy.pairRate}: 1 ${fromCurrency} = ${formatPlainNumber(rate.rate, lang)} ${toCurrency}</p><p>${copy.reversePairRate}: 1 ${toCurrency} = ${formatPlainNumber(1 / rate.rate, lang)} ${fromCurrency}</p><p>${copy.rateDate}: ${rate.date}${rate.cached ? ` · ${copy.cachedRate}` : ''}</p><p>${copy.lastRefreshed}: ${new Intl.DateTimeFormat(localeForLanguage(lang), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(rate.refreshedAt))}</p>` : `<p>${copy.noCachedData}</p>`}
           <button class="ghost" id="retry-rate">${copy.retry}</button>
         </article>
@@ -3015,13 +3056,11 @@ function bindMoneyPage() {
   document.querySelector<HTMLButtonElement>('#back-from-money')?.addEventListener('click', () => { view = 'planner'; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLInputElement>('#money-amount')?.addEventListener('input', (event) => {
     amountInput = (event.target as HTMLInputElement).value;
-    const parsed = parseAmountInput(amountInput);
-    moneyStatus = parsed.error && parsed.error !== 'empty' ? 'invalidAmount' : moneyStatus;
-    moneyPage();
+    updateMoneyDynamicSections();
   });
   document.querySelector<HTMLInputElement>('#currency-search')?.addEventListener('input', (event) => {
     currencySearch = (event.target as HTMLInputElement).value;
-    moneyPage();
+    updateCurrencyOptionLists();
   });
   document.querySelector<HTMLSelectElement>('#from-currency')?.addEventListener('change', (event) => {
     fromCurrency = (event.target as HTMLSelectElement).value;
