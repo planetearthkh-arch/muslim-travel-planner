@@ -129,7 +129,7 @@ import {
   playTestAthan,
   stopAthan,
 } from './athan.js';
-import type { PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
+import type { ItineraryItem, PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
 type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'weather' | 'attractions';
@@ -2544,8 +2544,42 @@ function plannerValidationMessage(planPrefs: PlannerPreferences, copy: typeof la
   if (!cityForPreferences(planPrefs)) return copy.invalidCity;
   if (!Number.isFinite(planPrefs.groupSize) || planPrefs.groupSize < 1) return copy.invalidGroupSize;
   if (planPrefs.startDate && planPrefs.endDate && planPrefs.endDate < planPrefs.startDate) return copy.invalidEndDate;
+  const tripDays = itineraryDayKeys(planPrefs.startDate, planPrefs.endDate).length;
+  if (tripDays > 14) return copy.invalidTripTooLong;
   if (planPrefs.startDate && planPrefs.endDate && planPrefs.startDate === planPrefs.endDate && planPrefs.endHour < planPrefs.startHour) return copy.invalidEndTime;
   return '';
+}
+
+function itineraryDayKeys(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+  const dates: string[] = [];
+  for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+    dates.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`);
+  }
+  return dates;
+}
+
+function formatItineraryDayHeading(date: string, dayIndex: number, copy: typeof labels[Language]) {
+  const locale = lang === 'en' ? 'en-GB' : localeForLanguage(lang);
+  const formatted = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${date}T12:00:00`));
+  return `${copy.dayHeading} ${dayIndex + 1} — ${formatted}`;
+}
+
+function groupItineraryItems(items: ItineraryItem[]) {
+  const groups = new Map<string, ItineraryItem[]>();
+  items.forEach((item) => groups.set(item.date, [...(groups.get(item.date) ?? []), item]));
+  return [...groups.entries()];
+}
+
+function itineraryCard(item: ItineraryItem, index: number, city: (typeof cities)[number], copy: typeof labels[Language]) {
+  return `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span></div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.facility ? `<p>${copy.women}: ${plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)} · ${copy.wudu}: ${plannerFacilityStatus(item.place.facility.wudu, copy)} · ${copy.accessibility}: ${plannerFacilityStatus(item.place.facility.accessibility, copy)}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, city.city, city.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`;
+}
+
+function itineraryGroupsMarkup(items: ItineraryItem[], city: (typeof cities)[number], copy: typeof labels[Language]) {
+  let itemIndex = 0;
+  return groupItineraryItems(items).map(([date, dayItems], dayIndex) => `<section class="itinerary-day"><h3>${formatItineraryDayHeading(date, dayIndex, copy)}</h3>${dayItems.map((item) => itineraryCard(item, itemIndex++, city, copy)).join('')}</section>`).join('');
 }
 
 function readPlannerDraftFromForm() {
@@ -2880,7 +2914,7 @@ function render() {
           <div class="result-header"><div><h2>${generatedCity.city}, ${generatedCity.country}</h2><p>${regionLabels[lang][generatedCity.region]} · ${generatedCity.timezone}</p><p>${copy.transportEstimatesAre}: ${copy.walking} ${generatedCity.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${generatedCity.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${generatedCity.transportEstimates.taxi} ${copy.minutesShort}.</p></div></div>
           ${athanSection(generatedCity, generatedPrefs)}
           ${mapSection(generatedCity, copy)}
-          ${items.length ? items.map((item, index) => `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span></div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.facility ? `<p>${copy.women}: ${plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)} · ${copy.wudu}: ${plannerFacilityStatus(item.place.facility.wudu, copy)} · ${copy.accessibility}: ${plannerFacilityStatus(item.place.facility.accessibility, copy)}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, generatedCity.city, generatedCity.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`).join('') : `<p>${copy.emptyState}</p>`}
+          ${items.length ? itineraryGroupsMarkup(items, generatedCity, copy) : `<p>${copy.emptyState}</p>`}
         ` : `<p class="${plannerValidation ? 'error' : 'notice'}">${esc(plannerValidation || (visibleCities.length ? copy.generatePrompt : copy.noCities))}</p>`}
       </section>
     </main>`;

@@ -66,9 +66,10 @@ export interface PlannerPreferences {
 
 export interface ItineraryItem {
   id: string;
+  date: string;
   time: string;
   title: string;
-  kind: 'travel' | 'attraction' | 'prayer' | 'meal';
+  kind: 'travel' | 'attraction' | 'prayer' | 'meal' | 'free-time';
   durationMinutes: number;
   details: string;
   place?: Place;

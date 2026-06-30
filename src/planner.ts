@@ -1,4 +1,5 @@
 import { cities } from './data.js';
+import { calculatePrayerDisplay } from './athan.js';
 import { optionLabels, type Language } from './i18n.js';
 import type { CityData, ItineraryItem, PlannerPreferences, Place } from './models.js';
 
@@ -6,6 +7,23 @@ const addMinutes = (time: string, minutes: number) => {
   const [h, m] = time.split(':').map(Number);
   const d = new Date(2026, 0, 1, h, m + minutes);
   return d.toTimeString().slice(0, 5);
+};
+
+const minutesOfDay = (time: string) => {
+  const match = /^(\d{1,2}):(\d{2})/.exec(time);
+  if (!match) return Number.NaN;
+  return Number(match[1]) * 60 + Number(match[2]);
+};
+
+const isoDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+export const itineraryDates = (startDate: string, endDate: string) => {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+  const dates: string[] = [];
+  for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) dates.push(isoDate(date));
+  return dates;
 };
 
 const travelMinutes = (prefs: PlannerPreferences) => {
@@ -28,6 +46,8 @@ const plannerCopy = {
     mealDetails: (support: string, budget: string, preference: string) => `${support} Budget: ${budget}. Preference: ${preference}.`,
     asrTitle: 'Asr prayer window',
     asrDetails: (needs: string) => `Use nearby mosque/prayer room. Accessibility needs noted: ${needs || 'none supplied'}.`,
+    freeTimeTitle: 'Explore nearby',
+    freeTimeDetails: 'Open time to rest, browse nearby streets, or choose another suitable stop.',
   },
   ar: {
     travelTo: (name: string) => `الانتقال إلى ${name}`,
@@ -39,6 +59,8 @@ const plannerCopy = {
     mealDetails: (support: string, budget: string, preference: string) => `${support} الميزانية: ${budget}. التفضيل: ${preference}.`,
     asrTitle: 'نافذة صلاة العصر',
     asrDetails: (needs: string) => `استخدم مسجدا أو غرفة صلاة قريبة. احتياجات سهولة الوصول المسجلة: ${needs || 'لم يتم إدخال شيء'}.`,
+    freeTimeTitle: 'استكشاف قريب',
+    freeTimeDetails: 'وقت مفتوح للراحة أو التجول في الشوارع القريبة أو اختيار محطة مناسبة أخرى.',
   },
   id: {
     travelTo: (name: string) => `Perjalanan ke ${name}`,
@@ -50,6 +72,8 @@ const plannerCopy = {
     mealDetails: (support: string, budget: string, preference: string) => `${support} Anggaran: ${budget}. Preferensi: ${preference}.`,
     asrTitle: 'Rentang salat Asar',
     asrDetails: (needs: string) => `Gunakan masjid atau ruang salat terdekat. Kebutuhan aksesibilitas yang dicatat: ${needs || 'tidak ada'}.`,
+    freeTimeTitle: 'Jelajahi sekitar',
+    freeTimeDetails: 'Waktu bebas untuk beristirahat, melihat jalan sekitar, atau memilih perhentian lain yang sesuai.',
   },
 };
 
@@ -80,6 +104,10 @@ const facilityUncertainty = (language: Language) => ({
   id: 'Informasi fasilitas mungkin belum lengkap',
 })[language];
 
+const makeItem = (date: string, item: Omit<ItineraryItem, 'date'>): ItineraryItem => ({ ...item, date, id: `${date}-${item.id}` });
+
+const canFit = (start: string, durationMinutes: number, endTime: string) => minutesOfDay(start) + durationMinutes <= minutesOfDay(endTime);
+
 export const generateItinerary = (prefs: PlannerPreferences, replanFromIndex = 0, language: Language = 'en'): ItineraryItem[] => {
   const city = findCity(prefs.city);
   const copy = plannerCopy[language];
@@ -88,23 +116,59 @@ export const generateItinerary = (prefs: PlannerPreferences, replanFromIndex = 0
   const prayerSpace = city.places.find((p) => p.type === 'prayer-space') as Place;
   const restaurant = city.places.find((p) => p.type === 'restaurant') as Place;
   const prayerPlace = prefs.prayerPreference === 'quiet prayer space' ? prayerSpace : mosque;
-  let current = replanFromIndex ? addMinutes(prefs.startHour, replanFromIndex * 35) : prefs.startHour;
   const travel = travelMinutes(prefs);
-  const selectedAttractions = (attractions.length ? attractions : city.places.filter((p) => p.type === 'attraction')).slice(0, 2);
+  const attractionPool = attractions.length ? attractions : city.places.filter((p) => p.type === 'attraction');
+  const dates = itineraryDates(prefs.startDate, prefs.endDate);
   const items: ItineraryItem[] = [];
+  let attractionCursor = 0;
 
-  selectedAttractions.forEach((place, index) => {
-    items.push({ id: `travel-${index}`, time: current, title: copy.travelTo(place.name), kind: 'travel', durationMinutes: travel, details: copy.travelDetails(optionLabels.transportation[language][prefs.transportation]), status: 'Sample' });
-    current = addMinutes(current, travel);
-    items.push({ id: place.id, time: current, title: place.name, kind: 'attraction', durationMinutes: place.estimatedMinutes, details: copy.attractionDetails(prefs.groupSize, prefs.children), place, status: place.verification });
-    current = addMinutes(current, place.estimatedMinutes);
-    if (index === 0) {
-      items.push({ id: 'dhuhr', time: city.prayerWindows.Dhuhr, title: copy.dhuhrTitle(prayerPlace.name), kind: 'prayer', durationMinutes: prayerPlace.estimatedMinutes, details: copy.dhuhrDetails(prefs.prayerMethod, facilityUncertainty(language), facilityUncertainty(language), facilityNotes[language][prayerPlace.facility?.notes ?? ''] ?? ''), place: prayerPlace, status: prayerPlace.verification });
-      items.push({ id: restaurant.id, time: addMinutes(current, 10), title: copy.mealTitle(restaurant.name), kind: 'meal', durationMinutes: restaurant.estimatedMinutes, details: copy.mealDetails(halalSupport(language), optionLabels.budget[language][restaurant.budgetLevel ?? 'mid'], optionLabels.halalPreference[language][prefs.halalPreference]), place: restaurant, status: restaurant.verification });
-      current = addMinutes(current, restaurant.estimatedMinutes + 10);
+  dates.forEach((date, dayIndex) => {
+    let current = dates.length === 1 && dayIndex === 0 && replanFromIndex ? addMinutes(prefs.startHour, replanFromIndex * 35) : prefs.startHour;
+    const dayItems: ItineraryItem[] = [];
+    const addDayItem = (item: Omit<ItineraryItem, 'date'>) => dayItems.push(makeItem(date, item));
+    const prayerTimes = calculatePrayerDisplay(city, prefs.prayerMethod, date, 'en-GB');
+    const dhuhrMinutes = minutesOfDay(prayerTimes.Dhuhr);
+    const asrMinutes = minutesOfDay(prayerTimes.Asr);
+    let mealAdded = false;
+    let attractionsAdded = 0;
+
+    for (let slot = 0; slot < 2; slot += 1) {
+      const place = attractionPool[attractionCursor];
+      const hasFreshAttraction = Boolean(place);
+      if (!hasFreshAttraction) {
+        if (canFit(current, 60, prefs.endHour)) {
+          addDayItem({ id: `explore-${dayIndex}-${slot}`, time: current, title: copy.freeTimeTitle, kind: 'free-time', durationMinutes: 60, details: copy.freeTimeDetails, status: 'Sample' });
+          current = addMinutes(current, 60);
+        }
+        continue;
+      }
+      const blockDuration = travel + place.estimatedMinutes;
+      if (!canFit(current, blockDuration, prefs.endHour)) break;
+      addDayItem({ id: `travel-${dayIndex}-${slot}`, time: current, title: copy.travelTo(place.name), kind: 'travel', durationMinutes: travel, details: copy.travelDetails(optionLabels.transportation[language][prefs.transportation]), status: 'Sample' });
+      current = addMinutes(current, travel);
+      addDayItem({ id: `${place.id}-${dayIndex}`, time: current, title: place.name, kind: 'attraction', durationMinutes: place.estimatedMinutes, details: copy.attractionDetails(prefs.groupSize, prefs.children), place, status: place.verification });
+      current = addMinutes(current, place.estimatedMinutes);
+      attractionCursor += 1;
+      attractionsAdded += 1;
+
+      if (!mealAdded && canFit(addMinutes(current, 10), restaurant.estimatedMinutes, prefs.endHour)) {
+        addDayItem({ id: `${restaurant.id}-${dayIndex}`, time: addMinutes(current, 10), title: copy.mealTitle(restaurant.name), kind: 'meal', durationMinutes: restaurant.estimatedMinutes, details: copy.mealDetails(halalSupport(language), optionLabels.budget[language][restaurant.budgetLevel ?? 'mid'], optionLabels.halalPreference[language][prefs.halalPreference]), place: restaurant, status: restaurant.verification });
+        current = addMinutes(current, restaurant.estimatedMinutes + 10);
+        mealAdded = true;
+      }
     }
+
+    if (dhuhrMinutes >= minutesOfDay(prefs.startHour) && canFit(prayerTimes.Dhuhr, prayerPlace.estimatedMinutes, prefs.endHour)) {
+      addDayItem({ id: `dhuhr-${dayIndex}`, time: prayerTimes.Dhuhr, title: copy.dhuhrTitle(prayerPlace.name), kind: 'prayer', durationMinutes: prayerPlace.estimatedMinutes, details: copy.dhuhrDetails(prefs.prayerMethod, facilityUncertainty(language), facilityUncertainty(language), facilityNotes[language][prayerPlace.facility?.notes ?? ''] ?? ''), place: prayerPlace, status: prayerPlace.verification });
+    }
+    if (asrMinutes >= minutesOfDay(prefs.startHour) && canFit(prayerTimes.Asr, 25, prefs.endHour)) {
+      addDayItem({ id: `asr-${dayIndex}`, time: prayerTimes.Asr, title: copy.asrTitle, kind: 'prayer', durationMinutes: 25, details: copy.asrDetails(prefs.accessibilityNeeds), place: prayerPlace, status: prayerPlace.verification });
+    }
+    if (!attractionsAdded && canFit(current, 60, prefs.endHour)) {
+      addDayItem({ id: `explore-${dayIndex}`, time: current, title: copy.freeTimeTitle, kind: 'free-time', durationMinutes: 60, details: copy.freeTimeDetails, status: 'Sample' });
+    }
+    items.push(...dayItems.sort((a, b) => minutesOfDay(a.time) - minutesOfDay(b.time)));
   });
 
-  items.push({ id: 'asr', time: city.prayerWindows.Asr, title: copy.asrTitle, kind: 'prayer', durationMinutes: 25, details: copy.asrDetails(prefs.accessibilityNeeds), place: prayerPlace, status: prayerPlace.verification });
   return items;
 };

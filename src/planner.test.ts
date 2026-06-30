@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cities } from './data.js';
 import { labels, languageDirection, languages, nextLanguage, regionLabels } from './i18n.js';
-import { generateItinerary } from './planner.js';
+import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
 import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace } from './prayer-spaces.js';
 import {
@@ -181,6 +181,44 @@ test('generates prayer, attraction, travel, and halal-conscious meal items', () 
   assert.equal(items.some((i) => i.kind === 'travel'), true);
   assert.equal(items.some((i) => i.kind === 'meal' && i.details.includes('Halal status has not been independently confirmed')), true);
   assert.equal(items.some((i) => /Sample|Verified|Unverified/.test(i.details)), false);
+  assert.equal(new Set(items.map((item) => item.date)).size, 1);
+});
+
+test('generates inclusive multi-day itineraries with dated unique items', () => {
+  const twoDay = generateItinerary({ ...prefs, startDate: '2026-07-01', endDate: '2026-07-02' });
+  const threeDay = generateItinerary({ ...prefs, startDate: '2026-07-01', endDate: '2026-07-03' });
+  const replanned = generateItinerary({ ...prefs, startDate: '2026-07-01', endDate: '2026-07-03' }, 5);
+  assert.deepEqual([...new Set(twoDay.map((item) => item.date))], ['2026-07-01', '2026-07-02']);
+  assert.deepEqual([...new Set(threeDay.map((item) => item.date))], ['2026-07-01', '2026-07-02', '2026-07-03']);
+  assert.deepEqual([...new Set(replanned.map((item) => item.date))], ['2026-07-01', '2026-07-02', '2026-07-03']);
+  assert.equal(new Set(threeDay.map((item) => item.id)).size, threeDay.length);
+  assert.equal(threeDay.every((item) => item.id.includes(item.date)), true);
+});
+
+test('counts itinerary dates across month and year boundaries', () => {
+  assert.deepEqual(itineraryDates('2026-07-01', '2026-07-01'), ['2026-07-01']);
+  assert.deepEqual(itineraryDates('2026-07-31', '2026-08-02'), ['2026-07-31', '2026-08-01', '2026-08-02']);
+  assert.deepEqual(itineraryDates('2026-12-31', '2027-01-02'), ['2026-12-31', '2027-01-01', '2027-01-02']);
+});
+
+test('multi-day itinerary respects daily end time and distributes attractions', () => {
+  const items = generateItinerary({ ...prefs, city: 'London', startDate: '2026-07-01', endDate: '2026-07-03', startHour: '09:00', endHour: '15:00', interests: [] });
+  const minutes = (time: string) => {
+    const [hour, minute] = time.split(':').map(Number);
+    return hour * 60 + minute;
+  };
+  assert.equal(items.every((item) => !Number.isFinite(minutes(item.time)) || minutes(item.time) + item.durationMinutes <= minutes('15:00')), true);
+  const attractionNames = items.filter((item) => item.kind === 'attraction').map((item) => item.title);
+  assert.equal(attractionNames.some((name, index) => index > 0 && name === attractionNames[index - 1]), false);
+});
+
+test('day headings are rendered for English, Arabic, and Indonesian', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes('formatItineraryDayHeading(date, dayIndex, copy)'), true);
+  assert.equal(labels.en.dayHeading, 'Day');
+  assert.equal(labels.ar.dayHeading, 'اليوم');
+  assert.equal(labels.id.dayHeading, 'Hari');
 });
 
 test('Generate Itinerary button controls planner generation workflow', async () => {
@@ -201,6 +239,7 @@ test('Generate Itinerary button controls planner generation workflow', async () 
   assert.equal(source.includes('generateItinerary(prefs, replan, lang)'), false);
   assert.equal(source.includes('replan = Number(button.dataset.replan)'), true);
   assert.equal(source.includes('generateItinerary(generatedPrefs, replan, lang)'), true);
+  assert.equal(source.includes('invalidTripTooLong'), true);
 });
 
 test('main planner render hides internal verification labels from itinerary UI', async () => {
@@ -219,7 +258,7 @@ test('main planner render hides internal verification labels from itinerary UI',
   assert.equal(labels.en.transportEstimatesAre, 'Estimated travel times');
   assert.equal(labels.ar.transportEstimatesAre, 'أوقات السفر التقديرية');
   assert.equal(labels.id.transportEstimatesAre, 'Estimasi waktu perjalanan');
-  assert.equal(plannerRender.includes('plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)'), true);
+  assert.equal(source.includes('plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)'), true);
   assert.equal(labels.en.facilityAvailable, 'Available');
   assert.equal(labels.en.facilityInfoUnavailable, 'Information unavailable');
   assert.equal(labels.en.facilityEstimatedInfo, 'Estimated information');
