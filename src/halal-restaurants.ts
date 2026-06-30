@@ -1,5 +1,6 @@
 import { ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { distanceKm } from './prayer-spaces.js';
+import { safeExternalUrl } from './urls.js';
 
 export type FoodPlaceType = 'restaurant' | 'fast_food' | 'cafe' | 'food_court';
 export type HalalStatus = 'halal-only' | 'halal-options' | 'certification-listed' | 'legacy-halal' | 'possible-unverified';
@@ -58,11 +59,13 @@ const fallbackForFoodType = (type: FoodPlaceType | undefined) => {
 
 const yes = (value: string | undefined) => /^(yes|only|designated|available|true|1)$/i.test(value ?? '');
 const no = (value: string | undefined) => /^(no|none|false|0)$/i.test(value ?? '');
+const invalidCertification = /^(no|none|false|expired|unknown|unverified|not certified)$/i;
 
 export function classifyHalalStatus(tags: OsmTags, includePossible = false): HalalStatus | undefined {
   if (no(tags['diet:halal']) || no(tags.halal)) return undefined;
   if (tags['diet:halal']?.toLowerCase() === 'only') return 'halal-only';
-  if (tags['halal:certification']?.trim()) return 'certification-listed';
+  const certification = tags['halal:certification']?.trim();
+  if (certification && !invalidCertification.test(certification)) return 'certification-listed';
   if (tags['diet:halal']?.toLowerCase() === 'yes') return 'halal-options';
   if (tags.halal?.toLowerCase() === 'only' || tags.halal?.toLowerCase() === 'yes') return 'legacy-halal';
   if (!includePossible) return undefined;
@@ -162,8 +165,8 @@ export function normalizeHalalRestaurant(element: OverpassElement, origin: { lat
     openingHours,
     openState: openingState(openingHours),
     phone: tags.phone ?? tags.contact_phone ?? tags['contact:phone'] ?? '',
-    website: tags.website ?? tags.contact_website ?? tags['contact:website'] ?? '',
-    menu: tags.menu ?? tags['contact:menu'] ?? '',
+    website: safeExternalUrl(tags.website ?? tags.contact_website ?? tags['contact:website']),
+    menu: safeExternalUrl(tags.menu ?? tags['contact:menu']),
     price: tags.price ?? tags['price:level'] ?? '',
     takeaway: tagBoolean(tags, 'takeaway'),
     delivery: tagBoolean(tags, 'delivery'),

@@ -436,10 +436,15 @@ function stopQiblaOrientation() {
 function handleQiblaOrientation(event: CompassOrientationEvent) {
   const heading = typeof event.webkitCompassHeading === 'number'
     ? event.webkitCompassHeading
-    : typeof event.alpha === 'number'
+    : event.absolute === true && typeof event.alpha === 'number'
       ? normalizeDegrees(360 - event.alpha)
       : undefined;
-  if (typeof heading !== 'number') return;
+  if (typeof heading !== 'number') {
+    qiblaHeading = undefined;
+    qiblaMotionStatus = 'unavailable';
+    qiblaPage();
+    return;
+  }
   qiblaHeading = heading;
   qiblaMotionStatus = 'active';
   qiblaPage();
@@ -1884,21 +1889,27 @@ function formatWeatherTime(value: string, options: Intl.DateTimeFormatOptions = 
   return new Intl.DateTimeFormat(localeForLanguage(lang), options).format(new Date(value));
 }
 
+const formatPercent = (value: number | null, copy: typeof labels[Language]) => value === null ? copy.weatherValueUnavailable : `${value}%`;
+const sumAvailable = (...values: Array<number | null>) => values.some((value) => value !== null) ? values.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
+
 function weatherRows(forecast: WeatherForecast, copy: typeof labels[Language]) {
   const today = forecast.daily[0];
   const condition = weatherCodeInfo(forecast.current.weatherCode, copy);
-  const rainSnow = forecast.current.snowfall > 0 ? formatPrecipitation(forecast.current.snowfall, weatherUnits) : forecast.current.rain > 0 || forecast.current.precipitation > 0 ? formatPrecipitation(forecast.current.rain || forecast.current.precipitation, weatherUnits) : '0';
+  const currentWet = sumAvailable(forecast.current.rain, forecast.current.showers, forecast.current.snowfall, forecast.current.precipitation);
+  const rainSnow = currentWet === null ? copy.weatherValueUnavailable : formatPrecipitation(currentWet, weatherUnits, copy.weatherValueUnavailable);
+  const currentUv = selectHourlyForecast(forecast.hourly, forecast.current.time, 1)[0]?.uvIndex ?? null;
+  const firstVisibility = forecast.hourly[0]?.visibility ?? null;
   const rows = [
     [copy.weatherCondition, `${condition.icon} ${condition.label}`],
-    [copy.weatherFeelsLike, formatTemperature(forecast.current.apparentTemperature, weatherUnits)],
-    [copy.weatherHighLow, today ? `${formatTemperature(today.temperatureMax, weatherUnits)} / ${formatTemperature(today.temperatureMin, weatherUnits)}` : ''],
+    [copy.weatherFeelsLike, formatTemperature(forecast.current.apparentTemperature, weatherUnits, copy.weatherValueUnavailable)],
+    [copy.weatherHighLow, today ? `${formatTemperature(today.temperatureMax, weatherUnits, copy.weatherValueUnavailable)} / ${formatTemperature(today.temperatureMin, weatherUnits, copy.weatherValueUnavailable)}` : ''],
     [copy.weatherRainSnow, rainSnow],
     [copy.weatherHumidity, `${forecast.current.humidity}%`],
-    [copy.weatherWind, `${formatWind(forecast.current.windSpeed, weatherUnits)} ${windDirectionLabel(forecast.current.windDirection)}`],
-    [copy.weatherGusts, formatWind(forecast.current.windGusts, weatherUnits)],
-    [copy.weatherCloud, `${forecast.current.cloudCover}%`],
-    [copy.weatherUv, String(selectHourlyForecast(forecast.hourly, forecast.current.time, 1)[0]?.uvIndex ?? '')],
-    [copy.weatherVisibility, forecast.hourly[0]?.visibility ? `${Math.round(forecast.hourly[0].visibility / 1000)} km` : ''],
+    [copy.weatherWind, `${formatWind(forecast.current.windSpeed, weatherUnits, copy.weatherValueUnavailable)} ${windDirectionLabel(forecast.current.windDirection)}`],
+    [copy.weatherGusts, formatWind(forecast.current.windGusts, weatherUnits, copy.weatherValueUnavailable)],
+    [copy.weatherCloud, formatPercent(forecast.current.cloudCover, copy)],
+    [copy.weatherUv, currentUv === null ? copy.weatherValueUnavailable : String(currentUv)],
+    [copy.weatherVisibility, firstVisibility === null ? copy.weatherValueUnavailable : `${Math.round(firstVisibility / 1000)} km`],
     [copy.weatherSunrise, today?.sunrise ? formatWeatherTime(today.sunrise) : ''],
     [copy.weatherSunset, today?.sunset ? formatWeatherTime(today.sunset) : ''],
     [copy.weatherDayNight, forecast.current.isDay ? copy.weatherDaylight : copy.weatherNight],
@@ -1913,7 +1924,7 @@ function hourlyWeatherList(forecast: WeatherForecast, copy: typeof labels[Langua
     const info = weatherCodeInfo(hour.weatherCode, copy);
     const current = index === 0 && !weatherSelectedDay ? ' current-hour' : '';
     return `<article class="hour-card${current}" role="listitem" aria-label="${info.label}">
-      <strong>${formatWeatherTime(hour.time)}</strong><span class="weather-icon" aria-hidden="true">${info.icon}</span><span>${formatTemperature(hour.temperature, weatherUnits)}</span><small>${copy.weatherFeelsLike}: ${formatTemperature(hour.apparentTemperature, weatherUnits)}</small><small>${hour.precipitationProbability}%</small><small>${formatWind(hour.windSpeed, weatherUnits)}</small>${hour.isDay ? `<small>${copy.weatherUv}: ${hour.uvIndex}</small>` : ''}
+      <strong>${formatWeatherTime(hour.time)}</strong><span class="weather-icon" aria-hidden="true">${info.icon}</span><span>${formatTemperature(hour.temperature, weatherUnits, copy.weatherValueUnavailable)}</span><small>${copy.weatherFeelsLike}: ${formatTemperature(hour.apparentTemperature, weatherUnits, copy.weatherValueUnavailable)}</small><small>${formatPercent(hour.precipitationProbability, copy)}</small><small>${formatWind(hour.windSpeed, weatherUnits, copy.weatherValueUnavailable)}</small>${hour.isDay ? `<small>${copy.weatherUv}: ${hour.uvIndex === null ? copy.weatherValueUnavailable : hour.uvIndex}</small>` : ''}
     </article>`;
   }).join('')}</div>`;
 }
@@ -1923,9 +1934,9 @@ function dailyWeatherList(forecast: WeatherForecast, copy: typeof labels[Languag
     const info = weatherCodeInfo(day.weatherCode, copy);
     return `<article class="card weather-day ${weatherSelectedDay === day.date ? 'selected-weather-day' : ''}">
       <div class="card-top"><span>${formatWeatherTime(`${day.date}T12:00`, { weekday: 'short', month: 'short', day: 'numeric' })}</span><span class="badge verified">${info.icon} ${info.label}</span></div>
-      <h3>${formatTemperature(day.temperatureMax, weatherUnits)} / ${formatTemperature(day.temperatureMin, weatherUnits)}</h3>
-      <p>${copy.weatherFeelsLike}: ${formatTemperature(day.apparentMax, weatherUnits)} / ${formatTemperature(day.apparentMin, weatherUnits)} · ${day.precipitationProbabilityMax}%</p>
-      <p>${copy.weatherRainSnow}: ${formatPrecipitation(day.rainSum + day.showersSum + day.snowfallSum, weatherUnits)} · ${copy.weatherWind}: ${formatWind(day.windSpeedMax, weatherUnits)} · ${copy.weatherGusts}: ${formatWind(day.windGustsMax, weatherUnits)} · ${copy.weatherUv}: ${day.uvIndexMax}</p>
+      <h3>${formatTemperature(day.temperatureMax, weatherUnits, copy.weatherValueUnavailable)} / ${formatTemperature(day.temperatureMin, weatherUnits, copy.weatherValueUnavailable)}</h3>
+      <p>${copy.weatherFeelsLike}: ${formatTemperature(day.apparentMax, weatherUnits, copy.weatherValueUnavailable)} / ${formatTemperature(day.apparentMin, weatherUnits, copy.weatherValueUnavailable)} · ${formatPercent(day.precipitationProbabilityMax, copy)}</p>
+      <p>${copy.weatherRainSnow}: ${formatPrecipitation(sumAvailable(day.rainSum, day.showersSum, day.snowfallSum), weatherUnits, copy.weatherValueUnavailable)} · ${copy.weatherWind}: ${formatWind(day.windSpeedMax, weatherUnits, copy.weatherValueUnavailable)} · ${copy.weatherGusts}: ${formatWind(day.windGustsMax, weatherUnits, copy.weatherValueUnavailable)} · ${copy.weatherUv}: ${day.uvIndexMax === null ? copy.weatherValueUnavailable : day.uvIndexMax}</p>
       <p>${copy.weatherSunrise}: ${formatWeatherTime(day.sunrise)} · ${copy.weatherSunset}: ${formatWeatherTime(day.sunset)}</p>
       <button type="button" class="ghost" data-weather-day="${day.date}">${copy.weatherHourly}</button>
     </article>`;
@@ -1946,7 +1957,7 @@ function prayerWeatherSection(forecast: WeatherForecast, copy: typeof labels[Lan
   return `<section class="destination-box"><h2>${copy.weatherPrayer}</h2><div class="place-list">${matches.map((item) => {
     const point = item.forecast as WeatherPoint;
     const info = weatherCodeInfo(point.weatherCode, copy);
-    return `<article class="card"><div class="card-top"><span>${item.prayer} · ${item.time}</span><span class="badge sample">${point.isDay ? copy.weatherDaylight : copy.weatherNight}</span></div><p>${info.icon} ${info.label} · ${formatTemperature(point.temperature, weatherUnits)} · ${point.precipitationProbability}% · ${formatWind(point.windSpeed, weatherUnits)}</p></article>`;
+    return `<article class="card"><div class="card-top"><span>${item.prayer} · ${item.time}</span><span class="badge sample">${point.isDay ? copy.weatherDaylight : copy.weatherNight}</span></div><p>${info.icon} ${info.label} · ${formatTemperature(point.temperature, weatherUnits, copy.weatherValueUnavailable)} · ${formatPercent(point.precipitationProbability, copy)} · ${formatWind(point.windSpeed, weatherUnits, copy.weatherValueUnavailable)}</p></article>`;
   }).join('')}</div></section>`;
 }
 
@@ -1994,7 +2005,7 @@ function weatherPage() {
         </div>
         <p class="prayer-status ${weatherStatus}" role="status">${weatherStatusMessage(copy)}</p>
         <div class="destination-box"><h2>${esc(location.label)}</h2><p>${copy.weatherLocalTime}: ${forecast ? formatWeatherTime(forecast.current.time, { dateStyle: 'medium', timeStyle: 'short' }) : ''}</p><p>${copy.weatherTimezone}: ${forecast?.timezone ?? location.timezone ?? ''}</p><p>${copy.weatherCoordinates}: ${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}</p></div>
-        ${forecast ? `<section class="card weather-current" aria-label="${copy.weatherCurrent}"><div class="card-top"><span>${copy.weatherCurrent}</span><span class="badge ${forecast.cached ? 'unverified' : 'verified'}">${forecast.cached ? copy.weatherCached : copy.weatherUpdated}</span></div><h2>${formatTemperature(forecast.current.temperature, weatherUnits)}</h2>${weatherRows(forecast, copy)}</section><section><div class="result-header"><h2>${copy.weatherHourly}</h2><button type="button" class="ghost" id="toggle-weather-hours">${weatherHours === 24 ? copy.weatherExpand48 : copy.weatherShow24}</button></div>${hourlyWeatherList(forecast, copy)}</section><section><h2>${copy.weatherDaily}</h2>${dailyWeatherList(forecast, copy)}</section>${travelWeatherSection(forecast, copy)}${prayerWeatherSection(forecast, copy)}` : `<div class="empty-actions"><button type="button" id="retry-weather" class="ghost">${copy.weatherRetry}</button><button type="button" id="another-weather-city">${copy.weatherSearchAnother}</button></div>`}
+        ${forecast ? `<section class="card weather-current" aria-label="${copy.weatherCurrent}"><div class="card-top"><span>${copy.weatherCurrent}</span><span class="badge ${forecast.cached ? 'unverified' : 'verified'}">${forecast.cached ? copy.weatherCached : copy.weatherUpdated}</span></div><h2>${formatTemperature(forecast.current.temperature, weatherUnits, copy.weatherValueUnavailable)}</h2>${weatherRows(forecast, copy)}</section><section><div class="result-header"><h2>${copy.weatherHourly}</h2><button type="button" class="ghost" id="toggle-weather-hours">${weatherHours === 24 ? copy.weatherExpand48 : copy.weatherShow24}</button></div>${hourlyWeatherList(forecast, copy)}</section><section><h2>${copy.weatherDaily}</h2>${dailyWeatherList(forecast, copy)}</section>${travelWeatherSection(forecast, copy)}${prayerWeatherSection(forecast, copy)}` : `<div class="empty-actions"><button type="button" id="retry-weather" class="ghost">${copy.weatherRetry}</button><button type="button" id="another-weather-city">${copy.weatherSearchAnother}</button></div>`}
         <p class="map-status"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">${copy.weatherAttribution}</a> · <a href="${OPEN_METEO_FORECAST_URL}" target="_blank" rel="noopener noreferrer">Open-Meteo API</a></p>
       </section>
     </main>`;

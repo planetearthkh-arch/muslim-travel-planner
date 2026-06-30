@@ -1,4 +1,5 @@
 import { transliterate } from 'transliteration';
+import { safeExternalUrl } from './urls.js';
 
 export type PrayerPlaceType = 'mosque' | 'prayer-room' | 'quiet-space' | 'islamic-centre';
 export type PrayerVerification = 'Verified' | 'Unverified';
@@ -240,7 +241,7 @@ export function normalizePrayerPlace(element: OverpassElement, origin: { latitud
     womenPrayerArea: facilityStatus(tags, ['female', 'women', 'prayer:female', 'prayer_room:female', 'female:prayer_room']),
     wudu: facilityStatus(tags, ['wudu', 'ablution', 'toilets:wudu', 'washing:feet']),
     wheelchair: facilityStatus(tags, ['wheelchair']),
-    website: tags.website ?? tags.contact_website ?? tags['contact:website'] ?? '',
+    website: safeExternalUrl(tags.website ?? tags.contact_website ?? tags['contact:website']),
     telephone: tags.phone ?? tags.contact_phone ?? tags['contact:phone'] ?? '',
     verification: osmVerification(tags, type),
     sourceUrl,

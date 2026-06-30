@@ -1,5 +1,6 @@
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { openingState, type RestaurantOpenState } from './halal-restaurants.js';
+import { safeExternalUrl } from './urls.js';
 
 export type AttractionCategory = 'historic' | 'museum' | 'gallery' | 'monument' | 'archaeological' | 'castle' | 'religious' | 'viewpoint' | 'natural' | 'park' | 'zoo' | 'theme' | 'artwork' | 'cultural' | 'other';
 export type AttractionView = 'photos' | 'list' | 'map';
@@ -177,7 +178,7 @@ export function normalizeAttraction(element: OverpassElement, origin: { latitude
     address: formatAddress(tags),
     openingHours,
     openState: openingState(openingHours),
-    website: tags.website ?? tags['contact:website'] ?? '',
+    website: safeExternalUrl(tags.website ?? tags['contact:website']),
     phone: tags.phone ?? tags['contact:phone'] ?? '',
     wheelchair: wheelchair(tags),
     fee: fee(tags),
@@ -240,7 +241,9 @@ export function summarizeWikipediaExtract(extract: string) {
 
 export function acceptableCommonsLicense(metadata: { license?: string; licenseUrl?: string; thumbnailUrl?: string; sourceUrl?: string }) {
   const license = (metadata.license ?? '').toLowerCase();
-  return Boolean(metadata.thumbnailUrl && metadata.sourceUrl && (license.includes('cc') || license.includes('public domain') || license.includes('pd')));
+  if (!metadata.thumbnailUrl || !metadata.sourceUrl || !license) return false;
+  if (/\b(?:nc|nd)\b/.test(license) || license.includes('all rights reserved')) return false;
+  return /^cc\s*by(?:\b|-)/.test(license) || /^cc\s*by-sa(?:\b|-)/.test(license) || /\bcc0\b/.test(license) || license.includes('public domain') || /\bpd\b/.test(license);
 }
 
 export function commonsFilenameFromTag(value: string) {

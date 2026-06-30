@@ -1,5 +1,6 @@
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { openingState, type RestaurantOpenState } from './halal-restaurants.js';
+import { safeExternalUrl } from './urls.js';
 
 export type CarRentalLocationType = 'airport' | 'city' | 'railway' | 'bus' | 'hotel' | 'independent' | 'unknown';
 export type CarRentalSort = 'distance' | 'name' | 'open' | 'airport' | 'website';
@@ -49,17 +50,7 @@ export function isCarRentalOffice(tags: OsmTags) {
 }
 
 export function safeRentalUrl(value: string | undefined) {
-  const raw = value?.trim();
-  if (!raw) return '';
-  if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:\/\//i.test(raw)) return '';
-  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  try {
-    const url = new URL(candidate);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
-    return url.toString();
-  } catch {
-    return '';
-  }
+  return safeExternalUrl(value);
 }
 
 export function carRentalWheelchair(tags: OsmTags): CarRentalOffice['wheelchair'] {

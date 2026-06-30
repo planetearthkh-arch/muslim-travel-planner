@@ -1,5 +1,6 @@
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { openingState, type RestaurantOpenState } from './halal-restaurants.js';
+import { safeExternalUrl } from './urls.js';
 
 export type ToiletAccess = 'public' | 'customers' | 'restricted' | 'unknown';
 export type ToiletFee = 'free' | 'paid' | 'unknown';
@@ -171,7 +172,7 @@ export function normalizePublicToilet(element: OverpassElement, origin: { latitu
     urinal: boolTag(tags, ['urinal', 'toilets:urinal']),
     operator: tags.operator ?? '',
     supervised: boolTag(tags, ['supervised', 'staffed']),
-    website: tags.website ?? tags.contact_website ?? tags['contact:website'] ?? '',
+    website: safeExternalUrl(tags.website ?? tags.contact_website ?? tags['contact:website']),
     phone: tags.phone ?? tags.contact_phone ?? tags['contact:phone'] ?? '',
     sourceUrl: `https://www.openstreetmap.org/${element.type}/${element.id}`,
   };

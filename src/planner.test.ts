@@ -5,6 +5,7 @@ import { labels, languageDirection, languages, nextLanguage, regionLabels } from
 import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
 import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace } from './prayer-spaces.js';
+import { safeExternalUrl } from './urls.js';
 import {
   cacheKeyForRate,
   convertAmount,
@@ -482,6 +483,23 @@ test('calculates Qibla bearings for major cities', () => {
   }
 });
 
+test('Qibla live compass only accepts reliable absolute headings', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes("typeof event.webkitCompassHeading === 'number'"), true);
+  assert.equal(source.includes("event.absolute === true && typeof event.alpha === 'number'"), true);
+  assert.equal(source.includes("qiblaMotionStatus = 'unavailable';"), true);
+});
+
+test('shared external URL sanitizer accepts only HTTP and HTTPS links', () => {
+  assert.equal(safeExternalUrl('example.com'), 'https://example.com/');
+  assert.equal(safeExternalUrl('https://example.com/path'), 'https://example.com/path');
+  assert.equal(safeExternalUrl('http://example.com'), 'http://example.com/');
+  for (const unsafe of ['javascript:alert(1)', 'data:text/html,x', 'file:///tmp/x', 'blob:https://example.com/id', 'vbscript:msgbox(1)', 'https://', '']) {
+    assert.equal(safeExternalUrl(unsafe), '');
+  }
+});
+
 
 test('calculates distance between nearby coordinates', () => {
   const distance = distanceKm(51.5074, -0.1278, 51.5033, -0.1195);
@@ -568,13 +586,32 @@ test('normalization keeps original name internally but displays Latin only', () 
   assert.equal(latinOnly(place?.name ?? ''), true);
 });
 
+test('OSM-derived feature links reject unsafe protocols', () => {
+  const origin = { latitude: 0, longitude: 0 };
+  const unsafePrayer = normalizePrayerPlace({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'Mosque', website: 'javascript:alert(1)' } }, origin);
+  const unsafeRestaurant = normalizeHalalRestaurant({ type: 'node', id: 2, lat: 0, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'yes', name: 'Food', website: 'data:text/html,x', menu: 'file:///tmp/menu' } }, origin, true);
+  const unsafeToilet = normalizePublicToilet({ type: 'node', id: 3, lat: 0, lon: 0, tags: { amenity: 'toilets', website: 'vbscript:msgbox(1)' } }, origin);
+  const unsafeAttraction = normalizeAttraction({ type: 'node', id: 4, lat: 0, lon: 0, tags: { tourism: 'museum', name: 'Museum', website: 'blob:https://example.com/id' } }, origin);
+  const safeRestaurant = normalizeHalalRestaurant({ type: 'node', id: 5, lat: 0, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'yes', name: 'Food', website: 'example.com' } }, origin, true);
+  assert.equal(unsafePrayer?.website, '');
+  assert.equal(unsafeRestaurant?.website, '');
+  assert.equal(unsafeRestaurant?.menu, '');
+  assert.equal(unsafeToilet?.website, '');
+  assert.equal(unsafeAttraction?.website, '');
+  assert.equal(safeRestaurant?.website, 'https://example.com/');
+});
+
 test('classifies structured halal restaurant tags without unsafe assumptions', () => {
   assert.equal(classifyHalalStatus({ 'diet:halal': 'only' }), 'halal-only');
   assert.equal(classifyHalalStatus({ 'diet:halal': 'yes' }), 'halal-options');
   assert.equal(classifyHalalStatus({ 'halal:certification': 'Local council certificate' }), 'certification-listed');
+  for (const value of ['no', 'none', 'false', 'expired', 'unknown', 'unverified', 'not certified']) {
+    assert.equal(classifyHalalStatus({ 'halal:certification': value }), undefined);
+  }
   assert.equal(classifyHalalStatus({ halal: 'yes' }), 'legacy-halal');
   assert.equal(classifyHalalStatus({ 'diet:halal': 'no', halal: 'yes' }), undefined);
   assert.equal(classifyHalalStatus({ halal: 'no', 'diet:halal': 'yes' }), undefined);
+  assert.equal(classifyHalalStatus({ halal: 'no', 'halal:certification': 'Local council certificate' }), undefined);
   assert.equal(classifyHalalStatus({ amenity: 'restaurant', name: 'مطعم القدس' }), undefined);
   assert.equal(classifyHalalStatus({ cuisine: 'middle_eastern' }), undefined);
   assert.equal(classifyHalalStatus({ name: 'Halal Palace' }), undefined);
@@ -887,6 +924,35 @@ test('rejects missing or malformed weather API data', () => {
   assert.throws(() => validateWeatherResponse({ hourly: {}, daily: {} }), /Missing current/);
   assert.throws(() => validateWeatherResponse({ current: {}, daily: {} }), /Missing hourly/);
   assert.throws(() => validateWeatherResponse({ current: {}, hourly: {} }), /Missing daily/);
+  const missingTemperature = sampleWeatherResponse();
+  delete (missingTemperature.current as Record<string, unknown>).temperature_2m;
+  assert.throws(() => validateWeatherResponse(missingTemperature), /Missing current temperature/);
+  const stringHumidity = sampleWeatherResponse();
+  (stringHumidity.hourly.relative_humidity_2m as unknown[])[0] = '60';
+  assert.throws(() => validateWeatherResponse(stringHumidity), /Missing hourly humidity/);
+  const invalidWind = sampleWeatherResponse();
+  (invalidWind.daily.wind_speed_10m_max as number[])[0] = Number.POSITIVE_INFINITY;
+  assert.throws(() => validateWeatherResponse(invalidWind), /Missing daily maximum wind speed/);
+});
+
+test('optional weather values stay unavailable instead of becoming zero', () => {
+  const optionalMissing = sampleWeatherResponse();
+  delete (optionalMissing.current as Record<string, unknown>).wind_gusts_10m;
+  delete (optionalMissing.current as Record<string, unknown>).cloud_cover;
+  delete (optionalMissing.hourly as Record<string, unknown>).uv_index;
+  delete (optionalMissing.hourly as Record<string, unknown>).visibility;
+  delete (optionalMissing.daily as Record<string, unknown>).uv_index_max;
+  delete (optionalMissing.daily as Record<string, unknown>).wind_gusts_10m_max;
+  const forecast = validateWeatherResponse(optionalMissing);
+  assert.equal(forecast.current.windGusts, null);
+  assert.equal(forecast.current.cloudCover, null);
+  assert.equal(forecast.hourly[0].uvIndex, null);
+  assert.equal(forecast.hourly[0].visibility, null);
+  assert.equal(forecast.daily[0].uvIndexMax, null);
+  assert.equal(forecast.daily[0].windGustsMax, null);
+  assert.equal(formatWind(null, { temperature: 'celsius', wind: 'kmh', precipitation: 'mm' }, labels.en.weatherValueUnavailable), labels.en.weatherValueUnavailable);
+  assert.equal(formatTemperature(null, { temperature: 'celsius', wind: 'kmh', precipitation: 'mm' }, labels.en.weatherValueUnavailable), labels.en.weatherValueUnavailable);
+  assert.equal(formatPrecipitation(null, { temperature: 'celsius', wind: 'kmh', precipitation: 'mm' }, labels.en.weatherValueUnavailable), labels.en.weatherValueUnavailable);
 });
 
 test('interprets WMO weather codes without exposing raw codes', () => {
@@ -921,6 +987,10 @@ test('selects hourly, daily, travel-indicator, cached, and prayer weather data',
   const matched = matchPrayerWeather({ Fajr: '05:10', Dhuhr: '13:05' }, forecast.hourly);
   assert.equal(matched.length, 2);
   assert.equal(matched[0].forecast?.time.includes('05:00'), true);
+  assert.equal(matchPrayerWeather({ Dhuhr: '1:05 PM' }, forecast.hourly)[0].forecast?.time.includes('13:00'), true);
+  assert.equal(matchPrayerWeather({ Dhuhr: '12:05 PM' }, forecast.hourly)[0].forecast?.time.includes('12:00'), true);
+  assert.equal(matchPrayerWeather({ Fajr: '12:05 AM' }, forecast.hourly)[0].forecast?.time.includes('00:00'), true);
+  assert.equal(matchPrayerWeather({ Dhuhr: '2026-07-02 13:05' }, forecast.hourly)[0].forecast?.time.startsWith('2026-07-02T13:00'), true);
 });
 
 test('includes weather state and language labels', () => {
@@ -928,6 +998,9 @@ test('includes weather state and language labels', () => {
   assert.equal(labels.en.weatherTimedOut.includes('timed out'), true);
   assert.equal(labels.en.weatherCached.includes('Cached'), true);
   assert.equal(labels.en.weatherNoCached.includes('No cached'), true);
+  assert.equal(labels.en.weatherValueUnavailable, 'Unavailable');
+  assert.equal(labels.ar.weatherValueUnavailable.length > 0, true);
+  assert.equal(labels.id.weatherValueUnavailable.length > 0, true);
   assert.equal(labels.ar.weatherTitle.length > 0, true);
   assert.equal(labels.id.weatherTitle.length > 0, true);
 });
@@ -987,7 +1060,14 @@ test('handles Wikimedia Commons metadata, licences, and placeholders', () => {
   const photo = normalizeCommonsImage(raw);
   assert.equal(photo?.creator, 'Photographer');
   assert.equal(photo?.license, 'CC BY-SA 4.0');
+  for (const license of ['CC BY 4.0', 'CC BY-SA 4.0', 'CC0', 'Public Domain', 'PD']) {
+    assert.equal(acceptableCommonsLicense({ thumbnailUrl: 'x', sourceUrl: 'y', license }), true);
+  }
+  for (const license of ['CC BY-NC 4.0', 'CC BY-ND 4.0', 'CC BY-NC-ND 4.0', 'All rights reserved', '', 'Creative Commons']) {
+    assert.equal(acceptableCommonsLicense({ thumbnailUrl: 'x', sourceUrl: 'y', license }), false);
+  }
   assert.equal(acceptableCommonsLicense({ thumbnailUrl: 'x', sourceUrl: 'y', license: 'All rights reserved' }), false);
+  assert.equal(acceptableCommonsLicense({ sourceUrl: 'y', license: 'CC BY 4.0' }), false);
   assert.equal(categoryExplanation('viewpoint'), 'This is a mapped scenic viewpoint overlooking the surrounding area.');
 });
 

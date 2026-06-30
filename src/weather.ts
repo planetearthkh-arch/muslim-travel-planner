@@ -16,18 +16,18 @@ export type WeatherPoint = {
   temperature: number;
   apparentTemperature: number;
   humidity: number;
-  precipitationProbability: number;
-  precipitation: number;
-  rain: number;
-  showers: number;
-  snowfall: number;
+  precipitationProbability: number | null;
+  precipitation: number | null;
+  rain: number | null;
+  showers: number | null;
+  snowfall: number | null;
   weatherCode: number;
-  cloudCover: number;
-  visibility: number;
+  cloudCover: number | null;
+  visibility: number | null;
   windSpeed: number;
   windDirection: number;
-  windGusts: number;
-  uvIndex: number;
+  windGusts: number | null;
+  uvIndex: number | null;
   isDay: boolean;
 };
 
@@ -42,14 +42,14 @@ export type WeatherDay = {
   sunset: string;
   daylightDuration: number;
   sunshineDuration: number;
-  uvIndexMax: number;
-  precipitationSum: number;
-  rainSum: number;
-  showersSum: number;
-  snowfallSum: number;
-  precipitationProbabilityMax: number;
+  uvIndexMax: number | null;
+  precipitationSum: number | null;
+  rainSum: number | null;
+  showersSum: number | null;
+  snowfallSum: number | null;
+  precipitationProbabilityMax: number | null;
   windSpeedMax: number;
-  windGustsMax: number;
+  windGustsMax: number | null;
   windDirectionDominant: number;
 };
 
@@ -86,8 +86,13 @@ export function buildWeatherUrl(latitude: number, longitude: number, units: Weat
   return `${baseUrl}?${params.toString()}`;
 }
 
-const asNumber = (value: unknown, fallback = 0) => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const optionalNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null;
 const asString = (value: unknown) => typeof value === 'string' ? value : '';
+
+function requiredNumber(value: unknown, name: string) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Missing ${name}`);
+  return value;
+}
 
 function requireArray<T>(value: unknown, name: string): T[] {
   if (!Array.isArray(value)) throw new Error(`Missing ${name}`);
@@ -107,70 +112,70 @@ export function validateWeatherResponse(raw: unknown, retrievedAt = new Date().t
   const current = body.current as Record<string, unknown>;
   const currentPoint: WeatherPoint = {
     time: asString(current.time),
-    temperature: asNumber(current.temperature_2m),
-    apparentTemperature: asNumber(current.apparent_temperature),
-    humidity: asNumber(current.relative_humidity_2m),
-    precipitationProbability: 0,
-    precipitation: asNumber(current.precipitation),
-    rain: asNumber(current.rain),
-    showers: asNumber(current.showers),
-    snowfall: asNumber(current.snowfall),
-    weatherCode: asNumber(current.weather_code),
-    cloudCover: asNumber(current.cloud_cover),
-    visibility: 0,
-    windSpeed: asNumber(current.wind_speed_10m),
-    windDirection: asNumber(current.wind_direction_10m),
-    windGusts: asNumber(current.wind_gusts_10m),
-    uvIndex: 0,
-    isDay: asNumber(current.is_day) === 1,
+    temperature: requiredNumber(current.temperature_2m, 'current temperature'),
+    apparentTemperature: requiredNumber(current.apparent_temperature, 'current apparent temperature'),
+    humidity: requiredNumber(current.relative_humidity_2m, 'current humidity'),
+    precipitationProbability: null,
+    precipitation: optionalNumber(current.precipitation),
+    rain: optionalNumber(current.rain),
+    showers: optionalNumber(current.showers),
+    snowfall: optionalNumber(current.snowfall),
+    weatherCode: requiredNumber(current.weather_code, 'current weather code'),
+    cloudCover: optionalNumber(current.cloud_cover),
+    visibility: null,
+    windSpeed: requiredNumber(current.wind_speed_10m, 'current wind speed'),
+    windDirection: requiredNumber(current.wind_direction_10m, 'current wind direction'),
+    windGusts: optionalNumber(current.wind_gusts_10m),
+    uvIndex: null,
+    isDay: requiredNumber(current.is_day, 'current day/night') === 1,
   };
   if (!currentPoint.time) throw new Error('Missing current data');
 
   const hourly = hourlyTimes.map((time, index) => ({
     time,
-    temperature: asNumber(body.hourly.temperature_2m?.[index]),
-    apparentTemperature: asNumber(body.hourly.apparent_temperature?.[index]),
-    humidity: asNumber(body.hourly.relative_humidity_2m?.[index]),
-    precipitationProbability: asNumber(body.hourly.precipitation_probability?.[index]),
-    precipitation: asNumber(body.hourly.precipitation?.[index]),
-    rain: asNumber(body.hourly.rain?.[index]),
-    showers: asNumber(body.hourly.showers?.[index]),
-    snowfall: asNumber(body.hourly.snowfall?.[index]),
-    weatherCode: asNumber(body.hourly.weather_code?.[index]),
-    cloudCover: asNumber(body.hourly.cloud_cover?.[index]),
-    visibility: asNumber(body.hourly.visibility?.[index]),
-    windSpeed: asNumber(body.hourly.wind_speed_10m?.[index]),
-    windDirection: asNumber(body.hourly.wind_direction_10m?.[index]),
-    windGusts: asNumber(body.hourly.wind_gusts_10m?.[index]),
-    uvIndex: asNumber(body.hourly.uv_index?.[index]),
-    isDay: asNumber(body.hourly.is_day?.[index]) === 1,
+    temperature: requiredNumber(body.hourly.temperature_2m?.[index], 'hourly temperature'),
+    apparentTemperature: requiredNumber(body.hourly.apparent_temperature?.[index], 'hourly apparent temperature'),
+    humidity: requiredNumber(body.hourly.relative_humidity_2m?.[index], 'hourly humidity'),
+    precipitationProbability: optionalNumber(body.hourly.precipitation_probability?.[index]),
+    precipitation: optionalNumber(body.hourly.precipitation?.[index]),
+    rain: optionalNumber(body.hourly.rain?.[index]),
+    showers: optionalNumber(body.hourly.showers?.[index]),
+    snowfall: optionalNumber(body.hourly.snowfall?.[index]),
+    weatherCode: requiredNumber(body.hourly.weather_code?.[index], 'hourly weather code'),
+    cloudCover: optionalNumber(body.hourly.cloud_cover?.[index]),
+    visibility: optionalNumber(body.hourly.visibility?.[index]),
+    windSpeed: requiredNumber(body.hourly.wind_speed_10m?.[index], 'hourly wind speed'),
+    windDirection: requiredNumber(body.hourly.wind_direction_10m?.[index], 'hourly wind direction'),
+    windGusts: optionalNumber(body.hourly.wind_gusts_10m?.[index]),
+    uvIndex: optionalNumber(body.hourly.uv_index?.[index]),
+    isDay: requiredNumber(body.hourly.is_day?.[index], 'hourly day/night') === 1,
   }));
 
   const daily = dailyTimes.slice(0, 7).map((date, index) => ({
     date,
-    weatherCode: asNumber(body.daily.weather_code?.[index]),
-    temperatureMax: asNumber(body.daily.temperature_2m_max?.[index]),
-    temperatureMin: asNumber(body.daily.temperature_2m_min?.[index]),
-    apparentMax: asNumber(body.daily.apparent_temperature_max?.[index]),
-    apparentMin: asNumber(body.daily.apparent_temperature_min?.[index]),
+    weatherCode: requiredNumber(body.daily.weather_code?.[index], 'daily weather code'),
+    temperatureMax: requiredNumber(body.daily.temperature_2m_max?.[index], 'daily maximum temperature'),
+    temperatureMin: requiredNumber(body.daily.temperature_2m_min?.[index], 'daily minimum temperature'),
+    apparentMax: requiredNumber(body.daily.apparent_temperature_max?.[index], 'daily maximum apparent temperature'),
+    apparentMin: requiredNumber(body.daily.apparent_temperature_min?.[index], 'daily minimum apparent temperature'),
     sunrise: asString(body.daily.sunrise?.[index]),
     sunset: asString(body.daily.sunset?.[index]),
-    daylightDuration: asNumber(body.daily.daylight_duration?.[index]),
-    sunshineDuration: asNumber(body.daily.sunshine_duration?.[index]),
-    uvIndexMax: asNumber(body.daily.uv_index_max?.[index]),
-    precipitationSum: asNumber(body.daily.precipitation_sum?.[index]),
-    rainSum: asNumber(body.daily.rain_sum?.[index]),
-    showersSum: asNumber(body.daily.showers_sum?.[index]),
-    snowfallSum: asNumber(body.daily.snowfall_sum?.[index]),
-    precipitationProbabilityMax: asNumber(body.daily.precipitation_probability_max?.[index]),
-    windSpeedMax: asNumber(body.daily.wind_speed_10m_max?.[index]),
-    windGustsMax: asNumber(body.daily.wind_gusts_10m_max?.[index]),
-    windDirectionDominant: asNumber(body.daily.wind_direction_10m_dominant?.[index]),
+    daylightDuration: requiredNumber(body.daily.daylight_duration?.[index], 'daily daylight duration'),
+    sunshineDuration: requiredNumber(body.daily.sunshine_duration?.[index], 'daily sunshine duration'),
+    uvIndexMax: optionalNumber(body.daily.uv_index_max?.[index]),
+    precipitationSum: optionalNumber(body.daily.precipitation_sum?.[index]),
+    rainSum: optionalNumber(body.daily.rain_sum?.[index]),
+    showersSum: optionalNumber(body.daily.showers_sum?.[index]),
+    snowfallSum: optionalNumber(body.daily.snowfall_sum?.[index]),
+    precipitationProbabilityMax: optionalNumber(body.daily.precipitation_probability_max?.[index]),
+    windSpeedMax: requiredNumber(body.daily.wind_speed_10m_max?.[index], 'daily maximum wind speed'),
+    windGustsMax: optionalNumber(body.daily.wind_gusts_10m_max?.[index]),
+    windDirectionDominant: requiredNumber(body.daily.wind_direction_10m_dominant?.[index], 'daily wind direction'),
   }));
 
   return {
-    latitude: asNumber(body.latitude),
-    longitude: asNumber(body.longitude),
+    latitude: requiredNumber(body.latitude, 'latitude'),
+    longitude: requiredNumber(body.longitude, 'longitude'),
     timezone: asString(body.timezone) || 'auto',
     retrievedAt,
     cached: false,
@@ -197,7 +202,8 @@ export function weatherCodeInfo(code: number, copy: WeatherCopy) {
   return { label: copy.weatherUnknown, icon: 'unknown' };
 }
 
-export function formatTemperature(value: number, units: WeatherUnits) {
+export function formatTemperature(value: number | null, units: WeatherUnits, unavailable = 'Unavailable') {
+  if (value === null) return unavailable;
   return `${Math.round(value)}°${units.temperature === 'fahrenheit' ? 'F' : 'C'}`;
 }
 
@@ -208,7 +214,8 @@ export function convertWindFromKmh(value: number, unit: WeatherUnits['wind']) {
   return value;
 }
 
-export function formatWind(value: number, units: WeatherUnits) {
+export function formatWind(value: number | null, units: WeatherUnits, unavailable = 'Unavailable') {
+  if (value === null) return unavailable;
   const suffix = units.wind === 'mph' ? 'mph' : units.wind === 'ms' ? 'm/s' : units.wind === 'knots' ? 'kn' : 'km/h';
   return `${Math.round(value)} ${suffix}`;
 }
@@ -217,7 +224,8 @@ export function convertPrecipitationFromMm(value: number, unit: WeatherUnits['pr
   return unit === 'inch' ? value / 25.4 : value;
 }
 
-export function formatPrecipitation(value: number, units: WeatherUnits) {
+export function formatPrecipitation(value: number | null, units: WeatherUnits, unavailable = 'Unavailable') {
+  if (value === null) return unavailable;
   return units.precipitation === 'inch' ? `${value.toFixed(2)} in` : `${value.toFixed(1)} mm`;
 }
 
@@ -240,11 +248,11 @@ export function travelWeatherIndicators(forecast: WeatherForecast, copy: Weather
   const today = forecast.daily[0];
   const next24 = selectHourlyForecast(forecast.hourly, forecast.current.time, 24);
   const notices: string[] = [];
-  if ((today?.precipitationProbabilityMax ?? 0) >= 60 || next24.some((hour) => hour.precipitationProbability >= 60 || hour.rain > 0)) notices.push(copy.weatherIndicatorRain);
-  if ((today?.snowfallSum ?? 0) > 0 || next24.some((hour) => hour.snowfall > 0)) notices.push(copy.weatherIndicatorSnow);
-  if ((today?.windGustsMax ?? 0) >= 50 || next24.some((hour) => hour.windGusts >= 50)) notices.push(copy.weatherIndicatorWind);
-  if ((today?.uvIndexMax ?? 0) >= 6 || next24.some((hour) => hour.uvIndex >= 6)) notices.push(copy.weatherIndicatorUv);
-  if (next24.some((hour) => hour.visibility > 0 && hour.visibility < 3000)) notices.push(copy.weatherIndicatorVisibility);
+  if ((today?.precipitationProbabilityMax ?? -Infinity) >= 60 || next24.some((hour) => (hour.precipitationProbability ?? -Infinity) >= 60 || (hour.rain ?? 0) > 0)) notices.push(copy.weatherIndicatorRain);
+  if ((today?.snowfallSum ?? 0) > 0 || next24.some((hour) => (hour.snowfall ?? 0) > 0)) notices.push(copy.weatherIndicatorSnow);
+  if ((today?.windGustsMax ?? -Infinity) >= 50 || next24.some((hour) => (hour.windGusts ?? -Infinity) >= 50)) notices.push(copy.weatherIndicatorWind);
+  if ((today?.uvIndexMax ?? -Infinity) >= 6 || next24.some((hour) => (hour.uvIndex ?? -Infinity) >= 6)) notices.push(copy.weatherIndicatorUv);
+  if (next24.some((hour) => hour.visibility !== null && hour.visibility > 0 && hour.visibility < 3000)) notices.push(copy.weatherIndicatorVisibility);
   if ((today?.temperatureMax ?? forecast.current.temperature) >= 35 || forecast.current.temperature >= 35) notices.push(copy.weatherIndicatorHot);
   if ((today?.temperatureMin ?? forecast.current.temperature) <= 5 || forecast.current.temperature <= 5) notices.push(copy.weatherIndicatorCold);
   if (next24.some((hour) => [95, 96, 99].includes(hour.weatherCode))) notices.push(copy.weatherIndicatorThunderstorm);
@@ -267,8 +275,14 @@ export function matchPrayerWeather(prayerTimes: Record<string, string>, hourly: 
   return Object.entries(prayerTimes).map(([prayer, time]) => {
     const match = /(\d{1,2}):(\d{2})/.exec(time);
     if (!match) return { prayer, time, forecast: undefined };
-    const targetMinutes = Number(match[1]) * 60 + Number(match[2]);
-    const forecast = hourly.reduce<WeatherPoint | undefined>((closest, point) => {
+    let hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (/\bPM\b/i.test(time) && hour < 12) hour += 12;
+    if (/\bAM\b/i.test(time) && hour === 12) hour = 0;
+    const targetMinutes = hour * 60 + minute;
+    const dateMatch = /(\d{4}-\d{2}-\d{2})/.exec(time);
+    const sameDateHourly = dateMatch ? hourly.filter((point) => point.time.startsWith(dateMatch[1])) : hourly;
+    const forecast = sameDateHourly.reduce<WeatherPoint | undefined>((closest, point) => {
       const pointDate = new Date(point.time);
       const minutes = pointDate.getHours() * 60 + pointDate.getMinutes();
       if (!closest) return point;
@@ -279,4 +293,3 @@ export function matchPrayerWeather(prayerTimes: Record<string, string>, hourly: 
     return { prayer, time, forecast };
   }).filter((item) => item.forecast);
 }
-
