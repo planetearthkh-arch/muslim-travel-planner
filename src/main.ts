@@ -56,7 +56,7 @@ import {
   type WeatherUnits,
 } from './weather.js';
 import {
-  buildAttractionOverpassQuery,
+  buildAttractionOverpassBatches,
   categoryExplanation,
   commonsFilenameFromImageUrl,
   commonsFilenameFromTag,
@@ -74,6 +74,7 @@ import {
   wikidataP18Filename,
   wikipediaSummaryUrl,
   type Attraction,
+  type AttractionQueryBatch,
   type AttractionPhoto,
   type AttractionCategory,
   type AttractionFilters,
@@ -2043,6 +2044,17 @@ function overpassPostOptions(query: string): RequestInit {
   };
 }
 
+function overpassEndpoints() {
+  const configured = localStorage.getItem('mtp-overpass-endpoint');
+  const fallback = localStorage.getItem('mtp-overpass-fallback-endpoint') ?? 'https://overpass.kumi.systems/api/interpreter';
+  return [...new Set([configured || overpassUrl(), fallback].filter(Boolean))];
+}
+
+function isTemporaryOverpassError(error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  return error instanceof Error && /HTTP (406|408|429|500|502|503|504)/.test(error.message);
+}
+
 function recordAttractionDiagnostic(stage: string, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   attractionDiagnostics = [`${stage}: ${message}`, ...attractionDiagnostics].slice(0, 6);
@@ -2079,6 +2091,21 @@ async function attractionJson<T>(url: string, stage: string, milliseconds = 7000
     }
   }
   recordAttractionDiagnostic(stage, lastError);
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+async function requestAttractionBatch(batch: AttractionQueryBatch) {
+  let lastError: unknown;
+  const endpoints = overpassEndpoints();
+  for (const endpoint of endpoints) {
+    try {
+      return await requestJson<OverpassResponse>(endpoint, overpassPostOptions(batch.query), 9000);
+    } catch (error) {
+      lastError = error;
+      recordAttractionDiagnostic(`Overpass ${batch.label} via ${new URL(endpoint).hostname}`, error);
+      if (!isTemporaryOverpassError(error)) break;
+    }
+  }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
@@ -2179,6 +2206,7 @@ async function searchAttractions(center: PrayerCenter) {
     return;
   }
   const sequence = ++attractionSearchSequence;
+  attractionResults = [];
   attractionStatus = 'searching';
   attractionError = '';
   attractionDiagnostics = [];
@@ -2190,17 +2218,39 @@ async function searchAttractions(center: PrayerCenter) {
     attractionsPage();
   }, 14000);
   try {
-    const data = await requestJson<OverpassResponse>(overpassUrl(), overpassPostOptions(buildAttractionOverpassQuery(center.latitude, center.longitude, attractionRadiusKm)), 12000);
+    const batches = buildAttractionOverpassBatches(center.latitude, center.longitude, attractionRadiusKm);
+    let successfulBatches = 0;
+    let lastError: unknown;
+    for (const batch of batches) {
+      if (sequence !== attractionSearchSequence) return;
+      try {
+        const data = await requestAttractionBatch(batch);
+        if (sequence !== attractionSearchSequence) return;
+        successfulBatches += 1;
+        const normalized = (data.elements ?? [])
+          .map((element) => normalizeAttraction(element, center))
+          .filter((attraction): attraction is Attraction => Boolean(attraction))
+          .filter((attraction) => attraction.distanceKm <= attractionRadiusKm)
+          .map((attraction) => enrichAttraction(attraction, { osmDescription: attraction.osmDescription }));
+        attractionResults = dedupeAttractions([...attractionResults, ...normalized]).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 250);
+        attractionStatus = attractionResults.length ? 'ready' : 'searching';
+        attractionCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
+        attractionsPage();
+      } catch (error) {
+        lastError = error;
+      }
+    }
     if (sequence !== attractionSearchSequence) return;
-    const normalized = (data.elements ?? [])
-      .map((element) => normalizeAttraction(element, center))
-      .filter((attraction): attraction is Attraction => Boolean(attraction))
-      .map((attraction) => enrichAttraction(attraction, { osmDescription: attraction.osmDescription }));
-    attractionResults = dedupeAttractions(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 250);
-    attractionCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
-    attractionStatus = attractionResults.length ? 'ready' : 'empty';
+    if (attractionResults.length) {
+      attractionStatus = 'ready';
+      attractionCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
+      attractionsPage();
+      void progressiveAttractionEnrichment(++attractionEnrichmentSequence);
+      return;
+    }
+    if (!successfulBatches) throw lastError instanceof Error ? lastError : new Error('Attraction search failed');
+    attractionStatus = 'empty';
     attractionsPage();
-    if (attractionResults.length) void progressiveAttractionEnrichment(++attractionEnrichmentSequence);
     return;
   } catch (error) {
     console.error(error);
@@ -2210,8 +2260,8 @@ async function searchAttractions(center: PrayerCenter) {
       attractionStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       attractionResults = [];
-      attractionStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
-      attractionError = labels[lang].attractionsServiceUnavailable;
+      attractionStatus = isTemporaryOverpassError(error) ? 'timeout' : 'service-unavailable';
+      attractionError = isTemporaryOverpassError(error) ? labels[lang].attractionsTimedOut : labels[lang].attractionsServiceUnavailable;
     }
   } finally {
     window.clearTimeout(watchdog);
@@ -2375,7 +2425,7 @@ function attractionsPage() {
       <div class="place-actions"><button type="button" id="attractions-search-this-area" class="ghost" ${attractionMapMoved ? '' : 'hidden'}>${copy.toiletsSearchThisArea}</button><button type="button" id="attractions-recentre" class="ghost">${copy.toiletsRecentre}</button><button type="button" id="attractions-fit-results" class="ghost">${copy.toiletsFitResults}</button></div>
       ${selectedAttractionDetail(copy)}
       ${attractionView === 'map' ? `<div id="attractions-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : `<div class="${attractionView === 'photos' ? 'attraction-grid' : 'place-list'}">${results.length ? results.map((attraction) => attractionCard(attraction, copy)).join('') : attractionStatus === 'ready' ? `<p>${copy.attractionsNoResults}</p>` : ''}</div>`}
-      ${(['empty', 'timeout', 'service-unavailable', 'offline', 'cached'].includes(attractionStatus) || !results.length && attractionResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-attractions" class="ghost">${copy.weatherRetry}</button><button type="button" id="increase-attraction-radius">${copy.toiletsIncreaseRadius}</button><button type="button" id="another-attraction-city" class="ghost">${copy.attractionsSearchAnother}</button></div>` : ''}
+      ${(['empty', 'timeout', 'service-unavailable', 'offline', 'cached'].includes(attractionStatus) || !results.length && attractionResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-attractions" class="ghost">${copy.weatherRetry}</button>${attractionStatus === 'timeout' ? '' : `<button type="button" id="increase-attraction-radius">${copy.toiletsIncreaseRadius}</button>`}<button type="button" id="another-attraction-city" class="ghost">${copy.attractionsSearchAnother}</button></div>` : ''}
       ${isLocalDevelopment() && attractionDiagnostics.length ? `<details class="dev-diagnostics"><summary>Attraction enrichment diagnostics</summary><ul>${attractionDiagnostics.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
       <p class="map-status">${copy.osmAttribution} · Wikimedia Commons · Wikipedia · Wikidata</p>
     </section>

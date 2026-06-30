@@ -73,6 +73,7 @@ import {
 import {
   acceptableCommonsLicense,
   attractionName,
+  buildAttractionOverpassBatches,
   buildAttractionOverpassQuery,
   canAttachExternalSource,
   categoryExplanation,
@@ -870,22 +871,43 @@ test('deduplicates, filters, sorts, and queries attractions', () => {
   assert.equal(sortAttractions(deduped, 'distance')[0]?.name, 'Near View');
   assert.equal(sortAttractions(deduped, 'history')[0]?.name, 'Far Museum');
   const query = buildAttractionOverpassQuery(51.5, -0.1, 99);
-  assert.equal(query.includes('around:50000,51.5,-0.1'), true);
+  assert.equal(query.includes('(51.05084,'), true);
   assert.equal(query.includes('nwr["tourism"~'), true);
   assert.equal(query.includes('nwr["historic"~'), true);
   assert.equal(query.includes('["wikidata"]'), true);
   assert.equal(query.includes('nwr["amenity"="place_of_worship"]["wikidata"]'), true);
+  const batches = buildAttractionOverpassBatches(30.0444, 31.2357, 5);
+  assert.equal(batches.length, 20);
+  assert.equal(batches.every((batch) => batch.query.includes('[timeout:12]')), true);
+  assert.equal(batches.every((batch) => batch.query.includes('out center tags')), true);
+  assert.equal(batches.every((batch) => batch.query.length < 700), true);
+  assert.equal(batches.some((batch) => batch.id === 'museums-1'), true);
+  assert.equal(batches.some((batch) => batch.id === 'historic-4'), true);
+  assert.equal(query.includes('historic"]'), false);
+  assert.equal(buildAttractionOverpassBatches(30.0444, 31.2357, 1).length, 5);
 });
 
 test('includes attraction state and language labels while keeping content English', () => {
   assert.equal(labels.en.attractionsLocationDenied.includes('denied'), true);
-  assert.equal(labels.en.attractionsTimedOut.includes('timed out'), true);
+  assert.equal(labels.en.attractionsTimedOut, 'The attraction search took too long. Try a smaller radius or retry.');
   assert.equal(labels.en.attractionsCached.includes('cached'), true);
   assert.equal(labels.en.attractionsNoResults, 'No mapped attractions were found in this area. This does not necessarily mean that none exist.');
   assert.equal(labels.ar.attractionsTitle.length > 0, true);
   assert.equal(labels.id.attractionsTitle.length > 0, true);
   const englishSummary = categoryExplanation('natural');
   assert.equal(/[A-Za-z]/.test(englishSummary), true);
+});
+
+test('attraction search uses fallback endpoints, partial batches, and retry-only timeout UI', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes('function overpassEndpoints()'), true);
+  assert.equal(source.includes('mtp-overpass-fallback-endpoint'), true);
+  assert.equal(source.includes('requestAttractionBatch(batch)'), true);
+  assert.equal(source.includes('buildAttractionOverpassBatches(center.latitude, center.longitude, attractionRadiusKm)'), true);
+  assert.equal(source.includes('dedupeAttractions([...attractionResults, ...normalized])'), true);
+  assert.equal(source.includes('HTTP (406|408|429|500|502|503|504)'), true);
+  assert.equal(source.includes("attractionStatus === 'timeout' ? ''"), true);
 });
 
 test('attraction page progressively loads images before final missing-image fallback', async () => {

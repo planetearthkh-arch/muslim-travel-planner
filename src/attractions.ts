@@ -4,6 +4,11 @@ import { openingState, type RestaurantOpenState } from './halal-restaurants.js';
 export type AttractionCategory = 'historic' | 'museum' | 'gallery' | 'monument' | 'archaeological' | 'castle' | 'religious' | 'viewpoint' | 'natural' | 'park' | 'zoo' | 'theme' | 'artwork' | 'cultural' | 'other';
 export type AttractionView = 'photos' | 'list' | 'map';
 export type AttractionSort = 'distance' | 'name' | 'category' | 'photo' | 'history' | 'open' | 'complete';
+export type AttractionQueryBatch = {
+  id: string;
+  label: string;
+  query: string;
+};
 export type AttractionFilters = {
   category: 'all' | AttractionCategory;
   photo: boolean;
@@ -347,16 +352,58 @@ export function sortAttractions(attractions: Attraction[], sort: AttractionSort)
 }
 
 export function buildAttractionOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
+  return buildAttractionOverpassBatches(latitude, longitude, radiusKm).map((batch) => batch.query).join('\n');
+}
+
+export function buildAttractionOverpassBatches(latitude: number, longitude: number, radiusKm: number): AttractionQueryBatch[] {
   const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
-  const around = `(around:${radiusMeters},${latitude},${longitude})`;
-  const historic = '^(monument|memorial|castle|archaeological_site|ruins|fort|city_gate|manor|church|mosque|synagogue|palace)$';
-  const tourism = '^(attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park|artwork)$';
-  const selectors = [
-    `nwr["tourism"~"${tourism}"]${around}`,
-    `nwr["historic"~"${historic}"]["wikipedia"]${around}`,
-    `nwr["historic"~"${historic}"]["wikidata"]${around}`,
-    `nwr["amenity"="place_of_worship"]["wikipedia"]${around}`,
-    `nwr["amenity"="place_of_worship"]["wikidata"]${around}`,
-  ];
-  return `[out:json][timeout:15];(${selectors.join(';')};);out center tags;`;
+  const boxes = searchBoxes(latitude, longitude, radiusMeters / 1000);
+  const batch = (id: string, label: string, selectors: string[]): AttractionQueryBatch => ({
+    id,
+    label,
+    query: `[out:json][timeout:12];(${selectors.join(';')};);out center tags;`,
+  });
+  return boxes.length > 1
+    ? boxes.flatMap((box, index) => categoryBatches([box]).map((item) => batch(`${item.id}-${index + 1}`, `${item.label} ${index + 1}`, item.selectors)))
+    : categoryBatches(boxes).map((item) => batch(item.id, item.label, item.selectors));
+
+  function categoryBatches(activeBoxes: string[]) {
+    const forBoxes = (patterns: string[]) => activeBoxes.flatMap((box) => patterns.map((pattern) => `${pattern}${box}`));
+    return [
+      { id: 'visitor', label: 'Visitor attractions', selectors: forBoxes([`nwr["tourism"~"^(attraction|viewpoint|artwork)$"]`]) },
+      { id: 'museums', label: 'Museums and galleries', selectors: forBoxes([`nwr["tourism"~"^(museum|gallery|zoo|aquarium|theme_park)$"]`]) },
+      { id: 'historic', label: 'Historic attractions', selectors: forBoxes([
+        `nwr["historic"~"^(monument|memorial|castle|archaeological_site|ruins|fort|city_gate|manor|palace)$"]`,
+        `nwr["historic"~"^(church|mosque|synagogue)$"]["wikipedia"]`,
+        `nwr["historic"~"^(church|mosque|synagogue)$"]["wikidata"]`,
+      ]) },
+      { id: 'religious', label: 'Religious heritage', selectors: forBoxes([
+        `nwr["amenity"="place_of_worship"]["wikipedia"]`,
+        `nwr["amenity"="place_of_worship"]["wikidata"]`,
+      ]) },
+      { id: 'natural', label: 'Natural attractions', selectors: forBoxes([
+        `nwr["leisure"="nature_reserve"]`,
+        `nwr["leisure"="park"]["tourism"="attraction"]`,
+        `nwr["boundary"="protected_area"]["tourism"="attraction"]`,
+        `nwr["natural"~"^(peak|waterfall)$"]["tourism"="attraction"]`,
+      ]) },
+    ];
+  }
+}
+
+function searchBoxes(latitude: number, longitude: number, radiusKm: number) {
+  const latitudeDelta = radiusKm / 111.32;
+  const longitudeDelta = radiusKm / (111.32 * Math.max(0.2, Math.cos(latitude * Math.PI / 180)));
+  const sections = radiusKm >= 5 ? 2 : 1;
+  const boxes: string[] = [];
+  for (let row = 0; row < sections; row += 1) {
+    const south = latitude - latitudeDelta + (row * 2 * latitudeDelta) / sections;
+    const north = latitude - latitudeDelta + ((row + 1) * 2 * latitudeDelta) / sections;
+    for (let col = 0; col < sections; col += 1) {
+      const west = longitude - longitudeDelta + (col * 2 * longitudeDelta) / sections;
+      const east = longitude - longitudeDelta + ((col + 1) * 2 * longitudeDelta) / sections;
+      boxes.push(`(${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)})`);
+    }
+  }
+  return boxes;
 }
