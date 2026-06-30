@@ -175,10 +175,21 @@ export function cuisineOptions(restaurants: HalalRestaurant[]) {
 export function buildHalalOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
   const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
-  const foodSelectors = ['restaurant', 'fast_food', 'cafe', 'food_court'].flatMap((type) => [
-    `node["amenity"="${type}"]${around}`,
-    `way["amenity"="${type}"]${around}`,
-    `relation["amenity"="${type}"]${around}`,
+  const food = '["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]';
+  const halalEvidence = [
+    '["diet:halal"]',
+    '["halal"]',
+    '["halal:certification"]',
+    '["source:halal"]',
+    '["diet:halal:source"]',
+    '["description"~"halal",i]',
+    '["description:en"~"halal",i]',
+    '["note"~"halal",i]',
+  ];
+  const foodSelectors = halalEvidence.flatMap((evidence) => [
+    `node${food}${evidence}${around}`,
+    `way${food}${evidence}${around}`,
+    `relation${food}${evidence}${around}`,
   ]);
   return `[out:json][timeout:25];(${foodSelectors.join(';')};);out center tags;`;
 }

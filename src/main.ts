@@ -1,5 +1,6 @@
 import { cities } from './data.js';
 import { generateItinerary } from './planner.js';
+import { RequestError, classifyRequestError, requestJson, retryOnceForTemporary } from './http.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
 import { buildOverpassQuery, ensureLatinDisplayName, getEnglishPlaceName, isReliablyOpenNow, normalizePrayerPlace, type PrayerPlace, type PrayerPlaceType } from './prayer-spaces.js';
 import { openingState, type OpeningState } from './opening-hours.js';
@@ -93,6 +94,7 @@ import {
   CURRENCY_CACHE_MS,
   FRANKFURTER_BASE_URL,
   RATE_CACHE_MS,
+  cacheKeyForHistory,
   cacheKeyForRate,
   convertAmount,
   destinationCurrency,
@@ -545,7 +547,8 @@ type WeatherStatus = 'idle' | 'requesting' | 'loading' | 'ready' | 'updated' | '
 type WeatherLocation = { latitude: number; longitude: number; label: string; country?: string; timezone?: string };
 type AttractionStatus = RestaurantStatus | 'photos' | 'history';
 
-type OverpassResponse = { elements?: Array<{ type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> }> };
+type OverpassElementResponse = { type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> };
+type OverpassResponse = { elements: OverpassElementResponse[] };
 type NominatimResult = { lat: string; lon: string; display_name: string };
 
 const prayerRadii = [1, 3, 5, 10, 25, 50] as const;
@@ -644,16 +647,33 @@ const attractionEnrichmentCache = new Map<string, { expires: number; result: Att
 let attractionCacheKey = '';
 let rateRequestSequence = 0;
 let historyRequestSequence = 0;
+let prayerAbortController: AbortController | undefined;
+let restaurantAbortController: AbortController | undefined;
+let toiletAbortController: AbortController | undefined;
+let carRentalAbortController: AbortController | undefined;
+let weatherAbortController: AbortController | undefined;
+let attractionAbortController: AbortController | undefined;
+let attractionEnrichmentAbortController: AbortController | undefined;
 
-function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14000) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), milliseconds);
-  return fetch(url, { ...options, signal: controller.signal })
-    .then((response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json() as Promise<T>;
-    })
-    .finally(() => window.clearTimeout(timeout));
+function nextAbortController(current: AbortController | undefined) {
+  current?.abort();
+  return new AbortController();
+}
+
+function validateOverpassResponse(payload: unknown): OverpassResponse {
+  if (!payload || typeof payload !== 'object' || !Array.isArray((payload as { elements?: unknown }).elements)) {
+    throw new RequestError('malformed', 'Received invalid service data');
+  }
+  const elements = (payload as { elements: unknown[] }).elements.filter((element): element is OverpassElementResponse => {
+    if (!element || typeof element !== 'object') return false;
+    const candidate = element as Partial<OverpassElementResponse>;
+    return typeof candidate.type === 'string' && typeof candidate.id === 'number';
+  });
+  return { elements };
+}
+
+async function requestOverpass(url: string, options: RequestInit, milliseconds: number) {
+  return validateOverpassResponse(await retryOnceForTemporary(() => requestJson<unknown>(url, options, milliseconds)));
 }
 
 function prayerTypeLabel(type: PrayerPlaceType, copy: typeof labels[Language]) {
@@ -708,6 +728,8 @@ function browserDirectionsUrl(place: PrayerPlace) {
 function overpassUrl() { return localStorage.getItem('mtp-overpass-endpoint') ?? 'https://overpass-api.de/api/interpreter'; }
 
 async function searchPrayerPlaces(center: PrayerCenter, sequence = ++prayerSearchSequence) {
+  prayerAbortController = nextAbortController(prayerAbortController);
+  const abortSignal = prayerAbortController.signal;
   const searchCenter = { ...center };
   const searchRadius = prayerRadiusKm;
   const isCurrentPrayerSearch = () => sequence === prayerSearchSequence;
@@ -727,7 +749,7 @@ async function searchPrayerPlaces(center: PrayerCenter, sequence = ++prayerSearc
   prayerPage();
   try {
     const body = buildOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
-    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 18000);
+    const data = await requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 18000);
     if (!isCurrentPrayerSearch()) return;
     const deduped = new Map<string, PrayerPlace>();
     for (const element of data.elements ?? []) {
@@ -741,6 +763,7 @@ async function searchPrayerPlaces(center: PrayerCenter, sequence = ++prayerSearc
   } catch (error) {
     console.error(error);
     if (!isCurrentPrayerSearch()) return;
+    if (classifyRequestError(error).kind === 'aborted') return;
     prayerStatus = 'service-unavailable';
     prayerError = labels[lang].prayerServiceUnavailable;
   }
@@ -991,6 +1014,8 @@ async function resolveRestaurantDestination(query: string): Promise<PrayerCenter
 
 async function searchHalalRestaurants(center: PrayerCenter) {
   const sequence = ++restaurantSearchSequence;
+  restaurantAbortController = nextAbortController(restaurantAbortController);
+  const abortSignal = restaurantAbortController.signal;
   const searchCenter = { ...center };
   const searchRadius = restaurantRadiusKm;
   const isCurrentRestaurantSearch = () => sequence === restaurantSearchSequence;
@@ -1011,7 +1036,7 @@ async function searchHalalRestaurants(center: PrayerCenter) {
   halalRestaurantsPage();
   try {
     const body = buildHalalOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
-    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 20000);
+    const data = await requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 20000);
     if (!isCurrentRestaurantSearch()) return;
     const normalized = (data.elements ?? [])
       .map((element) => normalizeHalalRestaurant(element, searchCenter, true))
@@ -1023,12 +1048,13 @@ async function searchHalalRestaurants(center: PrayerCenter) {
   } catch (error) {
     console.error(error);
     if (!isCurrentRestaurantSearch()) return;
+    if (classifyRequestError(error).kind === 'aborted') return;
     if (cached) {
       restaurantResults = refreshOpenState(cached.results, searchCenter.timezone);
       restaurantStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       restaurantResults = [];
-      restaurantStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
+      restaurantStatus = classifyRequestError(error).kind === 'timeout' ? 'timeout' : 'service-unavailable';
       restaurantError = labels[lang].halalServiceUnavailable;
     }
   }
@@ -1293,6 +1319,8 @@ function filteredToiletResults() {
 
 async function searchPublicToilets(center: PrayerCenter) {
   const sequence = ++toiletSearchSequence;
+  toiletAbortController = nextAbortController(toiletAbortController);
+  const abortSignal = toiletAbortController.signal;
   const searchCenter = { ...center };
   const searchRadius = toiletRadiusKm;
   const isCurrentToiletSearch = () => sequence === toiletSearchSequence;
@@ -1311,7 +1339,7 @@ async function searchPublicToilets(center: PrayerCenter) {
   toiletError = '';
   publicToiletsPage();
   try {
-    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body: buildToiletOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius) }, 20000);
+    const data = await requestOverpass(overpassUrl(), { method: 'POST', body: buildToiletOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius), signal: abortSignal }, 20000);
     if (!isCurrentToiletSearch()) return;
     const normalized = (data.elements ?? [])
       .map((element) => normalizePublicToilet(element, searchCenter))
@@ -1323,12 +1351,13 @@ async function searchPublicToilets(center: PrayerCenter) {
   } catch (error) {
     console.error(error);
     if (!isCurrentToiletSearch()) return;
+    if (classifyRequestError(error).kind === 'aborted') return;
     if (cached) {
       toiletResults = refreshOpenState(cached.results, searchCenter.timezone);
       toiletStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       toiletResults = [];
-      toiletStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
+      toiletStatus = classifyRequestError(error).kind === 'timeout' ? 'timeout' : 'service-unavailable';
       toiletError = labels[lang].toiletsServiceUnavailable;
     }
   }
@@ -1583,6 +1612,8 @@ function filteredCarRentalResults() {
 
 async function searchCarRentalOffices(center: PrayerCenter) {
   const sequence = ++carRentalSearchSequence;
+  carRentalAbortController = nextAbortController(carRentalAbortController);
+  const abortSignal = carRentalAbortController.signal;
   const searchCenter = { ...center };
   const searchRadius = carRentalRadiusKm;
   const isCurrentCarRentalSearch = () => sequence === carRentalSearchSequence;
@@ -1602,7 +1633,7 @@ async function searchCarRentalOffices(center: PrayerCenter) {
   carRentalPage();
   try {
     const body = buildCarRentalOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
-    const data = await requestJson<OverpassResponse>(overpassUrl(), { method: 'POST', body }, 20000);
+    const data = await requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 20000);
     if (!isCurrentCarRentalSearch()) return;
     const normalized = (data.elements ?? [])
       .map((element) => normalizeCarRentalOffice(element, searchCenter))
@@ -1614,12 +1645,13 @@ async function searchCarRentalOffices(center: PrayerCenter) {
   } catch (error) {
     console.error(error);
     if (!isCurrentCarRentalSearch()) return;
+    if (classifyRequestError(error).kind === 'aborted') return;
     if (cached) {
       carRentalResults = refreshOpenState(cached.results, searchCenter.timezone);
       carRentalStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       carRentalResults = [];
-      carRentalStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'service-unavailable';
+      carRentalStatus = classifyRequestError(error).kind === 'timeout' ? 'timeout' : 'service-unavailable';
       carRentalError = labels[lang].carRentalServiceUnavailable;
     }
   }
@@ -1855,7 +1887,7 @@ function selectedWeatherCity() {
 }
 
 function weatherCacheKey(location: WeatherLocation, units = weatherUnits) {
-  return `mtp-weather-${location.latitude.toFixed(3)}-${location.longitude.toFixed(3)}-${units.temperature}-${units.wind}-${units.precipitation}`;
+  return `mtp-weather-${location.latitude.toFixed(3)}-${location.longitude.toFixed(3)}-${location.timezone ?? 'auto'}-${units.temperature}-${units.wind}-${units.precipitation}-7d-v2`;
 }
 
 function weatherStatusMessage(copy: typeof labels[Language]) {
@@ -1876,6 +1908,8 @@ function weatherStatusMessage(copy: typeof labels[Language]) {
 
 async function loadWeather(location: WeatherLocation, force = false) {
   const sequence = ++weatherRequestSequence;
+  weatherAbortController = nextAbortController(weatherAbortController);
+  const abortSignal = weatherAbortController.signal;
   const requestLocation = { ...location };
   const requestUnits = { ...weatherUnits };
   const isCurrentWeatherRequest = () => sequence === weatherRequestSequence;
@@ -1893,7 +1927,7 @@ async function loadWeather(location: WeatherLocation, force = false) {
   weatherError = '';
   weatherPage();
   try {
-    const forecast = validateWeatherResponse(await requestJson<unknown>(buildWeatherUrl(requestLocation.latitude, requestLocation.longitude, requestUnits), { headers: { Accept: 'application/json' } }, 9000));
+    const forecast = validateWeatherResponse(await requestJson<unknown>(buildWeatherUrl(requestLocation.latitude, requestLocation.longitude, requestUnits), { headers: { Accept: 'application/json' }, signal: abortSignal }, 9000));
     if (!isCurrentWeatherRequest()) return;
     weatherForecast = forecast;
     weatherSelectedDay = forecast.daily[0]?.date ?? '';
@@ -1901,6 +1935,7 @@ async function loadWeather(location: WeatherLocation, force = false) {
     weatherStatus = 'updated';
   } catch (error) {
     if (!isCurrentWeatherRequest()) return;
+    if (classifyRequestError(error).kind === 'aborted') return;
     const fallback = readJsonCache<WeatherForecast>(localStorage, cacheKey, 7 * 24 * 60 * 60 * 1000);
     if (!isCurrentWeatherRequest()) return;
     if (fallback) {
@@ -1908,7 +1943,8 @@ async function loadWeather(location: WeatherLocation, force = false) {
       weatherStatus = navigator.onLine ? 'cached' : 'offline';
     } else {
       weatherForecast = null;
-      weatherStatus = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : error instanceof Error && /Missing|Malformed/.test(error.message) ? 'invalid' : 'service-unavailable';
+      const kind = classifyRequestError(error).kind;
+      weatherStatus = kind === 'timeout' ? 'timeout' : kind === 'malformed' || error instanceof Error && /Missing|Malformed/.test(error.message) ? 'invalid' : 'service-unavailable';
       weatherError = error instanceof Error ? error.message : '';
     }
   }
@@ -2165,8 +2201,7 @@ function overpassEndpoints() {
 }
 
 function isTemporaryOverpassError(error: unknown) {
-  if (error instanceof DOMException && error.name === 'AbortError') return true;
-  return error instanceof Error && /HTTP (406|408|429|500|502|503|504)/.test(error.message);
+  return ['timeout', 'rate-limited', 'temporary'].includes(classifyRequestError(error).kind);
 }
 
 function recordAttractionDiagnostic(stage: string, error: unknown) {
@@ -2187,33 +2222,28 @@ function destinationAttractionCenter(city = selectedCity()): PrayerCenter {
   return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone };
 }
 
-async function attractionJson<T>(url: string, stage: string, milliseconds = 7000) {
+async function attractionJson<T>(url: string, stage: string, milliseconds = 7000, signal?: AbortSignal) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), milliseconds);
     try {
-      const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return await response.json() as T;
+      return await requestJson<T>(url, { headers: { Accept: 'application/json' }, signal }, milliseconds);
     } catch (error) {
       lastError = error;
-      if (!(error instanceof Error) || !/HTTP (429|500|502|503|504)/.test(error.message) || attempt === 1) break;
-      await new Promise((resolve) => window.setTimeout(resolve, 900));
-    } finally {
-      window.clearTimeout(timeout);
+      const classified = classifyRequestError(error);
+      if (!['temporary', 'rate-limited'].includes(classified.kind) || attempt === 1) break;
+      if (classified.retryAfterMs) await new Promise((resolve) => window.setTimeout(resolve, classified.retryAfterMs));
     }
   }
   recordAttractionDiagnostic(stage, lastError);
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-async function requestAttractionBatch(batch: AttractionQueryBatch) {
+async function requestAttractionBatch(batch: AttractionQueryBatch, signal?: AbortSignal) {
   let lastError: unknown;
   const endpoints = overpassEndpoints();
   for (const endpoint of endpoints) {
     try {
-      return await requestJson<OverpassResponse>(endpoint, overpassPostOptions(batch.query), 9000);
+      return await requestOverpass(endpoint, { ...overpassPostOptions(batch.query), signal }, 9000);
     } catch (error) {
       lastError = error;
       recordAttractionDiagnostic(`Overpass ${batch.label} via ${new URL(endpoint).hostname}`, error);
@@ -2223,25 +2253,25 @@ async function requestAttractionBatch(batch: AttractionQueryBatch) {
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-async function commonsPhotoFromFilename(filename: string) {
+async function commonsPhotoFromFilename(filename: string, signal?: AbortSignal) {
   if (!filename) return undefined;
-  const data = await attractionJson<unknown>(commonsImageInfoUrl(filename), `Commons imageinfo ${filename}`);
+  const data = await attractionJson<unknown>(commonsImageInfoUrl(filename), `Commons imageinfo ${filename}`, 7000, signal);
   return normalizeCommonsImage(data);
 }
 
-async function commonsPhotoFromCategory(category: string, attraction: Attraction, extraNames: string[]) {
+async function commonsPhotoFromCategory(category: string, attraction: Attraction, extraNames: string[], signal?: AbortSignal) {
   if (!category) return undefined;
-  const data = await attractionJson<unknown>(commonsCategoryImagesUrl(category), `Commons category ${category}`);
+  const data = await attractionJson<unknown>(commonsCategoryImagesUrl(category), `Commons category ${category}`, 7000, signal);
   return selectHighConfidenceCommonsImage(data, attraction, extraNames) ?? firstLicensedCommonsImage(data);
 }
 
-async function wikipediaAttractionSummary(title: string, language = 'en') {
+async function wikipediaAttractionSummary(title: string, language = 'en', signal?: AbortSignal) {
   if (!title) return { wikipediaExtract: '', photo: undefined as AttractionPhoto | undefined, wikidata: '', englishTitle: '' };
-  const summary = await attractionJson<{ extract?: string; wikibase_item?: string; lang?: string; title?: string; originalimage?: { source?: string }; thumbnail?: { source?: string } }>(wikipediaSummaryUrlFor(language, title), `Wikipedia summary ${language}:${title}`);
+  const summary = await attractionJson<{ extract?: string; wikibase_item?: string; lang?: string; title?: string; originalimage?: { source?: string }; thumbnail?: { source?: string } }>(wikipediaSummaryUrlFor(language, title), `Wikipedia summary ${language}:${title}`, 7000, signal);
   const imageUrl = summary.originalimage?.source ?? summary.thumbnail?.source ?? '';
   const filename = commonsFilenameFromImageUrl(imageUrl);
   let photo: AttractionPhoto | undefined;
-  if (filename) photo = await commonsPhotoFromFilename(filename);
+  if (filename) photo = await commonsPhotoFromFilename(filename, signal);
   const wikipediaExtract = language === 'en' ? summary.extract ?? '' : '';
   return { wikipediaExtract, photo, wikidata: summary.wikibase_item ?? '', englishTitle: language === 'en' ? summary.title ?? title : '' };
 }
@@ -2250,7 +2280,7 @@ function attractionEnrichmentKey(attraction: Attraction) {
   return attraction.wikidata || attraction.wikipediaRaw || attraction.commons || attraction.sourceUrl;
 }
 
-async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName: string) {
+async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName: string, signal?: AbortSignal) {
   const cacheKey = attractionEnrichmentKey(attraction);
   const cached = attractionEnrichmentCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return { ...cached.result, distanceKm: attraction.distanceKm };
@@ -2262,14 +2292,14 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
   const commonsCategory = commonsCategoryFromTag(attraction.commons);
   if (commonsFilename) {
     try {
-      photo = await commonsPhotoFromFilename(commonsFilename);
+      photo = await commonsPhotoFromFilename(commonsFilename, signal);
     } catch {
       photo = undefined;
     }
   }
   if (!photo && commonsCategory) {
     try {
-      photo = await commonsPhotoFromCategory(commonsCategory, attraction, extraNames);
+      photo = await commonsPhotoFromCategory(commonsCategory, attraction, extraNames, signal);
     } catch {
       photo = undefined;
     }
@@ -2278,7 +2308,7 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
   if (!wikidataId && attraction.wikipediaRaw) {
     try {
       const parsed = parseWikipediaTag(attraction.wikipediaRaw);
-      const summary = await wikipediaAttractionSummary(parsed.title, parsed.language);
+      const summary = await wikipediaAttractionSummary(parsed.title, parsed.language, signal);
       wikidataId = summary.wikidata;
       if (!photo) photo = summary.photo;
     } catch {
@@ -2287,15 +2317,15 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
   }
   if (wikidataId) {
     try {
-      const entity = await attractionJson<unknown>(wikidataEntityUrl(wikidataId), `Wikidata entity ${wikidataId}`);
+      const entity = await attractionJson<unknown>(wikidataEntityUrl(wikidataId), `Wikidata entity ${wikidataId}`, 7000, signal);
       wikidataDescription = wikidataEnglishDescription(entity, wikidataId);
       extraNames.push(wikidataEnglishLabel(entity, wikidataId), wikidataEnglishTitle(entity, wikidataId), ...wikidataEnglishAliases(entity, wikidataId));
       const p18 = wikidataP18Filename(entity, wikidataId);
-      if (!photo && p18) photo = await commonsPhotoFromFilename(p18);
+      if (!photo && p18) photo = await commonsPhotoFromFilename(p18, signal);
       if (!wikipediaExtract) {
         const englishTitle = wikidataEnglishTitle(entity, wikidataId);
         if (englishTitle) {
-          const summary = await wikipediaAttractionSummary(englishTitle, 'en');
+          const summary = await wikipediaAttractionSummary(englishTitle, 'en', signal);
           wikipediaExtract = summary.wikipediaExtract;
           if (!photo) photo = summary.photo;
         }
@@ -2306,7 +2336,7 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
   }
   if (attraction.wikipedia) {
     try {
-      const summary = await wikipediaAttractionSummary(attraction.wikipedia, 'en');
+      const summary = await wikipediaAttractionSummary(attraction.wikipedia, 'en', signal);
       wikipediaExtract = summary.wikipediaExtract;
       if (!photo) photo = summary.photo;
     } catch {
@@ -2316,7 +2346,7 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
   if (!photo) {
     try {
       const countryName = attractionCenter?.label?.split(',').slice(1).join(',').trim() ?? selectedCity().country;
-      const search = await attractionJson<unknown>(commonsSearchUrl(attraction, cityName, countryName), `Commons exact-name search ${attraction.name}`);
+      const search = await attractionJson<unknown>(commonsSearchUrl(attraction, cityName, countryName), `Commons exact-name search ${attraction.name}`, 7000, signal);
       photo = selectHighConfidenceCommonsImage(search, attraction, extraNames);
     } catch {
       photo = undefined;
@@ -2328,6 +2358,8 @@ async function resolveAttractionPhotoAndHistory(attraction: Attraction, cityName
 }
 
 async function progressiveAttractionEnrichment(sequence: number) {
+  attractionEnrichmentAbortController = nextAbortController(attractionEnrichmentAbortController);
+  const abortSignal = attractionEnrichmentAbortController.signal;
   const candidates = attractionResults.filter((attraction) => attraction.photoStatus !== 'checked' && attraction.photoStatus !== 'error');
   if (!candidates.length) return;
   const activeCacheKey = attractionCacheKey;
@@ -2335,22 +2367,24 @@ async function progressiveAttractionEnrichment(sequence: number) {
   attractionStatus = 'photos';
   attractionsPage();
   const cityName = attractionCenter?.label?.split(',')[0] ?? selectedCity().city;
-  for (const attraction of candidates) {
+  const batchSize = 3;
+  for (let index = 0; index < candidates.length; index += batchSize) {
     if (sequence !== attractionEnrichmentSequence) return;
-    try {
-      const current = attractionResults.find((candidate) => candidate.id === attraction.id) ?? attraction;
-      const updated = await resolveAttractionPhotoAndHistory(current, cityName);
-      if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey) return;
-      attractionResults = attractionResults.map((candidate) => candidate.id === attraction.id ? updated : candidate);
-      if (activeCacheKey) attractionCache.set(activeCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
-      attractionsPage();
-    } catch (error) {
-      if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey) return;
-      recordAttractionDiagnostic(`Attraction enrichment ${attraction.name}`, error);
-      attractionResults = attractionResults.map((candidate) => candidate.id === attraction.id ? { ...candidate, photoStatus: 'error' } : candidate);
-      if (activeCacheKey) attractionCache.set(activeCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
-      attractionsPage();
-    }
+    const batch = candidates.slice(index, index + batchSize);
+    const updates = await Promise.all(batch.map(async (attraction) => {
+      try {
+        const current = attractionResults.find((candidate) => candidate.id === attraction.id) ?? attraction;
+        return await resolveAttractionPhotoAndHistory(current, cityName, abortSignal);
+      } catch (error) {
+        recordAttractionDiagnostic(`Attraction enrichment ${attraction.name}`, error);
+        return { ...attraction, photoStatus: 'error' as const };
+      }
+    }));
+    if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey || abortSignal.aborted) return;
+    const updateMap = new Map(updates.map((attraction) => [attraction.id, attraction]));
+    attractionResults = attractionResults.map((candidate) => updateMap.get(candidate.id) ?? candidate);
+    if (activeCacheKey) attractionCache.set(activeCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
+    attractionsPage();
     await new Promise((resolve) => window.setTimeout(resolve, 250));
   }
   if (sequence === attractionEnrichmentSequence && attractionStatus === 'photos') {
@@ -2361,6 +2395,8 @@ async function progressiveAttractionEnrichment(sequence: number) {
 
 async function searchAttractions(center: PrayerCenter) {
   const sequence = ++attractionSearchSequence;
+  attractionAbortController = nextAbortController(attractionAbortController);
+  const abortSignal = attractionAbortController.signal;
   const searchCenter = { ...center };
   const searchRadius = attractionRadiusKm;
   const isCurrentAttractionSearch = () => sequence === attractionSearchSequence;
@@ -2387,6 +2423,7 @@ async function searchAttractions(center: PrayerCenter) {
   attractionsPage();
   const watchdog = window.setTimeout(() => {
     if (sequence !== attractionSearchSequence || attractionStatus !== 'searching') return;
+    attractionAbortController?.abort(new RequestError('timeout', 'Request timed out'));
     attractionStatus = 'timeout';
     attractionError = labels[lang].attractionsTimedOut;
     attractionsPage();
@@ -2397,8 +2434,9 @@ async function searchAttractions(center: PrayerCenter) {
     let lastError: unknown;
     for (const batch of batches) {
       if (!isCurrentAttractionSearch()) return;
+      if (attractionResults.length >= 180 && successfulBatches >= 3) break;
       try {
-        const data = await requestAttractionBatch(batch);
+        const data = await requestAttractionBatch(batch, abortSignal);
         if (!isCurrentAttractionSearch()) return;
         successfulBatches += 1;
         const normalized = (data.elements ?? [])
@@ -2430,6 +2468,7 @@ async function searchAttractions(center: PrayerCenter) {
   } catch (error) {
     console.error(error);
     if (!isCurrentAttractionSearch()) return;
+    if (classifyRequestError(error).kind === 'aborted') return;
     if (cached) {
       attractionResults = refreshOpenState(cached.results, searchCenter.timezone);
       attractionStatus = navigator.onLine ? 'cached' : 'offline';
@@ -2616,7 +2655,7 @@ function attractionsPage() {
 
 function bindAttractionsPage() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; attractionsPage(); });
-  document.querySelector<HTMLButtonElement>('#back-from-attractions')?.addEventListener('click', () => { view = 'planner'; attractionsMap?.remove(); attractionsMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#back-from-attractions')?.addEventListener('click', () => { view = 'planner'; attractionAbortController?.abort(); attractionEnrichmentAbortController?.abort(); attractionsMap?.remove(); attractionsMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-attraction-location')?.addEventListener('click', requestAttractionLocation);
   document.querySelector<HTMLButtonElement>('#use-attraction-destination')?.addEventListener('click', () => void searchAttractions(destinationAttractionCenter()));
   document.querySelector<HTMLSelectElement>('#attraction-radius')?.addEventListener('change', (event) => { attractionRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof attractionRadii[number]; if (attractionCenter) void searchAttractions(attractionCenter); });
@@ -2736,7 +2775,8 @@ async function loadPairRate(useCache = true) {
     return;
   }
   const key = cacheKeyForRate(requestFromCurrency, requestToCurrency);
-  const cached = readJsonCache<PairRate>(localStorage, key, RATE_CACHE_MS);
+  const cachedRaw = readJsonCache<PairRate>(localStorage, key, RATE_CACHE_MS);
+  const cached = cachedRaw?.base === requestFromCurrency && cachedRaw.quote === requestToCurrency && typeof cachedRaw.rate === 'number' && Number.isFinite(cachedRaw.rate) && cachedRaw.rate > 0 ? cachedRaw : null;
   moneyStatus = 'loadingRate';
   moneyError = '';
   render();
@@ -2776,13 +2816,22 @@ async function loadHistory(historyFromCurrency = fromCurrency, historyToCurrency
   const start = new Date(end);
   start.setDate(end.getDate() - requestHistoryDays);
   const iso = (date: Date) => date.toISOString().slice(0, 10);
+  const startIso = iso(start);
+  const endIso = iso(end);
+  const cacheKey = cacheKeyForHistory(historyFromCurrency, historyToCurrency, requestHistoryDays, startIso, endIso);
+  const cached = readJsonCache<ReturnType<typeof historyStats>>(localStorage, cacheKey, RATE_CACHE_MS);
+  if (cached) {
+    historySummary = cached;
+    render();
+  }
   try {
-    const body = await requestJson<Array<{ date: string; base: string; quote: string; rate: number }>>(`${FRANKFURTER_BASE_URL}/rates?from=${iso(start)}&to=${iso(end)}`, { headers: { Accept: 'application/json' } }, 7000);
+    const body = await requestJson<Array<{ date: string; base: string; quote: string; rate: number }>>(`${FRANKFURTER_BASE_URL}/rates?from=${startIso}&to=${endIso}`, { headers: { Accept: 'application/json' } }, 7000);
     if (!isCurrentHistoryRequest()) return;
     historySummary = historyStats(body, historyToCurrency, historyFromCurrency);
+    writeJsonCache(localStorage, cacheKey, historySummary);
   } catch {
     if (!isCurrentHistoryRequest()) return;
-    historySummary = null;
+    historySummary = cached ?? null;
   }
   if (!isCurrentHistoryRequest()) return;
   render();

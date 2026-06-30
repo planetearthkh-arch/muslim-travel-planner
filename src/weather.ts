@@ -99,6 +99,12 @@ function requireArray<T>(value: unknown, name: string): T[] {
   return value as T[];
 }
 
+function requireAlignedArray<T>(value: unknown, length: number, name: string): T[] {
+  const array = requireArray<T>(value, name);
+  if (array.length !== length) throw new Error(`Malformed ${name}`);
+  return array;
+}
+
 export function validateWeatherResponse(raw: unknown, retrievedAt = new Date().toISOString()): WeatherForecast {
   if (!raw || typeof raw !== 'object') throw new Error('Malformed weather response');
   const body = raw as Record<string, any>;
@@ -109,6 +115,26 @@ export function validateWeatherResponse(raw: unknown, retrievedAt = new Date().t
   const dailyTimes = requireArray<string>(body.daily.time, 'daily data');
   if (!hourlyTimes.length) throw new Error('Missing hourly data');
   if (dailyTimes.length < 7) throw new Error('Missing daily data');
+  const hourlyTemperature = requireAlignedArray<unknown>(body.hourly.temperature_2m, hourlyTimes.length, 'hourly temperature');
+  const hourlyApparent = requireAlignedArray<unknown>(body.hourly.apparent_temperature, hourlyTimes.length, 'hourly apparent temperature');
+  const hourlyHumidity = requireAlignedArray<unknown>(body.hourly.relative_humidity_2m, hourlyTimes.length, 'hourly humidity');
+  const hourlyPrecipitationProbability = requireAlignedArray<unknown>(body.hourly.precipitation_probability, hourlyTimes.length, 'hourly precipitation probability');
+  const hourlyWeatherCode = requireAlignedArray<unknown>(body.hourly.weather_code, hourlyTimes.length, 'hourly weather code');
+  const hourlyWindSpeed = requireAlignedArray<unknown>(body.hourly.wind_speed_10m, hourlyTimes.length, 'hourly wind speed');
+  const hourlyWindDirection = requireAlignedArray<unknown>(body.hourly.wind_direction_10m, hourlyTimes.length, 'hourly wind direction');
+  const hourlyDayNight = requireAlignedArray<unknown>(body.hourly.is_day, hourlyTimes.length, 'hourly day/night');
+  const dailyWeatherCode = requireAlignedArray<unknown>(body.daily.weather_code, dailyTimes.length, 'daily weather code');
+  const dailyTemperatureMax = requireAlignedArray<unknown>(body.daily.temperature_2m_max, dailyTimes.length, 'daily maximum temperature');
+  const dailyTemperatureMin = requireAlignedArray<unknown>(body.daily.temperature_2m_min, dailyTimes.length, 'daily minimum temperature');
+  const dailyApparentMax = requireAlignedArray<unknown>(body.daily.apparent_temperature_max, dailyTimes.length, 'daily maximum apparent temperature');
+  const dailyApparentMin = requireAlignedArray<unknown>(body.daily.apparent_temperature_min, dailyTimes.length, 'daily minimum apparent temperature');
+  const dailySunrise = requireAlignedArray<unknown>(body.daily.sunrise, dailyTimes.length, 'daily sunrise');
+  const dailySunset = requireAlignedArray<unknown>(body.daily.sunset, dailyTimes.length, 'daily sunset');
+  const dailyDaylight = requireAlignedArray<unknown>(body.daily.daylight_duration, dailyTimes.length, 'daily daylight duration');
+  const dailySunshine = requireAlignedArray<unknown>(body.daily.sunshine_duration, dailyTimes.length, 'daily sunshine duration');
+  const dailyPrecipitationProbability = requireAlignedArray<unknown>(body.daily.precipitation_probability_max, dailyTimes.length, 'daily precipitation probability');
+  const dailyWindSpeed = requireAlignedArray<unknown>(body.daily.wind_speed_10m_max, dailyTimes.length, 'daily maximum wind speed');
+  const dailyWindDirection = requireAlignedArray<unknown>(body.daily.wind_direction_10m_dominant, dailyTimes.length, 'daily wind direction');
   const current = body.current as Record<string, unknown>;
   const currentPoint: WeatherPoint = {
     time: asString(current.time),
@@ -133,45 +159,46 @@ export function validateWeatherResponse(raw: unknown, retrievedAt = new Date().t
 
   const hourly = hourlyTimes.map((time, index) => ({
     time,
-    temperature: requiredNumber(body.hourly.temperature_2m?.[index], 'hourly temperature'),
-    apparentTemperature: requiredNumber(body.hourly.apparent_temperature?.[index], 'hourly apparent temperature'),
-    humidity: requiredNumber(body.hourly.relative_humidity_2m?.[index], 'hourly humidity'),
-    precipitationProbability: optionalNumber(body.hourly.precipitation_probability?.[index]),
+    temperature: requiredNumber(hourlyTemperature[index], 'hourly temperature'),
+    apparentTemperature: requiredNumber(hourlyApparent[index], 'hourly apparent temperature'),
+    humidity: requiredNumber(hourlyHumidity[index], 'hourly humidity'),
+    precipitationProbability: requiredNumber(hourlyPrecipitationProbability[index], 'hourly precipitation probability'),
     precipitation: optionalNumber(body.hourly.precipitation?.[index]),
     rain: optionalNumber(body.hourly.rain?.[index]),
     showers: optionalNumber(body.hourly.showers?.[index]),
     snowfall: optionalNumber(body.hourly.snowfall?.[index]),
-    weatherCode: requiredNumber(body.hourly.weather_code?.[index], 'hourly weather code'),
+    weatherCode: requiredNumber(hourlyWeatherCode[index], 'hourly weather code'),
     cloudCover: optionalNumber(body.hourly.cloud_cover?.[index]),
     visibility: optionalNumber(body.hourly.visibility?.[index]),
-    windSpeed: requiredNumber(body.hourly.wind_speed_10m?.[index], 'hourly wind speed'),
-    windDirection: requiredNumber(body.hourly.wind_direction_10m?.[index], 'hourly wind direction'),
+    windSpeed: requiredNumber(hourlyWindSpeed[index], 'hourly wind speed'),
+    windDirection: requiredNumber(hourlyWindDirection[index], 'hourly wind direction'),
     windGusts: optionalNumber(body.hourly.wind_gusts_10m?.[index]),
     uvIndex: optionalNumber(body.hourly.uv_index?.[index]),
-    isDay: requiredNumber(body.hourly.is_day?.[index], 'hourly day/night') === 1,
+    isDay: requiredNumber(hourlyDayNight[index], 'hourly day/night') === 1,
   }));
 
   const daily = dailyTimes.slice(0, 7).map((date, index) => ({
     date,
-    weatherCode: requiredNumber(body.daily.weather_code?.[index], 'daily weather code'),
-    temperatureMax: requiredNumber(body.daily.temperature_2m_max?.[index], 'daily maximum temperature'),
-    temperatureMin: requiredNumber(body.daily.temperature_2m_min?.[index], 'daily minimum temperature'),
-    apparentMax: requiredNumber(body.daily.apparent_temperature_max?.[index], 'daily maximum apparent temperature'),
-    apparentMin: requiredNumber(body.daily.apparent_temperature_min?.[index], 'daily minimum apparent temperature'),
-    sunrise: asString(body.daily.sunrise?.[index]),
-    sunset: asString(body.daily.sunset?.[index]),
-    daylightDuration: requiredNumber(body.daily.daylight_duration?.[index], 'daily daylight duration'),
-    sunshineDuration: requiredNumber(body.daily.sunshine_duration?.[index], 'daily sunshine duration'),
+    weatherCode: requiredNumber(dailyWeatherCode[index], 'daily weather code'),
+    temperatureMax: requiredNumber(dailyTemperatureMax[index], 'daily maximum temperature'),
+    temperatureMin: requiredNumber(dailyTemperatureMin[index], 'daily minimum temperature'),
+    apparentMax: requiredNumber(dailyApparentMax[index], 'daily maximum apparent temperature'),
+    apparentMin: requiredNumber(dailyApparentMin[index], 'daily minimum apparent temperature'),
+    sunrise: asString(dailySunrise[index]),
+    sunset: asString(dailySunset[index]),
+    daylightDuration: requiredNumber(dailyDaylight[index], 'daily daylight duration'),
+    sunshineDuration: requiredNumber(dailySunshine[index], 'daily sunshine duration'),
     uvIndexMax: optionalNumber(body.daily.uv_index_max?.[index]),
     precipitationSum: optionalNumber(body.daily.precipitation_sum?.[index]),
     rainSum: optionalNumber(body.daily.rain_sum?.[index]),
     showersSum: optionalNumber(body.daily.showers_sum?.[index]),
     snowfallSum: optionalNumber(body.daily.snowfall_sum?.[index]),
-    precipitationProbabilityMax: optionalNumber(body.daily.precipitation_probability_max?.[index]),
-    windSpeedMax: requiredNumber(body.daily.wind_speed_10m_max?.[index], 'daily maximum wind speed'),
+    precipitationProbabilityMax: requiredNumber(dailyPrecipitationProbability[index], 'daily precipitation probability'),
+    windSpeedMax: requiredNumber(dailyWindSpeed[index], 'daily maximum wind speed'),
     windGustsMax: optionalNumber(body.daily.wind_gusts_10m_max?.[index]),
-    windDirectionDominant: requiredNumber(body.daily.wind_direction_10m_dominant?.[index], 'daily wind direction'),
+    windDirectionDominant: requiredNumber(dailyWindDirection[index], 'daily wind direction'),
   }));
+  if (daily.some((day) => !day.sunrise || !day.sunset)) throw new Error('Missing daily sunrise or sunset');
 
   return {
     latitude: requiredNumber(body.latitude, 'latitude'),

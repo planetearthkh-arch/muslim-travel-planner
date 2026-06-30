@@ -130,7 +130,7 @@ export const validateRateResponse = (payload: unknown, base: string, quote: stri
   const directRate = body.quote === quote ? body.rate : undefined;
   const legacyRate = body.rates && typeof body.rates === 'object' ? (body.rates as Record<string, unknown>)[quote] : undefined;
   const rate = directRate ?? legacyRate;
-  if (body.base !== base || typeof body.date !== 'string') throw new Error('Missing rate data');
+  if (body.base !== base || typeof body.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) throw new Error('Missing rate data');
   if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) throw new Error('Unsupported currency');
   return { base, quote, rate, date: body.date, refreshedAt, cached: false };
 };
@@ -153,6 +153,7 @@ export const searchCurrencies = (currencies: CurrencyInfo[], query: string) => {
 export const destinationCurrency = (city: CityData) => city.money.localCurrencies[0]?.code ?? 'USD';
 
 export const cacheKeyForRate = (base: string, quote: string) => `mtp-rate-${base}-${quote}`;
+export const cacheKeyForHistory = (base: string, quote: string, days: number, start: string, end: string) => `mtp-history-${base}-${quote}-${days}-${start}-${end}`;
 
 export const readJsonCache = <T>(storage: Storage | undefined, key: string, maxAgeMs: number): T | null => {
   if (!storage) return null;
@@ -176,13 +177,16 @@ export const writeJsonCache = <T>(storage: Storage | undefined, key: string, val
 export const historyStats = (ratesPayload: Record<string, Record<string, number>> | Array<{ date: string; base: string; quote: string; rate: number }>, quote: string, base = 'EUR') => {
   const points = (Array.isArray(ratesPayload)
     ? Object.entries(ratesPayload.reduce<Record<string, Record<string, number>>>((days, item) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date) || item.base !== 'EUR' && item.base !== base || typeof item.rate !== 'number' || !Number.isFinite(item.rate) || item.rate <= 0) return days;
       days[item.date] = { ...(days[item.date] ?? {}), [item.quote]: item.rate };
       return days;
     }, {})).map(([date, rates]) => {
       const rate = base === 'EUR' ? rates[quote] : quote === 'EUR' ? 1 / rates[base] : rates[quote] / rates[base];
       return { date, rate };
     })
-    : Object.entries(ratesPayload).map(([date, rates]) => ({ date, rate: base === 'EUR' ? rates[quote] : quote === 'EUR' ? 1 / rates[base] : rates[quote] / rates[base] })))
+    : Object.entries(ratesPayload)
+      .filter(([date, rates]) => /^\d{4}-\d{2}-\d{2}$/.test(date) && rates && typeof rates === 'object')
+      .map(([date, rates]) => ({ date, rate: base === 'EUR' ? rates[quote] : quote === 'EUR' ? 1 / rates[base] : rates[quote] / rates[base] })))
     .filter((point): point is { date: string; rate: number } => typeof point.rate === 'number' && Number.isFinite(point.rate) && point.rate > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
   if (!points.length) throw new Error('Missing history data');

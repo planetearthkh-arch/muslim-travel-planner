@@ -6,7 +6,9 @@ import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
 import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace } from './prayer-spaces.js';
 import { safeExternalUrl } from './urls.js';
+import { RequestError, classifyHttpStatus, classifyRequestError, requestJson, retryAfterMs, retryOnceForTemporary } from './http.js';
 import {
+  cacheKeyForHistory,
   cacheKeyForRate,
   convertAmount,
   destinationCurrency,
@@ -21,6 +23,7 @@ import {
   writeJsonCache,
 } from './money.js';
 import {
+  buildHalalOverpassQuery,
   classifyHalalStatus,
   cuisineOptions,
   dedupeRestaurants,
@@ -109,6 +112,15 @@ import {
 import type { PlannerPreferences } from './models.js';
 
 const prefs: PlannerPreferences = { city: 'Tokyo', startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00', interests: ['history'], groupSize: 2, children: false, walkingAbility: 'medium', transportation: 'public transport', budget: 'mid', prayerMethod: 'Muslim World League', prayerPreference: 'mosque', womenPrayerRequired: true, wuduRequired: true, accessibilityNeeds: 'step-free', halalPreference: 'strictly labelled' };
+
+async function rejectsWith(fn: () => Promise<unknown>, predicate: (error: unknown) => boolean) {
+  try {
+    await fn();
+    assert.equal('resolved', 'rejected');
+  } catch (error) {
+    assert.equal(predicate(error), true);
+  }
+}
 
 test('contains all required sample cities', () => {
   assert.deepEqual(cities.map((c) => c.city), [
@@ -450,6 +462,30 @@ test('supports cached-rate fallback helpers and offline cache misses', () => {
   assert.equal(readJsonCache(storage, 'missing', 1000), null);
 });
 
+test('currency rate and history cache keys isolate direction, period, date range, and expiry', () => {
+  assert.equal(cacheKeyForRate('USD', 'GBP') === cacheKeyForRate('GBP', 'USD'), false);
+  assert.equal(cacheKeyForHistory('USD', 'GBP', 7, '2026-06-01', '2026-06-08') === cacheKeyForHistory('USD', 'GBP', 30, '2026-05-09', '2026-06-08'), false);
+  assert.equal(cacheKeyForHistory('USD', 'GBP', 7, '2026-06-01', '2026-06-08') === cacheKeyForHistory('GBP', 'USD', 7, '2026-06-01', '2026-06-08'), false);
+  const store = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => { store.set(key, value); },
+    removeItem: (key: string) => { store.delete(key); },
+    clear: () => { store.clear(); },
+    key: (index: number) => [...store.keys()][index] ?? null,
+    get length() { return store.size; },
+  } as Storage;
+  writeJsonCache(storage, 'fresh', { ok: true });
+  store.set('expired', JSON.stringify({ savedAt: Date.now() - 10_000, value: { ok: true } }));
+  store.set('invalid', '{');
+  assert.deepEqual(readJsonCache<{ ok: boolean }>(storage, 'fresh', 1000), { ok: true });
+  assert.equal(readJsonCache(storage, 'expired', 1000), null);
+  assert.equal(readJsonCache(storage, 'invalid', 1000), null);
+  assert.throws(() => validateRateResponse({ base: 'USD', quote: 'GBP', date: 'not-a-date', rate: 0.8 }, 'USD', 'GBP'), /Missing rate data/);
+  assert.throws(() => validateRateResponse({ base: 'USD', quote: 'GBP', date: '2026-06-01', rate: Number.NaN }, 'USD', 'GBP'), /Unsupported currency/);
+  assert.throws(() => historyStats([{ date: 'bad', base: 'EUR', quote: 'GBP', rate: 0.8 }], 'GBP'), /Missing history data/);
+});
+
 test('searches currencies by code, English, Arabic, Indonesian, and country', () => {
   assert.equal(searchCurrencies(fallbackCurrencies, 'USD')[0].code, 'USD');
   assert.equal(searchCurrencies(fallbackCurrencies, 'US Dollar')[0].code, 'USD');
@@ -467,6 +503,37 @@ test('formats amounts for English, Arabic, and Indonesian modes', () => {
   assert.match(formatCurrencyAmount(1234.5, 'USD', 'en'), /\$/);
   assert.match(formatCurrencyAmount(1234.5, 'USD', 'ar'), /US\$/);
   assert.match(formatCurrencyAmount(1234.5, 'IDR', 'id'), /Rp/);
+});
+
+test('shared HTTP utility classifies statuses, timeouts, aborts, offline, and malformed JSON', async () => {
+  assert.equal(classifyHttpStatus(429), 'rate-limited');
+  assert.equal(classifyHttpStatus(500), 'temporary');
+  assert.equal(classifyHttpStatus(502), 'temporary');
+  assert.equal(classifyHttpStatus(503), 'temporary');
+  assert.equal(classifyHttpStatus(504), 'temporary');
+  assert.equal(classifyHttpStatus(404), 'http');
+  assert.equal(retryAfterMs('2'), 2000);
+  assert.equal(classifyRequestError(new TypeError('failed')).kind, 'offline');
+  assert.equal(classifyRequestError(new DOMException('cancelled', 'AbortError')).kind, 'aborted');
+
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response('{', { status: 200, headers: { 'content-type': 'application/json' } });
+    await rejectsWith(() => requestJson('https://example.test'), (error) => error instanceof RequestError && error.kind === 'malformed');
+    globalThis.fetch = async () => new Response('{}', { status: 429, headers: { 'Retry-After': '1' } });
+    await rejectsWith(() => requestJson('https://example.test'), (error) => error instanceof RequestError && error.kind === 'rate-limited' && error.retryAfterMs === 1000);
+    globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true }));
+    await rejectsWith(() => requestJson('https://example.test', {}, 1), (error) => error instanceof RequestError && error.kind === 'timeout');
+    let attempts = 0;
+    globalThis.fetch = async () => {
+      attempts += 1;
+      return new Response('{}', { status: attempts === 1 ? 503 : 200 });
+    };
+    assert.deepEqual(await retryOnceForTemporary(() => requestJson('https://example.test')), {});
+    assert.equal(attempts, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('calculates Qibla bearings for major cities', () => {
@@ -977,6 +1044,18 @@ test('rejects missing or malformed weather API data', () => {
   const invalidWind = sampleWeatherResponse();
   (invalidWind.daily.wind_speed_10m_max as number[])[0] = Number.POSITIVE_INFINITY;
   assert.throws(() => validateWeatherResponse(invalidWind), /Missing daily maximum wind speed/);
+  const mismatchedHourly = sampleWeatherResponse();
+  (mismatchedHourly.hourly.temperature_2m as number[]).pop();
+  assert.throws(() => validateWeatherResponse(mismatchedHourly), /Malformed hourly temperature/);
+  const mismatchedDaily = sampleWeatherResponse();
+  (mismatchedDaily.daily.sunrise as string[]).pop();
+  assert.throws(() => validateWeatherResponse(mismatchedDaily), /Malformed daily sunrise/);
+  const missingHourlyTime = sampleWeatherResponse();
+  delete (missingHourlyTime.hourly as Record<string, unknown>).time;
+  assert.throws(() => validateWeatherResponse(missingHourlyTime), /Missing hourly data/);
+  const nullRequired = sampleWeatherResponse();
+  (nullRequired.hourly.precipitation_probability as unknown[])[0] = null;
+  assert.throws(() => validateWeatherResponse(nullRequired), /Missing hourly precipitation probability/);
 });
 
 test('optional weather values stay unavailable instead of becoming zero', () => {
@@ -1018,6 +1097,16 @@ test('formats weather units and builds configurable Open-Meteo URLs', () => {
   assert.equal(Number(convertWindFromKmh(10, 'knots').toFixed(2)), 5.4);
   assert.equal(Number(convertPrecipitationFromMm(25.4, 'inch').toFixed(2)), 1);
   assert.equal(formatPrecipitation(1, units), '1.00 in');
+});
+
+test('weather cache key source includes location, timezone, all units, duration, and model version', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes("location.timezone ?? 'auto'"), true);
+  assert.equal(source.includes('units.temperature'), true);
+  assert.equal(source.includes('units.wind'), true);
+  assert.equal(source.includes('units.precipitation'), true);
+  assert.equal(source.includes('-7d-v2'), true);
 });
 
 test('selects hourly, daily, travel-indicator, cached, and prayer weather data', () => {
@@ -1213,11 +1302,16 @@ test('attraction search uses fallback endpoints, partial batches, and retry-only
   const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
   assert.equal(source.includes('function overpassEndpoints()'), true);
   assert.equal(source.includes('mtp-overpass-fallback-endpoint'), true);
-  assert.equal(source.includes('requestAttractionBatch(batch)'), true);
+  assert.equal(source.includes('requestAttractionBatch(batch, abortSignal)'), true);
   assert.equal(source.includes('buildAttractionOverpassBatches(searchCenter.latitude, searchCenter.longitude, searchRadius)'), true);
   assert.equal(source.includes('dedupeAttractions([...attractionResults, ...normalized])'), true);
-  assert.equal(source.includes('HTTP (406|408|429|500|502|503|504)'), true);
+  assert.equal(source.includes('classifyRequestError(error).kind'), true);
   assert.equal(source.includes("attractionStatus === 'timeout' ? ''"), true);
+  assert.equal(source.includes('validateOverpassResponse'), true);
+  assert.equal(source.includes('retryOnceForTemporary'), true);
+  assert.equal(source.includes("new RequestError('timeout', 'Request timed out')"), true);
+  assert.equal(source.includes('attractionAbortController?.abort'), true);
+  assert.equal(source.includes('attractionResults.length >= 180 && successfulBatches >= 3'), true);
 });
 
 test('prayer-space searches ignore stale success and error completions', async () => {
@@ -1237,16 +1331,16 @@ test('audited async feature searches isolate stale completions', async () => {
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
   const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
   assert.equal(source.includes('const isCurrentRestaurantSearch = () => sequence === restaurantSearchSequence'), true);
-  assert.equal(source.includes('if (!isCurrentRestaurantSearch()) return;\n    if (cached)'), true);
+  assert.equal(source.includes('if (classifyRequestError(error).kind === \'aborted\') return;\n    if (cached)'), true);
   assert.equal(source.includes('const isCurrentToiletSearch = () => sequence === toiletSearchSequence'), true);
-  assert.equal(source.includes('if (!isCurrentToiletSearch()) return;\n    if (cached)'), true);
+  assert.equal(source.includes('toiletResults = refreshOpenState(cached.results, searchCenter.timezone)'), true);
   assert.equal(source.includes('const isCurrentCarRentalSearch = () => sequence === carRentalSearchSequence'), true);
-  assert.equal(source.includes('if (!isCurrentCarRentalSearch()) return;\n    if (cached)'), true);
+  assert.equal(source.includes('carRentalResults = refreshOpenState(cached.results, searchCenter.timezone)'), true);
   assert.equal(source.includes('const requestUnits = { ...weatherUnits }'), true);
   assert.equal(source.includes('const isCurrentWeatherRequest = () => sequence === weatherRequestSequence'), true);
-  assert.equal(source.includes('if (!isCurrentWeatherRequest()) return;\n    const fallback'), true);
+  assert.equal(source.includes("if (classifyRequestError(error).kind === 'aborted') return;\n    const fallback"), true);
   assert.equal(source.includes('const activeCacheKey = attractionCacheKey'), true);
-  assert.equal(source.includes('if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey) return;\n      attractionResults = attractionResults.map'), true);
+  assert.equal(source.includes('if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey || abortSignal.aborted) return;'), true);
 });
 
 test('mapped feature opening status is recalculated with captured destination timezone', async () => {
@@ -1298,10 +1392,21 @@ test('attraction page progressively loads images before final missing-image fall
   assert.equal(source.includes('attractionResults.filter((attraction) => attraction.photoStatus'), true);
   assert.equal(source.includes('attractionResults.slice(0, 80)'), false);
   assert.equal(source.includes('attractionEnrichmentCache'), true);
+  assert.equal(source.includes('const batchSize = 3'), true);
+  assert.equal(source.includes('Promise.all(batch.map'), true);
+  assert.equal(source.includes('attractionEnrichmentAbortController'), true);
   assert.equal(source.includes("copy.attractionsLoadingPhotos"), true);
   assert.equal(source.includes("copy.attractionsNoLicensedImage"), true);
   assert.equal(source.includes('resolveAttractionPhotoAndHistory'), true);
   assert.equal(source.includes('Attraction enrichment diagnostics'), true);
+});
+
+test('halal Overpass query filters explicit halal evidence instead of every food venue', () => {
+  const query = buildHalalOverpassQuery(0, 0, 5);
+  assert.equal(query.includes('["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["diet:halal"]'), true);
+  assert.equal(query.includes('["halal:certification"]'), true);
+  assert.equal(query.includes('["description"~"halal",i]'), true);
+  assert.equal(query.includes('node["amenity"="restaurant"]'), false);
 });
 
 test('OSM Commons tags and Wikidata P18 can enrich attraction photos', () => {
