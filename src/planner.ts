@@ -1,7 +1,7 @@
 import { cities } from './data.js';
 import { calculatePrayerDisplay } from './athan.js';
 import { optionLabels, type Language } from './i18n.js';
-import type { CityData, ItineraryItem, PlannerPreferences, Place } from './models.js';
+import type { CityData, ItineraryItem, PlannerPreferences, Place, PrayerName, VerificationStatus } from './models.js';
 
 const addMinutes = (time: string, minutes: number) => {
   const [h, m] = time.split(':').map(Number);
@@ -10,9 +10,13 @@ const addMinutes = (time: string, minutes: number) => {
 };
 
 const minutesOfDay = (time: string) => {
-  const match = /^(\d{1,2}):(\d{2})/.exec(time);
+  const match = /(\d{1,2}):(\d{2})/.exec(time);
   if (!match) return Number.NaN;
-  return Number(match[1]) * 60 + Number(match[2]);
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (/\bPM\b/i.test(time) && hour < 12) hour += 12;
+  if (/\bAM\b/i.test(time) && hour === 12) hour = 0;
+  return hour * 60 + minute;
 };
 
 const isoDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -39,41 +43,47 @@ const plannerCopy = {
   en: {
     travelTo: (name: string) => `Travel to ${name}`,
     travelDetails: (transportation: string) => `${transportation}; routing estimate, not live traffic.`,
-    attractionDetails: (groupSize: number, hasChildren: boolean) => `Suggested visit plan. Good for group size ${groupSize}${hasChildren ? ' with children' : ''}.`,
-    dhuhrTitle: (name: string) => `Dhuhr prayer window near ${name}`,
-    dhuhrDetails: (method: string, women: string, wudu: string, notes: string) => `${method}. Women space: ${women}. Wudu: ${wudu}. ${notes}`,
+    attractionDetails: (groupSize: number, hasChildren: boolean, note: string) => `Suggested visit plan. Good for group size ${groupSize}${hasChildren ? ' with children' : ''}.${note ? ` ${note}` : ''}`,
+    prayerTitle: (prayer: string, name: string) => `${prayer} prayer near ${name}`,
+    prayerDetails: (method: string, women: string, wudu: string, notes: string, fallback: string) => `${method}. Women space: ${women}. Wudu: ${wudu}.${fallback ? ` ${fallback}` : ''}${notes ? ` ${notes}` : ''}`,
     mealTitle: (name: string) => `Halal-conscious meal stop: ${name}`,
-    mealDetails: (support: string, budget: string, preference: string) => `${support} Budget: ${budget}. Preference: ${preference}.`,
-    asrTitle: 'Asr prayer window',
-    asrDetails: (needs: string) => `Use nearby mosque/prayer room. Accessibility needs noted: ${needs || 'none supplied'}.`,
+    mealDetails: (support: string, budget: string, preference: string, fallback: string) => `${support} Budget: ${budget}. Preference: ${preference}.${fallback ? ` ${fallback}` : ''}`,
     freeTimeTitle: 'Explore nearby',
     freeTimeDetails: 'Open time to rest, browse nearby streets, or choose another suitable stop.',
+    freeTimeAlternativeDetails: 'Alternative open time to rest or choose a different nearby stop.',
+    fallbackAttraction: 'A perfect match was not available, so the safest suitable stop was selected.',
+    fallbackMeal: 'A perfect budget or halal-preference match was not available in the planner data.',
+    fallbackPrayer: 'A perfect facility match was not available in the planner data; confirm facilities locally.',
   },
   ar: {
     travelTo: (name: string) => `الانتقال إلى ${name}`,
     travelDetails: (transportation: string) => `${transportation}؛ تقدير مسار وليس حركة مرور مباشرة.`,
-    attractionDetails: (groupSize: number, hasChildren: boolean) => `خطة زيارة مقترحة. مناسبة لمجموعة من ${groupSize}${hasChildren ? ' مع أطفال' : ''}.`,
-    dhuhrTitle: (name: string) => `نافذة صلاة الظهر قرب ${name}`,
-    dhuhrDetails: (method: string, women: string, wudu: string, notes: string) => `${method}. مصلى النساء: ${women}. الوضوء: ${wudu}. ${notes}`,
+    attractionDetails: (groupSize: number, hasChildren: boolean, note: string) => `خطة زيارة مقترحة. مناسبة لمجموعة من ${groupSize}${hasChildren ? ' مع أطفال' : ''}.${note ? ` ${note}` : ''}`,
+    prayerTitle: (prayer: string, name: string) => `صلاة ${prayer} قرب ${name}`,
+    prayerDetails: (method: string, women: string, wudu: string, notes: string, fallback: string) => `${method}. مصلى النساء: ${women}. الوضوء: ${wudu}.${fallback ? ` ${fallback}` : ''}${notes ? ` ${notes}` : ''}`,
     mealTitle: (name: string) => `توقف طعام يراعي الحلال: ${name}`,
-    mealDetails: (support: string, budget: string, preference: string) => `${support} الميزانية: ${budget}. التفضيل: ${preference}.`,
-    asrTitle: 'نافذة صلاة العصر',
-    asrDetails: (needs: string) => `استخدم مسجدا أو غرفة صلاة قريبة. احتياجات سهولة الوصول المسجلة: ${needs || 'لم يتم إدخال شيء'}.`,
+    mealDetails: (support: string, budget: string, preference: string, fallback: string) => `${support} الميزانية: ${budget}. التفضيل: ${preference}.${fallback ? ` ${fallback}` : ''}`,
     freeTimeTitle: 'استكشاف قريب',
     freeTimeDetails: 'وقت مفتوح للراحة أو التجول في الشوارع القريبة أو اختيار محطة مناسبة أخرى.',
+    freeTimeAlternativeDetails: 'وقت بديل مفتوح للراحة أو اختيار محطة قريبة مختلفة.',
+    fallbackAttraction: 'لم يتوفر تطابق مثالي، لذلك تم اختيار محطة مناسبة وآمنة قدر الإمكان.',
+    fallbackMeal: 'لا يتوفر تطابق مثالي للميزانية أو تفضيل الطعام الحلال في بيانات المخطط.',
+    fallbackPrayer: 'لا يتوفر تطابق مثالي للمرافق في بيانات المخطط؛ تحقق من المرافق محليا.',
   },
   id: {
     travelTo: (name: string) => `Perjalanan ke ${name}`,
     travelDetails: (transportation: string) => `${transportation}; estimasi rute, bukan lalu lintas langsung.`,
-    attractionDetails: (groupSize: number, hasChildren: boolean) => `Rencana kunjungan yang disarankan. Cocok untuk rombongan berjumlah ${groupSize}${hasChildren ? ' dengan anak-anak' : ''}.`,
-    dhuhrTitle: (name: string) => `Rentang salat Zuhur dekat ${name}`,
-    dhuhrDetails: (method: string, women: string, wudu: string, notes: string) => `${method}. Ruang perempuan: ${women}. Wudu: ${wudu}. ${notes}`,
+    attractionDetails: (groupSize: number, hasChildren: boolean, note: string) => `Rencana kunjungan yang disarankan. Cocok untuk rombongan berjumlah ${groupSize}${hasChildren ? ' dengan anak-anak' : ''}.${note ? ` ${note}` : ''}`,
+    prayerTitle: (prayer: string, name: string) => `Rentang salat ${prayer} dekat ${name}`,
+    prayerDetails: (method: string, women: string, wudu: string, notes: string, fallback: string) => `${method}. Ruang perempuan: ${women}. Wudu: ${wudu}.${fallback ? ` ${fallback}` : ''}${notes ? ` ${notes}` : ''}`,
     mealTitle: (name: string) => `Tempat makan yang memperhatikan halal: ${name}`,
-    mealDetails: (support: string, budget: string, preference: string) => `${support} Anggaran: ${budget}. Preferensi: ${preference}.`,
-    asrTitle: 'Rentang salat Asar',
-    asrDetails: (needs: string) => `Gunakan masjid atau ruang salat terdekat. Kebutuhan aksesibilitas yang dicatat: ${needs || 'tidak ada'}.`,
+    mealDetails: (support: string, budget: string, preference: string, fallback: string) => `${support} Anggaran: ${budget}. Preferensi: ${preference}.${fallback ? ` ${fallback}` : ''}`,
     freeTimeTitle: 'Jelajahi sekitar',
     freeTimeDetails: 'Waktu bebas untuk beristirahat, melihat jalan sekitar, atau memilih perhentian lain yang sesuai.',
+    freeTimeAlternativeDetails: 'Waktu bebas alternatif untuk beristirahat atau memilih perhentian terdekat yang berbeda.',
+    fallbackAttraction: 'Kecocokan sempurna tidak tersedia, jadi perhentian paling sesuai dipilih.',
+    fallbackMeal: 'Kecocokan anggaran atau preferensi halal yang sempurna tidak tersedia dalam data perencana.',
+    fallbackPrayer: 'Kecocokan fasilitas yang sempurna tidak tersedia dalam data perencana; konfirmasi fasilitas di lokasi.',
   },
 };
 
@@ -106,69 +116,228 @@ const facilityUncertainty = (language: Language) => ({
 
 const makeItem = (date: string, item: Omit<ItineraryItem, 'date'>): ItineraryItem => ({ ...item, date, id: `${date}-${item.id}` });
 
-const canFit = (start: string, durationMinutes: number, endTime: string) => minutesOfDay(start) + durationMinutes <= minutesOfDay(endTime);
+const verificationScore = (status: VerificationStatus | undefined) => status === 'Verified' ? 3 : status === 'Sample' ? 2 : status === 'Unverified' ? 1 : 0;
 
-export const generateItinerary = (prefs: PlannerPreferences, replanFromIndex = 0, language: Language = 'en'): ItineraryItem[] => {
+const matchesAccessibility = (place: Place, prefs: PlannerPreferences) => !prefs.accessibilityNeeds.trim() || verificationScore(place.facility?.accessibility) >= 2;
+
+const choosePrayerPlace = (city: CityData, prefs: PlannerPreferences) => {
+  const candidates = city.places.filter((place) => place.type === 'mosque' || place.type === 'prayer-space');
+  const scored = candidates.map((place) => {
+    let score = place.type === 'mosque' ? 4 : 3;
+    if (prefs.prayerPreference === 'mosque') score += place.type === 'mosque' ? 8 : 0;
+    if (prefs.prayerPreference === 'quiet prayer space') score += place.type === 'prayer-space' ? 8 : 0;
+    if (prefs.prayerPreference === 'flexible') score += verificationScore(place.verification);
+    if (prefs.womenPrayerRequired) score += verificationScore(place.facility?.womenPrayerSpace) * 3;
+    if (prefs.wuduRequired) score += verificationScore(place.facility?.wudu) * 3;
+    if (prefs.accessibilityNeeds.trim()) score += verificationScore(place.facility?.accessibility) * 2;
+    return { place, score };
+  }).sort((a, b) => b.score - a.score);
+  const selected = scored[0]?.place ?? candidates[0];
+  const perfect = (!prefs.womenPrayerRequired || verificationScore(selected?.facility?.womenPrayerSpace) >= 2)
+    && (!prefs.wuduRequired || verificationScore(selected?.facility?.wudu) >= 2)
+    && matchesAccessibility(selected, prefs);
+  return { place: selected, perfect };
+};
+
+const rankedAttractions = (city: CityData, prefs: PlannerPreferences) => {
+  const attractions = city.places.filter((place) => place.type === 'attraction');
+  const scored = attractions.map((place, index) => {
+    const interestMatches = prefs.interests.filter((interest) => place.interests.includes(interest)).length;
+    let score = interestMatches * 12;
+    if (!prefs.interests.length) score += 4;
+    if (prefs.children) score += place.familyFriendly ? 8 : -12;
+    if (prefs.walkingAbility === 'low') {
+      score += place.indoor ? 4 : 0;
+      score -= Math.max(0, place.estimatedMinutes - 80) / 10;
+      score -= place.interests.includes('walking') ? 6 : 0;
+    }
+    if (prefs.walkingAbility === 'high') score += place.interests.includes('walking') ? 5 : 0;
+    return { place, score, index };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+  return scored.map((item) => item.place);
+};
+
+const chooseRestaurant = (city: CityData, prefs: PlannerPreferences) => {
+  const restaurants = city.places.filter((place) => place.type === 'restaurant');
+  const scored = restaurants.map((place, index) => {
+    let score = place.budgetLevel === prefs.budget ? 10 : 0;
+    const text = `${place.description} ${place.halalSupport ?? ''}`.toLowerCase();
+    if (prefs.halalPreference === 'vegetarian/seafood options') score += /vegetarian|seafood|fish|plant|koshary/.test(text) ? 8 : 0;
+    if (prefs.halalPreference === 'strictly labelled') score += /certif|halal/.test(text) ? 6 : 0;
+    if (prefs.children) score += /family/.test(text) ? 3 : 0;
+    return { place, score, index };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+  const selected = scored[0]?.place ?? restaurants[0];
+  const perfectBudget = selected?.budgetLevel === prefs.budget;
+  const description = `${selected?.description ?? ''} ${selected?.halalSupport ?? ''}`.toLowerCase();
+  const perfectHalal = prefs.halalPreference === 'flexible'
+    || (prefs.halalPreference === 'strictly labelled' && /certif|halal/.test(description))
+    || (prefs.halalPreference === 'vegetarian/seafood options' && /vegetarian|seafood|fish|plant|koshary/.test(description));
+  return { place: selected, perfect: Boolean(perfectBudget && perfectHalal) };
+};
+
+const rotate = <T>(items: T[], offset: number) => items.length ? [...items.slice(offset % items.length), ...items.slice(0, offset % items.length)] : [];
+
+const prayerNames: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+const prayerDisplayNames: Record<Language, Record<PrayerName, string>> = {
+  en: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' },
+  ar: { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' },
+  id: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' },
+};
+
+interface ScheduleContext {
+  copy: typeof plannerCopy[Language];
+  language: Language;
+  prefs: PlannerPreferences;
+  city: CityData;
+  date: string;
+  dayIndex: number;
+  travel: number;
+  attractionPool: Place[];
+  attractionOffset: number;
+  meal: { place: Place; perfect: boolean };
+  prayer: { place: Place; perfect: boolean };
+  replanDay: boolean;
+}
+
+const itemEnd = (item: ItineraryItem) => minutesOfDay(item.time) + item.durationMinutes;
+
+function addFreeTime(context: ScheduleContext, dayItems: ItineraryItem[], startMinutes: number, endMinutes: number, slot: string) {
+  const duration = endMinutes - startMinutes;
+  if (duration < 30) return;
+  dayItems.push(makeItem(context.date, {
+    id: `explore-${context.dayIndex}-${slot}`,
+    time: addMinutes('00:00', startMinutes),
+    title: context.copy.freeTimeTitle,
+    kind: 'free-time',
+    durationMinutes: Math.min(duration, 90),
+    details: context.replanDay ? context.copy.freeTimeAlternativeDetails : context.copy.freeTimeDetails,
+    status: 'Sample',
+  }));
+}
+
+function fillGap(context: ScheduleContext, dayItems: ItineraryItem[], startMinutes: number, endMinutes: number, state: { usedAttractions: Set<string>; mealAdded: boolean }) {
+  let current = startMinutes;
+  const attraction = context.attractionPool.find((place) => !state.usedAttractions.has(place.id));
+  const meal = context.meal.place;
+  const canAddMeal = !state.mealAdded && meal && current + meal.estimatedMinutes <= endMinutes;
+  const shouldMealFirst = canAddMeal && (current >= 11 * 60 || !attraction || current + context.travel + attraction.estimatedMinutes + 10 + meal.estimatedMinutes > endMinutes);
+
+  if (shouldMealFirst) {
+    dayItems.push(makeItem(context.date, {
+      id: `${meal.id}-${context.dayIndex}`,
+      time: addMinutes('00:00', current),
+      title: context.copy.mealTitle(meal.name),
+      kind: 'meal',
+      durationMinutes: meal.estimatedMinutes,
+      details: context.copy.mealDetails(halalSupport(context.language), optionLabels.budget[context.language][meal.budgetLevel ?? 'mid'], optionLabels.halalPreference[context.language][context.prefs.halalPreference], context.meal.perfect ? '' : context.copy.fallbackMeal),
+      place: meal,
+      status: meal.verification,
+    }));
+    state.mealAdded = true;
+    current += meal.estimatedMinutes;
+  }
+
+  if (attraction && current + context.travel + attraction.estimatedMinutes <= endMinutes) {
+    const matchesInterests = !context.prefs.interests.length || attraction.interests.some((interest) => context.prefs.interests.includes(interest));
+    const familyMatch = !context.prefs.children || attraction.familyFriendly;
+    const walkingMatch = context.prefs.walkingAbility !== 'low' || !attraction.interests.includes('walking') || attraction.indoor;
+    dayItems.push(makeItem(context.date, {
+      id: `travel-${context.dayIndex}-${attraction.id}`,
+      time: addMinutes('00:00', current),
+      title: context.copy.travelTo(attraction.name),
+      kind: 'travel',
+      durationMinutes: context.travel,
+      details: context.copy.travelDetails(optionLabels.transportation[context.language][context.prefs.transportation]),
+      status: 'Sample',
+    }));
+    current += context.travel;
+    dayItems.push(makeItem(context.date, {
+      id: `${attraction.id}-${context.dayIndex}`,
+      time: addMinutes('00:00', current),
+      title: attraction.name,
+      kind: 'attraction',
+      durationMinutes: attraction.estimatedMinutes,
+      details: context.copy.attractionDetails(context.prefs.groupSize, context.prefs.children, matchesInterests && familyMatch && walkingMatch ? '' : context.copy.fallbackAttraction),
+      place: attraction,
+      status: attraction.verification,
+    }));
+    state.usedAttractions.add(attraction.id);
+    current += attraction.estimatedMinutes;
+  }
+
+  if (!state.mealAdded && meal && current + 10 + meal.estimatedMinutes <= endMinutes && current >= 10 * 60) {
+    current += 10;
+    dayItems.push(makeItem(context.date, {
+      id: `${meal.id}-${context.dayIndex}`,
+      time: addMinutes('00:00', current),
+      title: context.copy.mealTitle(meal.name),
+      kind: 'meal',
+      durationMinutes: meal.estimatedMinutes,
+      details: context.copy.mealDetails(halalSupport(context.language), optionLabels.budget[context.language][meal.budgetLevel ?? 'mid'], optionLabels.halalPreference[context.language][context.prefs.halalPreference], context.meal.perfect ? '' : context.copy.fallbackMeal),
+      place: meal,
+      status: meal.verification,
+    }));
+    state.mealAdded = true;
+    current += meal.estimatedMinutes;
+  }
+
+  addFreeTime(context, dayItems, current, endMinutes, `${startMinutes}-${endMinutes}`);
+}
+
+function generateBaseItinerary(prefs: PlannerPreferences, language: Language, replanDayIndex = -1) {
   const city = findCity(prefs.city);
   const copy = plannerCopy[language];
-  const attractions = city.places.filter((p) => p.type === 'attraction' && (prefs.interests.length === 0 || p.interests.some((i) => prefs.interests.includes(i))));
-  const mosque = city.places.find((p) => p.type === 'mosque') as Place;
-  const prayerSpace = city.places.find((p) => p.type === 'prayer-space') as Place;
-  const restaurant = city.places.find((p) => p.type === 'restaurant') as Place;
-  const prayerPlace = prefs.prayerPreference === 'quiet prayer space' ? prayerSpace : mosque;
   const travel = travelMinutes(prefs);
-  const attractionPool = attractions.length ? attractions : city.places.filter((p) => p.type === 'attraction');
   const dates = itineraryDates(prefs.startDate, prefs.endDate);
+  const attractionPool = rankedAttractions(city, prefs);
+  const meal = chooseRestaurant(city, prefs);
+  const prayer = choosePrayerPlace(city, prefs);
   const items: ItineraryItem[] = [];
-  let attractionCursor = 0;
+  const usedAttractions = new Set<string>();
 
   dates.forEach((date, dayIndex) => {
-    let current = dates.length === 1 && dayIndex === 0 && replanFromIndex ? addMinutes(prefs.startHour, replanFromIndex * 35) : prefs.startHour;
     const dayItems: ItineraryItem[] = [];
-    const addDayItem = (item: Omit<ItineraryItem, 'date'>) => dayItems.push(makeItem(date, item));
+    const state = { usedAttractions, mealAdded: false };
+    const startMinutes = minutesOfDay(prefs.startHour);
+    const endMinutes = minutesOfDay(prefs.endHour);
+    const dayAttractions = rotate(attractionPool, dayIndex === replanDayIndex ? dayIndex + 1 : 0);
+    const context: ScheduleContext = { copy, language, prefs, city, date, dayIndex, travel, attractionPool: dayAttractions, attractionOffset: dayIndex, meal, prayer, replanDay: dayIndex === replanDayIndex };
     const prayerTimes = calculatePrayerDisplay(city, prefs.prayerMethod, date, 'en-GB');
-    const dhuhrMinutes = minutesOfDay(prayerTimes.Dhuhr);
-    const asrMinutes = minutesOfDay(prayerTimes.Asr);
-    let mealAdded = false;
-    let attractionsAdded = 0;
+    const prayers = prayerNames
+      .map((name) => ({ name, time: prayerTimes[name], minutes: minutesOfDay(prayerTimes[name]), duration: prayer.place.estimatedMinutes }))
+      .filter((entry) => Number.isFinite(entry.minutes) && entry.minutes >= startMinutes && entry.minutes + entry.duration <= endMinutes)
+      .sort((a, b) => a.minutes - b.minutes);
+    let current = startMinutes;
 
-    for (let slot = 0; slot < 2; slot += 1) {
-      const place = attractionPool[attractionCursor];
-      const hasFreshAttraction = Boolean(place);
-      if (!hasFreshAttraction) {
-        if (canFit(current, 60, prefs.endHour)) {
-          addDayItem({ id: `explore-${dayIndex}-${slot}`, time: current, title: copy.freeTimeTitle, kind: 'free-time', durationMinutes: 60, details: copy.freeTimeDetails, status: 'Sample' });
-          current = addMinutes(current, 60);
-        }
-        continue;
-      }
-      const blockDuration = travel + place.estimatedMinutes;
-      if (!canFit(current, blockDuration, prefs.endHour)) break;
-      addDayItem({ id: `travel-${dayIndex}-${slot}`, time: current, title: copy.travelTo(place.name), kind: 'travel', durationMinutes: travel, details: copy.travelDetails(optionLabels.transportation[language][prefs.transportation]), status: 'Sample' });
-      current = addMinutes(current, travel);
-      addDayItem({ id: `${place.id}-${dayIndex}`, time: current, title: place.name, kind: 'attraction', durationMinutes: place.estimatedMinutes, details: copy.attractionDetails(prefs.groupSize, prefs.children), place, status: place.verification });
-      current = addMinutes(current, place.estimatedMinutes);
-      attractionCursor += 1;
-      attractionsAdded += 1;
+    prayers.forEach((entry) => {
+      fillGap(context, dayItems, current, entry.minutes, state);
+      dayItems.push(makeItem(date, {
+        id: `${entry.name.toLowerCase()}-${dayIndex}`,
+        time: entry.time,
+        title: copy.prayerTitle(prayerDisplayNames[language][entry.name], prayer.place.name),
+        kind: 'prayer',
+        durationMinutes: entry.duration,
+        details: copy.prayerDetails(prefs.prayerMethod, facilityUncertainty(language), facilityUncertainty(language), facilityNotes[language][prayer.place.facility?.notes ?? ''] ?? '', prayer.perfect ? '' : copy.fallbackPrayer),
+        place: prayer.place,
+        status: prayer.place.verification,
+      }));
+      current = entry.minutes + entry.duration;
+    });
 
-      if (!mealAdded && canFit(addMinutes(current, 10), restaurant.estimatedMinutes, prefs.endHour)) {
-        addDayItem({ id: `${restaurant.id}-${dayIndex}`, time: addMinutes(current, 10), title: copy.mealTitle(restaurant.name), kind: 'meal', durationMinutes: restaurant.estimatedMinutes, details: copy.mealDetails(halalSupport(language), optionLabels.budget[language][restaurant.budgetLevel ?? 'mid'], optionLabels.halalPreference[language][prefs.halalPreference]), place: restaurant, status: restaurant.verification });
-        current = addMinutes(current, restaurant.estimatedMinutes + 10);
-        mealAdded = true;
-      }
-    }
-
-    if (dhuhrMinutes >= minutesOfDay(prefs.startHour) && canFit(prayerTimes.Dhuhr, prayerPlace.estimatedMinutes, prefs.endHour)) {
-      addDayItem({ id: `dhuhr-${dayIndex}`, time: prayerTimes.Dhuhr, title: copy.dhuhrTitle(prayerPlace.name), kind: 'prayer', durationMinutes: prayerPlace.estimatedMinutes, details: copy.dhuhrDetails(prefs.prayerMethod, facilityUncertainty(language), facilityUncertainty(language), facilityNotes[language][prayerPlace.facility?.notes ?? ''] ?? ''), place: prayerPlace, status: prayerPlace.verification });
-    }
-    if (asrMinutes >= minutesOfDay(prefs.startHour) && canFit(prayerTimes.Asr, 25, prefs.endHour)) {
-      addDayItem({ id: `asr-${dayIndex}`, time: prayerTimes.Asr, title: copy.asrTitle, kind: 'prayer', durationMinutes: 25, details: copy.asrDetails(prefs.accessibilityNeeds), place: prayerPlace, status: prayerPlace.verification });
-    }
-    if (!attractionsAdded && canFit(current, 60, prefs.endHour)) {
-      addDayItem({ id: `explore-${dayIndex}`, time: current, title: copy.freeTimeTitle, kind: 'free-time', durationMinutes: 60, details: copy.freeTimeDetails, status: 'Sample' });
-    }
+    fillGap(context, dayItems, current, endMinutes, state);
     items.push(...dayItems.sort((a, b) => minutesOfDay(a.time) - minutesOfDay(b.time)));
   });
 
-  return items;
+  return items.filter((item) => minutesOfDay(item.time) >= minutesOfDay(prefs.startHour) && itemEnd(item) <= minutesOfDay(prefs.endHour));
+}
+
+export const generateItinerary = (prefs: PlannerPreferences, replanFromIndex = 0, language: Language = 'en'): ItineraryItem[] => {
+  if (!replanFromIndex) return generateBaseItinerary(prefs, language);
+  const baseline = generateBaseItinerary(prefs, language);
+  const target = baseline[replanFromIndex - 1];
+  const dates = itineraryDates(prefs.startDate, prefs.endDate);
+  const replanDayIndex = Math.max(0, dates.indexOf(target?.date ?? dates[0] ?? ''));
+  return generateBaseItinerary(prefs, language, replanDayIndex);
 };

@@ -195,6 +195,80 @@ test('generates inclusive multi-day itineraries with dated unique items', () => 
   assert.equal(threeDay.every((item) => item.id.includes(item.date)), true);
 });
 
+const itemStartMinutes = (time: string) => {
+  const [hour, minute] = time.split(':').map(Number);
+  return hour * 60 + minute;
+};
+
+const itemEndMinutes = (item: { time: string; durationMinutes: number }) => itemStartMinutes(item.time) + item.durationMinutes;
+
+const assertNoOverlaps = (items: ReturnType<typeof generateItinerary>) => {
+  for (const date of new Set(items.map((item) => item.date))) {
+    const dayItems = items.filter((item) => item.date === date).sort((a, b) => itemStartMinutes(a.time) - itemStartMinutes(b.time));
+    dayItems.slice(1).forEach((item, index) => {
+      assert.equal(itemStartMinutes(item.time) >= itemEndMinutes(dayItems[index]), true);
+    });
+  }
+};
+
+test('generates one-day, two-day, and seven-day itineraries without overlaps', () => {
+  const oneDay = generateItinerary({ ...prefs, startDate: '2026-07-01', endDate: '2026-07-01', startHour: '09:00', endHour: '18:00' });
+  const twoDay = generateItinerary({ ...prefs, startDate: '2026-07-01', endDate: '2026-07-02', startHour: '09:00', endHour: '18:00' });
+  const sevenDay = generateItinerary({ ...prefs, startDate: '2026-07-01', endDate: '2026-07-07', startHour: '09:00', endHour: '18:00' });
+  assert.equal(new Set(oneDay.map((item) => item.date)).size, 1);
+  assert.equal(new Set(twoDay.map((item) => item.date)).size, 2);
+  assert.equal(new Set(sevenDay.map((item) => item.date)).size, 7);
+  [oneDay, twoDay, sevenDay].forEach(assertNoOverlaps);
+});
+
+test('includes all prayers that fall inside selected daily hours', () => {
+  const fullDay = generateItinerary({ ...prefs, city: 'Tokyo', startHour: '00:00', endHour: '23:00', startDate: '2026-07-01', endDate: '2026-07-01' });
+  const titles = fullDay.filter((item) => item.kind === 'prayer').map((item) => item.title);
+  for (const prayer of ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']) assert.equal(titles.some((title) => title.includes(prayer)), true);
+  assertNoOverlaps(fullDay);
+});
+
+test('early morning and evening schedules include only prayers inside available hours', () => {
+  const morning = generateItinerary({ ...prefs, city: 'Tokyo', startHour: '00:00', endHour: '07:00' });
+  const evening = generateItinerary({ ...prefs, city: 'Tokyo', startHour: '18:00', endHour: '22:30' });
+  assert.equal(morning.some((item) => item.kind === 'prayer' && item.title.includes('Fajr')), true);
+  assert.equal(morning.some((item) => item.kind === 'prayer' && item.title.includes('Dhuhr')), false);
+  assert.equal(evening.some((item) => item.kind === 'prayer' && item.title.includes('Maghrib')), true);
+  assert.equal(evening.some((item) => item.kind === 'prayer' && item.title.includes('Isha')), true);
+  assertNoOverlaps(morning);
+  assertNoOverlaps(evening);
+});
+
+test('every itinerary item stays inside the selected daily hours', () => {
+  const items = generateItinerary({ ...prefs, city: 'London', startDate: '2026-07-01', endDate: '2026-07-07', startHour: '09:30', endHour: '16:45', interests: [] });
+  assert.equal(items.every((item) => itemStartMinutes(item.time) >= itemStartMinutes('09:30')), true);
+  assert.equal(items.every((item) => itemEndMinutes(item) <= itemStartMinutes('16:45')), true);
+  assertNoOverlaps(items);
+});
+
+test('multi-day replan changes only the intended day', () => {
+  const base = generateItinerary({ ...prefs, city: 'London', startDate: '2026-07-01', endDate: '2026-07-03', startHour: '09:00', endHour: '18:00', interests: [] });
+  const secondDayIndex = base.findIndex((item) => item.date === '2026-07-02');
+  const replanned = generateItinerary({ ...prefs, city: 'London', startDate: '2026-07-01', endDate: '2026-07-03', startHour: '09:00', endHour: '18:00', interests: [] }, secondDayIndex + 1);
+  const titlesFor = (items: typeof base, date: string) => items.filter((item) => item.date === date).map((item) => `${item.time}-${item.title}-${item.details}`);
+  assert.equal(JSON.stringify(titlesFor(replanned, '2026-07-02')) !== JSON.stringify(titlesFor(base, '2026-07-02')), true);
+  assert.deepEqual(titlesFor(replanned, '2026-07-01'), titlesFor(base, '2026-07-01'));
+  assert.deepEqual(titlesFor(replanned, '2026-07-03'), titlesFor(base, '2026-07-03'));
+  assert.equal(new Set(replanned.map((item) => item.id)).size, replanned.length);
+  assertNoOverlaps(replanned);
+});
+
+test('planner preferences affect attraction, prayer, restaurant, and travel choices', () => {
+  const history = generateItinerary({ ...prefs, city: 'London', interests: ['history'], children: false, prayerPreference: 'mosque', budget: 'mid', halalPreference: 'strictly labelled', transportation: 'public transport' });
+  const walkingFamily = generateItinerary({ ...prefs, city: 'London', interests: ['walking'], children: true, prayerPreference: 'quiet prayer space', budget: 'low', halalPreference: 'vegetarian/seafood options', transportation: 'walking', walkingAbility: 'low' });
+  assert.equal(history.some((item) => item.kind === 'attraction' && item.title === 'British Museum'), true);
+  assert.equal(walkingFamily.some((item) => item.kind === 'attraction' && item.title === 'Regent’s Park walk'), true);
+  assert.equal(history.some((item) => item.kind === 'prayer' && item.title.includes('London Central Mosque')), true);
+  assert.equal(walkingFamily.some((item) => item.kind === 'prayer' && item.title.includes('London quiet prayer room')), true);
+  assert.equal(history.find((item) => item.kind === 'travel')?.durationMinutes !== walkingFamily.find((item) => item.kind === 'travel')?.durationMinutes, true);
+  assert.equal(walkingFamily.some((item) => item.kind === 'meal' && item.details.includes('perfect budget or halal-preference match was not available')), true);
+});
+
 test('counts itinerary dates across month and year boundaries', () => {
   assert.deepEqual(itineraryDates('2026-07-01', '2026-07-01'), ['2026-07-01']);
   assert.deepEqual(itineraryDates('2026-07-31', '2026-08-02'), ['2026-07-31', '2026-08-01', '2026-08-02']);
