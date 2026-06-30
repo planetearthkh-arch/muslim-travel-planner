@@ -148,6 +148,10 @@ let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
 let qiblaLocation: QiblaLocation | undefined;
 let qiblaHeading: number | undefined;
+let qiblaOrientationListenersActive = false;
+let qiblaAnimationFrame = 0;
+let qiblaLastRenderedHeading: number | undefined;
+const QIBLA_HEADING_THRESHOLD = 1;
 let replan = 0;
 let selectedRegion: Region | '' = '';
 let athanEnabled = localStorage.getItem('athanEnabled') === 'true';
@@ -410,9 +414,9 @@ function qiblaPage() {
           <button type="button" id="request-location">${qiblaLocationStatus === 'denied' || qiblaLocationStatus === 'unavailable' ? copy.qiblaRetry : copy.qiblaRequestLocation}</button>
           <button type="button" class="ghost" id="request-motion" ${canShowCompass ? '' : 'disabled'}>${copy.qiblaRequestMotion}</button>
         </div>
-        <div class="qibla-status ${qiblaLocationStatus}">${qiblaStatusMessage(copy)}</div>
+        <div class="qibla-status ${qiblaLocationStatus}" id="qibla-status">${qiblaStatusMessage(copy)}</div>
         <div class="qibla-compass-wrap">
-          <div class="qibla-compass" style="--compass-rotation: ${compassRotation}deg; --qibla-rotation: ${qiblaRotation}deg;">
+          <div class="qibla-compass" id="qibla-compass" style="--compass-rotation: ${compassRotation}deg; --qibla-rotation: ${qiblaRotation}deg;">
             <span class="qibla-cardinal north">${copy.qiblaNorth}</span>
             <span class="qibla-cardinal east">${copy.qiblaEast}</span>
             <span class="qibla-cardinal south">${copy.qiblaSouth}</span>
@@ -424,7 +428,7 @@ function qiblaPage() {
         <div class="qibla-readouts">
           <div><span>${copy.qiblaBearing}</span><strong>${bearingText}</strong><small>${copy.qiblaDegrees}</small></div>
           <div><span>${copy.qiblaLocation}</span><strong>${locationText}</strong>${qiblaLocation?.accuracy ? `<small>±${Math.round(qiblaLocation.accuracy)} m</small>` : ''}</div>
-          <div><span>${copy.qibla}</span><strong>${qiblaMotionStatus === 'active' ? copy.qiblaLiveCompass : copy.qiblaFixedBearing}</strong></div>
+          <div><span>${copy.qibla}</span><strong id="qibla-motion-readout">${qiblaMotionStatus === 'active' ? copy.qiblaLiveCompass : copy.qiblaFixedBearing}</strong></div>
         </div>
       </section>
     </main>`;
@@ -432,36 +436,76 @@ function qiblaPage() {
 }
 
 function stopQiblaOrientation() {
+  if (!qiblaOrientationListenersActive) return;
   window.removeEventListener('deviceorientation', handleQiblaOrientation);
   window.removeEventListener('deviceorientationabsolute', handleQiblaOrientation);
+  qiblaOrientationListenersActive = false;
+  if (qiblaAnimationFrame) {
+    window.cancelAnimationFrame(qiblaAnimationFrame);
+    qiblaAnimationFrame = 0;
+  }
+}
+
+function qiblaHeadingDelta(a: number, b: number) {
+  return Math.abs(((a - b + 540) % 360) - 180);
+}
+
+function updateQiblaLiveDom() {
+  qiblaAnimationFrame = 0;
+  if (view !== 'qibla' || document.hidden) return;
+  const copy = labels[lang];
+  const bearing = qiblaLocation ? calculateQiblaBearing(qiblaLocation.latitude, qiblaLocation.longitude) : 0;
+  const compass = document.querySelector<HTMLElement>('#qibla-compass');
+  if (compass) {
+    compass.style.setProperty('--compass-rotation', `${qiblaHeading ? -qiblaHeading : 0}deg`);
+    compass.style.setProperty('--qibla-rotation', `${normalizeDegrees(bearing - (qiblaHeading ?? 0))}deg`);
+  }
+  const status = document.querySelector<HTMLElement>('#qibla-status');
+  if (status) status.textContent = qiblaStatusMessage(copy);
+  const readout = document.querySelector<HTMLElement>('#qibla-motion-readout');
+  if (readout) readout.textContent = qiblaMotionStatus === 'active' ? copy.qiblaLiveCompass : copy.qiblaFixedBearing;
+  qiblaLastRenderedHeading = qiblaHeading;
+}
+
+function scheduleQiblaLiveUpdate() {
+  if (view !== 'qibla' || document.hidden || qiblaAnimationFrame) return;
+  qiblaAnimationFrame = window.requestAnimationFrame(updateQiblaLiveDom);
 }
 
 function handleQiblaOrientation(event: CompassOrientationEvent) {
+  if (view !== 'qibla' || document.hidden || qiblaMotionStatus === 'denied') return;
   const heading = typeof event.webkitCompassHeading === 'number'
     ? event.webkitCompassHeading
     : event.absolute === true && typeof event.alpha === 'number'
       ? normalizeDegrees(360 - event.alpha)
       : undefined;
   if (typeof heading !== 'number') {
+    if (qiblaMotionStatus === 'active' && qiblaHeading !== undefined) return;
+    if (qiblaMotionStatus === 'unavailable' && qiblaHeading === undefined) return;
     qiblaHeading = undefined;
     qiblaMotionStatus = 'unavailable';
-    qiblaPage();
+    scheduleQiblaLiveUpdate();
     return;
   }
-  qiblaHeading = heading;
+  const normalizedHeading = normalizeDegrees(heading);
+  const comparisonHeading = qiblaHeading ?? qiblaLastRenderedHeading;
+  if (qiblaMotionStatus === 'active' && comparisonHeading !== undefined && qiblaHeadingDelta(normalizedHeading, comparisonHeading) < QIBLA_HEADING_THRESHOLD) return;
+  qiblaHeading = normalizedHeading;
   qiblaMotionStatus = 'active';
-  qiblaPage();
+  scheduleQiblaLiveUpdate();
 }
 
 function startQiblaOrientation() {
-  stopQiblaOrientation();
+  if (qiblaOrientationListenersActive) return;
   window.addEventListener('deviceorientation', handleQiblaOrientation);
   window.addEventListener('deviceorientationabsolute', handleQiblaOrientation);
+  qiblaOrientationListenersActive = true;
 }
 
 async function requestQiblaMotion() {
   if (!('DeviceOrientationEvent' in window)) {
     qiblaMotionStatus = 'unavailable';
+    stopQiblaOrientation();
     qiblaPage();
     return;
   }
@@ -471,11 +515,13 @@ async function requestQiblaMotion() {
       const permission = await OrientationEvent.requestPermission();
       if (permission !== 'granted') {
         qiblaMotionStatus = 'denied';
+        stopQiblaOrientation();
         qiblaPage();
         return;
       }
     } catch {
       qiblaMotionStatus = 'denied';
+      stopQiblaOrientation();
       qiblaPage();
       return;
     }
@@ -528,6 +574,17 @@ function bindQibla() {
   document.querySelector<HTMLButtonElement>('#request-location')?.addEventListener('click', requestQiblaLocation);
   document.querySelector<HTMLButtonElement>('#request-motion')?.addEventListener('click', () => void requestQiblaMotion());
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (qiblaAnimationFrame) {
+      window.cancelAnimationFrame(qiblaAnimationFrame);
+      qiblaAnimationFrame = 0;
+    }
+    return;
+  }
+  if (view === 'qibla') scheduleQiblaLiveUpdate();
+});
 
 
 type PrayerLocationStatus = 'idle' | 'requesting' | 'ready' | 'denied' | 'unavailable' | 'searching' | 'service-unavailable' | 'empty';
@@ -2041,6 +2098,7 @@ function weatherRows(forecast: WeatherForecast, copy: typeof labels[Language]) {
 
 function hourlyWeatherList(forecast: WeatherForecast, copy: typeof labels[Language]) {
   const hours = weatherSelectedDay ? hourlyForDay(forecast.hourly, weatherSelectedDay) : selectHourlyForecast(forecast.hourly, forecast.current.time, weatherHours);
+  if (!hours.length) return `<p class="status">${copy.weatherNoLaterHourly}</p>`;
   return `<div class="hourly-strip" role="list" aria-label="${copy.weatherHourly}">${hours.slice(0, weatherHours).map((hour, index) => {
     const info = weatherCodeInfo(hour.weatherCode, copy);
     const current = index === 0 && !weatherSelectedDay ? ' current-hour' : '';
@@ -3010,6 +3068,7 @@ function render() {
     qiblaPage();
     return;
   }
+  stopQiblaOrientation();
   if (view === 'prayer-spaces') {
     prayerPage();
     return;

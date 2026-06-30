@@ -106,13 +106,50 @@ export const parseAmountInput = (raw: string): { value: number | null; error?: '
   const trimmed = raw.trim();
   if (!trimmed) return { value: null, error: 'empty' };
   if (/^-/.test(trimmed) || /−/.test(trimmed)) return { value: null, error: 'negative' };
-  const normalizedDigits = trimmed.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
-  const numeric = normalizedDigits.replace(/[^\d.,]/g, '');
+  const normalizedDigits = trimmed
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/٬/g, ',')
+    .replace(/٫/g, '.');
+  const compact = normalizedDigits.replace(/[^\d.,]/g, '');
+  const numeric = [...compact].filter((char, index) => /\d/.test(char) || ((char === ',' || char === '.') && /\d/.test(compact[index - 1] ?? '') && /\d/.test(compact[index + 1] ?? ''))).join('');
   if (!numeric || !/\d/.test(numeric)) return { value: null, error: 'invalid' };
-  const lastComma = numeric.lastIndexOf(',');
-  const lastDot = numeric.lastIndexOf('.');
-  const decimal = lastComma > lastDot ? ',' : lastDot > -1 ? '.' : '';
-  const cleaned = decimal ? numeric.slice(0, numeric.lastIndexOf(decimal)).replace(/[.,]/g, '') + '.' + numeric.slice(numeric.lastIndexOf(decimal) + 1).replace(/[.,]/g, '') : numeric.replace(/[.,]/g, '');
+
+  const validGroupedInteger = (value: string, separator: string) => {
+    const groups = value.split(separator);
+    return groups.length > 1
+      && /^[0-9]{1,3}$/.test(groups[0])
+      && groups.slice(1).every((group) => /^[0-9]{3}$/.test(group));
+  };
+  const buildNumberText = (): string | null => {
+    const separators = [...numeric].filter((char) => char === ',' || char === '.');
+    if (!separators.length) return /^\d+$/.test(numeric) ? numeric : null;
+    const hasComma = numeric.includes(',');
+    const hasDot = numeric.includes('.');
+    if (hasComma && hasDot) {
+      const decimalIndex = Math.max(numeric.lastIndexOf(','), numeric.lastIndexOf('.'));
+      const decimalSeparator = numeric[decimalIndex];
+      const groupingSeparator = decimalSeparator === ',' ? '.' : ',';
+      const integerPart = numeric.slice(0, decimalIndex);
+      const fractionPart = numeric.slice(decimalIndex + 1);
+      if (!/^\d+$/.test(fractionPart)) return null;
+      if (integerPart.includes(decimalSeparator)) return null;
+      if (!validGroupedInteger(integerPart, groupingSeparator)) return null;
+      return `${integerPart.replaceAll(groupingSeparator, '')}.${fractionPart}`;
+    }
+    const separator = hasComma ? ',' : '.';
+    const parts = numeric.split(separator);
+    if (parts.some((part) => part === '' || !/^\d+$/.test(part))) return null;
+    if (parts.length > 2) {
+      return validGroupedInteger(numeric, separator) ? numeric.replaceAll(separator, '') : null;
+    }
+    const [integerPart, tail] = parts;
+    if (tail.length === 3 && /^[0-9]{1,3}$/.test(integerPart)) return `${integerPart}${tail}`;
+    if (tail.length === 1 || tail.length === 2) return `${integerPart}.${tail}`;
+    return null;
+  };
+  const cleaned = buildNumberText();
+  if (!cleaned) return { value: null, error: 'invalid' };
   const value = Number(cleaned);
   if (!Number.isFinite(value)) return { value: null, error: 'invalid' };
   if (value > 1_000_000_000_000_000) return { value: null, error: 'tooLarge' };

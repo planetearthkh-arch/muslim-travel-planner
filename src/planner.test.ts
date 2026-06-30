@@ -414,14 +414,28 @@ test('formats two-decimal, zero-decimal, and three-decimal currencies with Intl'
   assert.match(formatCurrencyAmount(1.234, 'BHD', 'en'), /1\.234/);
 });
 
-test('parses decimal comma, decimal point, pasted formatting, and zero', () => {
+test('parses English, European, Arabic, Persian, pasted formatting, and zero currency amounts', () => {
+  assert.equal(parseAmountInput('1234').value, 1234);
+  assert.equal(parseAmountInput('1,234').value, 1234);
+  assert.equal(parseAmountInput('1.234').value, 1234);
   assert.equal(parseAmountInput('1.234,56').value, 1234.56);
-  assert.equal(parseAmountInput('1,234.56 USD').value, 1234.56);
+  assert.equal(parseAmountInput('1,234.56').value, 1234.56);
+  assert.equal(parseAmountInput('12,34').value, 12.34);
+  assert.equal(parseAmountInput('12.34').value, 12.34);
+  assert.equal(parseAmountInput('$1,234.56').value, 1234.56);
+  assert.equal(parseAmountInput('USD 1,234').value, 1234);
+  assert.equal(parseAmountInput('١٬٢٣٤٫٥٦ ر.س').value, 1234.56);
+  assert.equal(parseAmountInput('۱٬۲۳۴٫۵۶ ریال').value, 1234.56);
   assert.equal(parseAmountInput('0').value, 0);
 });
 
-test('rejects invalid, negative, and extremely large input', () => {
+test('rejects invalid, ambiguous, negative, and extremely large currency input', () => {
   assert.equal(parseAmountInput('abc').error, 'invalid');
+  assert.equal(parseAmountInput('').error, 'empty');
+  assert.equal(parseAmountInput('1,23,4').error, 'invalid');
+  assert.equal(parseAmountInput('1234,567').error, 'invalid');
+  assert.equal(parseAmountInput('1.23.45').error, 'invalid');
+  assert.equal(parseAmountInput('1,234,56').error, 'invalid');
   assert.equal(parseAmountInput('-10').error, 'negative');
   assert.equal(parseAmountInput('100000000000000000000').error, 'tooLarge');
 });
@@ -556,6 +570,19 @@ test('Qibla live compass only accepts reliable absolute headings', async () => {
   assert.equal(source.includes("typeof event.webkitCompassHeading === 'number'"), true);
   assert.equal(source.includes("event.absolute === true && typeof event.alpha === 'number'"), true);
   assert.equal(source.includes("qiblaMotionStatus = 'unavailable';"), true);
+});
+
+test('Qibla compass updates are throttled without rebuilding the page for heading movement', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  const handler = source.slice(source.indexOf('function handleQiblaOrientation'), source.indexOf('function startQiblaOrientation'));
+  assert.equal(source.includes('const QIBLA_HEADING_THRESHOLD = 1'), true);
+  assert.equal(source.includes('function qiblaHeadingDelta'), true);
+  assert.equal(source.includes('requestAnimationFrame(updateQiblaLiveDom)'), true);
+  assert.equal(source.includes('qiblaOrientationListenersActive'), true);
+  assert.equal(source.includes("view !== 'qibla' || document.hidden"), true);
+  assert.equal(handler.includes('qiblaPage()'), false);
+  assert.equal(handler.includes("event.absolute === true"), true);
 });
 
 test('shared external URL sanitizer accepts only HTTP and HTTPS links', () => {
@@ -1112,7 +1139,12 @@ test('weather cache key source includes location, timezone, all units, duration,
 test('selects hourly, daily, travel-indicator, cached, and prayer weather data', () => {
   const forecast = validateWeatherResponse(sampleWeatherResponse());
   assert.equal(selectHourlyForecast(forecast.hourly, '2026-07-01T10:00', 24).length, 24);
+  assert.equal(selectHourlyForecast(forecast.hourly, '2026-07-03T23:00', 24).length, 1);
+  assert.equal(selectHourlyForecast(forecast.hourly, '2026-07-03T23:01', 24).length, 0);
+  assert.equal(selectHourlyForecast([], '2026-07-01T10:00', 24).length, 0);
   assert.equal(hourlyForDay(forecast.hourly, '2026-07-02').length, 24);
+  assert.equal(forecast.current.temperature, 22);
+  assert.equal(forecast.daily.length, 7);
   const indicators = travelWeatherIndicators(forecast, labels.en);
   assert.equal(indicators.includes(labels.en.weatherIndicatorUv), true);
   assert.equal(indicators.includes(labels.en.weatherIndicatorWind), true);
@@ -1132,7 +1164,10 @@ test('includes weather state and language labels', () => {
   assert.equal(labels.en.weatherCached.includes('Cached'), true);
   assert.equal(labels.en.weatherNoCached.includes('No cached'), true);
   assert.equal(labels.en.weatherValueUnavailable, 'Unavailable');
+  assert.equal(labels.en.weatherNoLaterHourly, 'No later hourly forecast is available.');
   assert.equal(labels.ar.weatherValueUnavailable.length > 0, true);
+  assert.equal(labels.ar.weatherNoLaterHourly.length > 0, true);
+  assert.equal(labels.id.weatherNoLaterHourly.length > 0, true);
   assert.equal(labels.id.weatherValueUnavailable.length > 0, true);
   assert.equal(labels.ar.weatherTitle.length > 0, true);
   assert.equal(labels.id.weatherTitle.length > 0, true);

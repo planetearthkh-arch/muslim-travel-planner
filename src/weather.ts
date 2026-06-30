@@ -263,8 +263,10 @@ export function windDirectionLabel(degrees: number) {
 
 export function selectHourlyForecast(hourly: WeatherPoint[], currentTime: string, hours = 24) {
   const start = Date.parse(currentTime);
+  if (!hourly.length || !Number.isFinite(start)) return [];
   const startIndex = hourly.findIndex((point) => Date.parse(point.time) >= start);
-  return hourly.slice(Math.max(0, startIndex), Math.max(0, startIndex) + hours);
+  if (startIndex < 0) return [];
+  return hourly.slice(startIndex, startIndex + hours);
 }
 
 export function hourlyForDay(hourly: WeatherPoint[], date: string) {
