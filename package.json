@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "npm run typecheck && vite build",
-    "lint": "eslint dist --ext .js",
+    "lint": "npm run typecheck && eslint eslint.config.js \"scripts/**/*.mjs\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node --test dist-test/planner.test.js",
+    "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node scripts/run-tests.mjs",
     "android:setup": "npm run build && node scripts/setup-android.mjs",
     "android:sync": "npm run build && npx cap sync android",
     "android:open": "npx cap open android"

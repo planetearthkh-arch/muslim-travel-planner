@@ -395,6 +395,21 @@ test('supports switching among English, Arabic, and Bahasa Indonesia', () => {
   assert.equal(languageDirection('ar'), 'rtl');
 });
 
+test('package scripts lint source and discover all compiled test files', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const fs = await load('node:fs/promises');
+  const packageJson = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> };
+  const eslintConfig = await fs.readFile(new URL('../eslint.config.js', import.meta.url), 'utf8');
+  const testRunner = await fs.readFile(new URL('../scripts/run-tests.mjs', import.meta.url), 'utf8');
+  assert.equal(packageJson.scripts.lint.includes('dist'), false);
+  assert.equal(packageJson.scripts.lint.includes('typecheck'), true);
+  assert.equal(eslintConfig.includes("ignores: ['dist/**', 'dist-test/**', 'node_modules/**']"), true);
+  assert.equal(eslintConfig.includes('src/**/*.ts'), false);
+  assert.equal(packageJson.scripts.test.includes('scripts/run-tests.mjs'), true);
+  assert.equal(packageJson.scripts.test.includes('planner.test.js'), false);
+  assert.equal(testRunner.includes("endsWith('.test.js')"), true);
+});
+
 test('provides natural Indonesian interface labels without translating place names', () => {
   assert.equal(labels.id.title, 'Perencana Perjalanan Muslim');
   assert.equal(labels.id.plan, 'Buat Rencana Perjalanan');
@@ -582,7 +597,12 @@ test('shared HTTP utility classifies statuses, timeouts, aborts, offline, and ma
   assert.equal(classifyHttpStatus(504), 'temporary');
   assert.equal(classifyHttpStatus(404), 'http');
   assert.equal(retryAfterMs('2'), 2000);
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  assert.equal(classifyRequestError(new TypeError('failed')).kind, 'unknown');
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } });
   assert.equal(classifyRequestError(new TypeError('failed')).kind, 'offline');
+  if (navigatorDescriptor) Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+  else Reflect.deleteProperty(globalThis, 'navigator');
   assert.equal(classifyRequestError(new DOMException('cancelled', 'AbortError')).kind, 'aborted');
 
   const originalFetch = globalThis.fetch;
@@ -600,6 +620,15 @@ test('shared HTTP utility classifies statuses, timeouts, aborts, offline, and ma
     };
     assert.deepEqual(await retryOnceForTemporary(() => requestJson('https://example.test')), {});
     assert.equal(attempts, 2);
+    const retryController = new AbortController();
+    let retryAttempts = 0;
+    const retryPromise = retryOnceForTemporary(async () => {
+      retryAttempts += 1;
+      throw new RequestError('rate-limited', 'Too many requests', 429, 20);
+    }, retryController.signal);
+    retryController.abort();
+    await rejectsWith(() => retryPromise, (error) => error instanceof RequestError && error.kind === 'aborted');
+    assert.equal(retryAttempts, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1650,6 +1679,30 @@ test('audited async feature searches isolate stale completions', async () => {
   assert.equal(source.includes("if (classifyRequestError(error).kind === 'aborted') return;\n    const fallback"), true);
   assert.equal(source.includes('const activeCacheKey = attractionCacheKey'), true);
   assert.equal(source.includes('if (sequence !== attractionEnrichmentSequence || activeCacheKey !== attractionCacheKey || abortSignal.aborted) return;'), true);
+});
+
+test('geolocation callbacks are invalidated by newer searches across async features', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  const expectations = [
+    ['requestQiblaLocation', 'qiblaLocationSequence'],
+    ['requestPrayerLocation', 'prayerSearchSequence'],
+    ['requestRestaurantLocation', 'restaurantSearchSequence'],
+    ['requestToiletLocation', 'toiletSearchSequence'],
+    ['requestCarRentalLocation', 'carRentalSearchSequence'],
+    ['requestPublicTransportLocation', 'publicTransportSearchSequence'],
+    ['requestTaxiLocation', 'taxiSearchSequence'],
+    ['requestWeatherLocation', 'weatherRequestSequence'],
+    ['requestAttractionLocation', 'attractionSearchSequence'],
+  ];
+  for (const [functionName, sequenceName] of expectations) {
+    const start = source.indexOf(`function ${functionName}`);
+    const nextFunction = source.indexOf('\nfunction ', start + 1);
+    const end = nextFunction === -1 ? source.length : nextFunction;
+    const body = source.slice(start, end);
+    assert.equal(body.includes(`const sequence = ++${sequenceName}`), true);
+    assert.equal(body.includes(`if (sequence !== ${sequenceName}) return;`), true);
+  }
 });
 
 test('mapped feature opening status is recalculated with captured destination timezone', async () => {

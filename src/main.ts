@@ -169,6 +169,7 @@ let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
 let qiblaLocation: QiblaLocation | undefined;
+let qiblaLocationSequence = 0;
 let qiblaHeading: number | undefined;
 let qiblaOrientationListenersActive = false;
 let qiblaAnimationFrame = 0;
@@ -558,7 +559,9 @@ async function requestQiblaMotion() {
 }
 
 function requestQiblaLocation() {
+  const sequence = ++qiblaLocationSequence;
   if (!navigator.geolocation) {
+    if (sequence !== qiblaLocationSequence) return;
     qiblaLocationStatus = 'unavailable';
     qiblaPage();
     return;
@@ -567,6 +570,7 @@ function requestQiblaLocation() {
   qiblaPage();
   navigator.geolocation.getCurrentPosition(
     (position) => {
+      if (sequence !== qiblaLocationSequence) return;
       qiblaLocation = {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
@@ -577,6 +581,7 @@ function requestQiblaLocation() {
       qiblaPage();
     },
     (error) => {
+      if (sequence !== qiblaLocationSequence) return;
       qiblaLocationStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       qiblaPage();
     },
@@ -591,6 +596,7 @@ function bindQibla() {
   });
   document.querySelector<HTMLButtonElement>('#back-to-planner')?.addEventListener('click', () => {
     view = 'planner';
+    qiblaLocationSequence += 1;
     stopQiblaOrientation();
     if (window.location.hash) {
       history.pushState(null, '', window.location.pathname + window.location.search);
@@ -790,7 +796,7 @@ function validateOverpassResponse(payload: unknown): OverpassResponse {
 }
 
 async function requestOverpass(url: string, options: RequestInit, milliseconds: number) {
-  return validateOverpassResponse(await retryOnceForTemporary(() => requestJson<unknown>(url, options, milliseconds)));
+  return validateOverpassResponse(await retryOnceForTemporary(() => requestJson<unknown>(url, options, milliseconds), options.signal ?? undefined));
 }
 
 function prayerTypeLabel(type: PrayerPlaceType, copy: typeof labels[Language]) {
@@ -1184,7 +1190,9 @@ async function searchHalalRestaurants(center: PrayerCenter) {
 }
 
 function requestRestaurantLocation() {
+  const sequence = ++restaurantSearchSequence;
   if (!navigator.geolocation) {
+    if (sequence !== restaurantSearchSequence) return;
     restaurantStatus = 'unavailable';
     halalRestaurantsPage();
     return;
@@ -1192,8 +1200,12 @@ function requestRestaurantLocation() {
   restaurantStatus = 'requesting';
   halalRestaurantsPage();
   navigator.geolocation.getCurrentPosition(
-    (position) => void searchHalalRestaurants({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (position) => {
+      if (sequence !== restaurantSearchSequence) return;
+      void searchHalalRestaurants({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
+    },
     (error) => {
+      if (sequence !== restaurantSearchSequence) return;
       restaurantStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       halalRestaurantsPage();
     },
@@ -1491,7 +1503,9 @@ async function searchPublicToilets(center: PrayerCenter) {
 }
 
 function requestToiletLocation() {
+  const sequence = ++toiletSearchSequence;
   if (!navigator.geolocation) {
+    if (sequence !== toiletSearchSequence) return;
     toiletStatus = 'unavailable';
     publicToiletsPage();
     return;
@@ -1499,8 +1513,12 @@ function requestToiletLocation() {
   toiletStatus = 'requesting';
   publicToiletsPage();
   navigator.geolocation.getCurrentPosition(
-    (position) => void searchPublicToilets({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (position) => {
+      if (sequence !== toiletSearchSequence) return;
+      void searchPublicToilets({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
+    },
     (error) => {
+      if (sequence !== toiletSearchSequence) return;
       toiletStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       publicToiletsPage();
     },
@@ -1789,7 +1807,9 @@ async function searchCarRentalOffices(center: PrayerCenter) {
 }
 
 function requestCarRentalLocation() {
+  const sequence = ++carRentalSearchSequence;
   if (!navigator.geolocation) {
+    if (sequence !== carRentalSearchSequence) return;
     carRentalStatus = 'unavailable';
     carRentalPage();
     return;
@@ -1797,8 +1817,12 @@ function requestCarRentalLocation() {
   carRentalStatus = 'requesting';
   carRentalPage();
   navigator.geolocation.getCurrentPosition(
-    (position) => void searchCarRentalOffices({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (position) => {
+      if (sequence !== carRentalSearchSequence) return;
+      void searchCarRentalOffices({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
+    },
     (error) => {
+      if (sequence !== carRentalSearchSequence) return;
       carRentalStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       carRentalPage();
     },
@@ -2093,7 +2117,9 @@ async function searchPublicTransport(center: PrayerCenter) {
 }
 
 function requestPublicTransportLocation() {
+  const sequence = ++publicTransportSearchSequence;
   if (!navigator.geolocation) {
+    if (sequence !== publicTransportSearchSequence) return;
     publicTransportStatus = 'unavailable';
     publicTransportPage();
     return;
@@ -2101,8 +2127,12 @@ function requestPublicTransportLocation() {
   publicTransportStatus = 'requesting';
   publicTransportPage();
   navigator.geolocation.getCurrentPosition(
-    (position) => void searchPublicTransport({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (position) => {
+      if (sequence !== publicTransportSearchSequence) return;
+      void searchPublicTransport({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
+    },
     (error) => {
+      if (sequence !== publicTransportSearchSequence) return;
       publicTransportStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       publicTransportPage();
     },
@@ -2395,7 +2425,9 @@ async function searchTaxiServices(center: PrayerCenter) {
 }
 
 function requestTaxiLocation() {
+  const sequence = ++taxiSearchSequence;
   if (!navigator.geolocation) {
+    if (sequence !== taxiSearchSequence) return;
     taxiStatus = 'unavailable';
     taxiPage();
     return;
@@ -2403,8 +2435,12 @@ function requestTaxiLocation() {
   taxiStatus = 'requesting';
   taxiPage();
   navigator.geolocation.getCurrentPosition(
-    (position) => void searchTaxiServices({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (position) => {
+      if (sequence !== taxiSearchSequence) return;
+      void searchTaxiServices({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
+    },
     (error) => {
+      if (sequence !== taxiSearchSequence) return;
       taxiStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       taxiPage();
     },
@@ -2643,7 +2679,9 @@ function destinationWeatherLocation(city = selectedCity()): WeatherLocation {
 }
 
 function requestWeatherLocation() {
+  const sequence = ++weatherRequestSequence;
   if (!navigator.geolocation) {
+    if (sequence !== weatherRequestSequence) return;
     weatherStatus = 'unavailable';
     weatherPage();
     return;
@@ -2651,8 +2689,12 @@ function requestWeatherLocation() {
   weatherStatus = 'requesting';
   weatherPage();
   navigator.geolocation.getCurrentPosition(
-    (position) => void loadWeather({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (position) => {
+      if (sequence !== weatherRequestSequence) return;
+      void loadWeather({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
+    },
     (error) => {
+      if (sequence !== weatherRequestSequence) return;
       weatherStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       weatherPage();
     },
@@ -2912,19 +2954,12 @@ function destinationAttractionCenter(city = selectedCity()): PrayerCenter {
 }
 
 async function attractionJson<T>(url: string, stage: string, milliseconds = 7000, signal?: AbortSignal) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await requestJson<T>(url, { headers: { Accept: 'application/json' }, signal }, milliseconds);
-    } catch (error) {
-      lastError = error;
-      const classified = classifyRequestError(error);
-      if (!['temporary', 'rate-limited'].includes(classified.kind) || attempt === 1) break;
-      if (classified.retryAfterMs) await new Promise((resolve) => window.setTimeout(resolve, classified.retryAfterMs));
-    }
+  try {
+    return await retryOnceForTemporary(() => requestJson<T>(url, { headers: { Accept: 'application/json' }, signal }, milliseconds), signal);
+  } catch (error) {
+    recordAttractionDiagnostic(stage, error);
+    throw error instanceof Error ? error : new Error(String(error));
   }
-  recordAttractionDiagnostic(stage, lastError);
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function requestAttractionBatch(batch: AttractionQueryBatch, signal?: AbortSignal) {
@@ -3173,7 +3208,10 @@ async function searchAttractions(center: PrayerCenter) {
 }
 
 function requestAttractionLocation() {
+  const sequence = ++attractionSearchSequence;
+  attractionEnrichmentSequence += 1;
   if (!navigator.geolocation) {
+    if (sequence !== attractionSearchSequence) return;
     attractionStatus = 'unavailable';
     attractionsPage();
     return;
@@ -3181,8 +3219,12 @@ function requestAttractionLocation() {
   attractionStatus = 'requesting';
   attractionsPage();
   navigator.geolocation.getCurrentPosition(
-    (position) => void searchAttractions({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (position) => {
+      if (sequence !== attractionSearchSequence) return;
+      void searchAttractions({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
+    },
     (error) => {
+      if (sequence !== attractionSearchSequence) return;
       attractionStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
       attractionsPage();
     },

@@ -36,7 +36,10 @@ export function classifyRequestError(error: unknown): RequestError {
   if (error instanceof RequestError) return error;
   if (error instanceof DOMException && error.name === 'AbortError') return new RequestError('aborted', 'Request was cancelled');
   if (error instanceof SyntaxError) return new RequestError('malformed', 'Received invalid service data');
-  if (error instanceof TypeError) return new RequestError('offline', 'Network request failed');
+  if (error instanceof TypeError) {
+    const online = typeof navigator !== 'undefined' ? navigator.onLine : undefined;
+    return new RequestError(online === false ? 'offline' : 'unknown', 'Network request failed');
+  }
   if (error instanceof Error && /timed out/i.test(error.message)) return new RequestError('timeout', error.message);
   return new RequestError('unknown', error instanceof Error ? error.message : 'Request failed');
 }
@@ -78,13 +81,31 @@ export async function requestJson<T>(url: string, options: RequestInit = {}, mil
   }
 }
 
-export async function retryOnceForTemporary<T>(operation: () => Promise<T>) {
+function abortableDelay(milliseconds: number, signal?: AbortSignal) {
+  if (!milliseconds) return Promise.resolve();
+  if (signal?.aborted) return Promise.reject(classifyRequestError(signal.reason ?? new DOMException('cancelled', 'AbortError')));
+  return new Promise<void>((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, milliseconds);
+    const abort = () => {
+      globalThis.clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+      reject(classifyRequestError(signal?.reason ?? new DOMException('cancelled', 'AbortError')));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
+export async function retryOnceForTemporary<T>(operation: () => Promise<T>, signal?: AbortSignal) {
   try {
     return await operation();
   } catch (error) {
     const classified = classifyRequestError(error);
     if (!['temporary', 'rate-limited'].includes(classified.kind)) throw classified;
-    if (classified.retryAfterMs) await new Promise((resolve) => globalThis.setTimeout(resolve, classified.retryAfterMs));
+    await abortableDelay(classified.retryAfterMs ?? 0, signal);
+    if (signal?.aborted) throw classifyRequestError(signal.reason ?? new DOMException('cancelled', 'AbortError'));
     return operation();
   }
 }
