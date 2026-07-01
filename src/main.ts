@@ -160,6 +160,7 @@ import { createSavedTrip, defaultTripName, duplicateSavedTrip, sanitizeTripName,
 import { currentConnectionState, registerAppServiceWorker, type ConnectionState } from './offline.js';
 import { buildReportText, canShareReport, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sanitizeReportNote, type ReportReason, type ReportablePlace } from './place-report.js';
 import { buildIcsCalendar, buildItineraryText, canWebShare, safeTripFilename, type TripExportSnapshot } from './trip-share.js';
+import { deleteTravelDetail, emptyTravelDetails, sortTravelDetails, upsertTravelDetail, validateTravelDetailInput, validateTravelDetailsSnapshot, type TravelDetailEntry, type TravelDetailInput, type TravelDetailsSnapshot, type TravelDetailType } from './travel-details.js';
 
 (window as unknown as { maplibregl?: typeof maplibregl }).maplibregl = maplibregl;
 
@@ -207,6 +208,8 @@ let prefs: PlannerPreferences = {
 };
 let generatedPrefs: PlannerPreferences | null = null;
 let generatedItems: ItineraryItem[] = [];
+let currentTravelDetails: TravelDetailsSnapshot = emptyTravelDetails();
+let travelDetailEditor: { mode: 'add' | 'edit'; type: TravelDetailType; id?: string; error?: string; triggerId?: string } | null = null;
 let openedSavedTripId = '';
 let savedTripNameDraft = '';
 let savedTrips: SavedTrip[] = [];
@@ -3688,6 +3691,7 @@ function hasUnsavedTripChanges() {
   if (!trip || !generatedPrefs || !generatedItems.length) return Boolean(generatedPrefs && generatedItems.length && !openedSavedTripId);
   return JSON.stringify(trip.preferences) !== JSON.stringify(generatedPrefs)
     || JSON.stringify(trip.itinerary) !== JSON.stringify(generatedItems)
+    || JSON.stringify(trip.travelDetails) !== JSON.stringify(currentTravelDetails)
     || trip.name !== sanitizeTripName(savedTripNameDraft || trip.name);
 }
 
@@ -3713,7 +3717,7 @@ function saveCurrentTrip(copy: typeof labels[Language]) {
   const now = new Date().toISOString();
   const name = sanitizeTripName(savedTripNameDraft || existing?.name || defaultTripName(city, generatedPrefs.startDate, generatedPrefs.endDate));
   try {
-    const trip = createSavedTrip({ id: existing?.id, name, language: lang, preferences: generatedPrefs, city, itinerary: generatedItems, now });
+    const trip = createSavedTrip({ id: existing?.id, name, language: lang, preferences: generatedPrefs, city, itinerary: generatedItems, travelDetails: currentTravelDetails, now });
     const savedTrip = existing ? { ...trip, createdAt: existing.createdAt } : trip;
     savedTrips = savedTripRepository.upsert(savedTrip);
     openedSavedTripId = savedTrip.id;
@@ -3732,6 +3736,8 @@ function openSavedTrip(trip: SavedTrip) {
   prefs = { ...trip.preferences, interests: [...trip.preferences.interests] };
   generatedPrefs = { ...trip.preferences, interests: [...trip.preferences.interests] };
   generatedItems = trip.itinerary.map((item) => ({ ...item }));
+  currentTravelDetails = validateTravelDetailsSnapshot(trip.travelDetails);
+  travelDetailEditor = null;
   openedSavedTripId = trip.id;
   savedTripNameDraft = trip.name;
   savedTripStatus = 'saved';
@@ -3843,6 +3849,107 @@ function itineraryGroupsMarkup(items: ItineraryItem[], city: (typeof cities)[num
   return groupItineraryItems(items).map(([date, dayItems], dayIndex) => `<section class="itinerary-day"><h3>${formatItineraryDayHeading(date, dayIndex, copy)}</h3>${dayItems.map((item) => itineraryCard(item, itemIndex++, city, copy)).join('')}</section>`).join('');
 }
 
+function travelDetailTypeLabel(type: TravelDetailType, copy: typeof labels[Language]) {
+  return ({ flight: copy.travelDetailFlight, accommodation: copy.travelDetailAccommodation, reservation: copy.travelDetailReservation, contact: copy.travelDetailContact })[type];
+}
+
+function travelDetailTitle(entry: TravelDetailEntry) {
+  if (entry.type === 'flight') return [entry.airline, entry.flightNumber, `${entry.departureAirport} → ${entry.arrivalAirport}`].filter(Boolean).join(' ');
+  if (entry.type === 'accommodation') return entry.propertyName;
+  if (entry.type === 'reservation') return entry.title;
+  return entry.name;
+}
+
+function travelDetailLines(entry: TravelDetailEntry, copy: typeof labels[Language]) {
+  const lines: string[] = [];
+  if (entry.type === 'flight') {
+    lines.push(`${copy.travelDepartureDateTime}: ${entry.departureDateTime} ${entry.departureTimeZone || ''}`.trim());
+    lines.push(`${copy.travelArrivalDateTime}: ${entry.arrivalDateTime} ${entry.arrivalTimeZone || ''}`.trim());
+  } else if (entry.type === 'accommodation') {
+    lines.push(`${copy.travelCheckIn}: ${entry.checkInDateTime} ${entry.timeZone || ''}`.trim());
+    lines.push(`${copy.travelCheckOut}: ${entry.checkOutDateTime} ${entry.timeZone || ''}`.trim());
+    if (entry.address) lines.push(`${copy.travelAddress}: ${entry.address}`);
+    if (entry.phone) lines.push(`${copy.travelPhone}: ${entry.phone}`);
+  } else if (entry.type === 'reservation') {
+    lines.push(`${copy.travelStartDateTime}: ${entry.startDateTime} ${entry.timeZone || ''}`.trim());
+    if (entry.endDateTime) lines.push(`${copy.travelEndDateTime}: ${entry.endDateTime} ${entry.timeZone || ''}`.trim());
+    if (entry.provider) lines.push(`${copy.travelProvider}: ${entry.provider}`);
+    if (entry.meetingPoint) lines.push(`${copy.travelMeetingPoint}: ${entry.meetingPoint}`);
+    if (entry.phone) lines.push(`${copy.travelPhone}: ${entry.phone}`);
+  } else {
+    if (entry.role) lines.push(`${copy.travelRole}: ${entry.role}`);
+    if (entry.phone) lines.push(`${copy.travelPhone}: ${entry.phone}`);
+    if (entry.website) lines.push(`${copy.travelWebsite}: ${entry.website}`);
+  }
+  if ('notes' in entry && entry.notes) lines.push(`${copy.travelNotes}: ${entry.notes}`);
+  if ('bookingReference' in entry && entry.bookingReference) lines.push(copy.travelPrivateReference);
+  return lines;
+}
+
+function travelDetailCard(entry: TravelDetailEntry, copy: typeof labels[Language]) {
+  const website = entry.type === 'contact' && entry.website ? `<a class="map-link" href="${esc(entry.website)}" target="_blank" rel="noopener noreferrer">${copy.travelWebsite}</a>` : '';
+  return `<article class="card travel-detail-card">
+    <div class="card-top"><span class="badge">${travelDetailTypeLabel(entry.type, copy)}</span><span>${esc(entry.type === 'contact' ? copy.travelStoredOnly : '')}</span></div>
+    <h4>${esc(travelDetailTitle(entry))}</h4>
+    ${travelDetailLines(entry, copy).map((line) => `<p>${esc(line)}</p>`).join('')}
+    <div class="toolbar travel-detail-actions">
+      ${website}
+      <button type="button" class="ghost" data-edit-travel-detail="${esc(entry.id)}">${copy.travelEdit}</button>
+      <button type="button" class="ghost" data-delete-travel-detail="${esc(entry.id)}">${copy.travelDelete}</button>
+    </div>
+  </article>`;
+}
+
+function travelDetailField(name: string, label: string, value = '', type = 'text', required = false) {
+  return `<label>${label}<input name="${name}" value="${esc(value)}" type="${type}" ${required ? 'required' : ''}/></label>`;
+}
+
+function travelDetailEditorMarkup(copy: typeof labels[Language], destinationTimeZone: string) {
+  if (!travelDetailEditor) return '';
+  const existing = travelDetailEditor.id ? currentTravelDetails.entries.find((entry) => entry.id === travelDetailEditor?.id) : undefined;
+  const type = travelDetailEditor.type;
+  const get = (key: string) => existing && key in existing ? String((existing as unknown as Record<string, string>)[key] ?? '') : '';
+  const common = `<p class="muted">${copy.travelPrivateReference}</p>${travelDetailField('bookingReference', copy.travelBookingReference, get('bookingReference'))}${travelDetailField('notes', copy.travelNotes, get('notes'))}`;
+  const fields = type === 'flight'
+    ? `${travelDetailField('airline', copy.travelAirline, get('airline'))}${travelDetailField('flightNumber', copy.travelFlightNumber, get('flightNumber'))}${travelDetailField('departureAirport', copy.travelDepartureAirport, get('departureAirport'), 'text', true)}${travelDetailField('arrivalAirport', copy.travelArrivalAirport, get('arrivalAirport'), 'text', true)}${travelDetailField('departureDateTime', copy.travelDepartureDateTime, get('departureDateTime'), 'datetime-local', true)}${travelDetailField('arrivalDateTime', copy.travelArrivalDateTime, get('arrivalDateTime'), 'datetime-local', true)}${travelDetailField('departureTimeZone', copy.travelDepartureTimeZone, get('departureTimeZone') || destinationTimeZone)}${travelDetailField('arrivalTimeZone', copy.travelArrivalTimeZone, get('arrivalTimeZone') || destinationTimeZone)}${common}`
+    : type === 'accommodation'
+      ? `${travelDetailField('propertyName', copy.travelPropertyName, get('propertyName'), 'text', true)}${travelDetailField('address', copy.travelAddress, get('address'))}${travelDetailField('checkInDateTime', copy.travelCheckIn, get('checkInDateTime'), 'datetime-local', true)}${travelDetailField('checkOutDateTime', copy.travelCheckOut, get('checkOutDateTime'), 'datetime-local', true)}${travelDetailField('timeZone', copy.travelTimeZone, get('timeZone') || destinationTimeZone)}${travelDetailField('phone', copy.travelPhone, get('phone'))}${common}`
+      : type === 'reservation'
+        ? `${travelDetailField('title', copy.travelReservationTitle, get('title'), 'text', true)}${travelDetailField('provider', copy.travelProvider, get('provider'))}${travelDetailField('startDateTime', copy.travelStartDateTime, get('startDateTime'), 'datetime-local', true)}${travelDetailField('endDateTime', copy.travelEndDateTime, get('endDateTime'), 'datetime-local')}${travelDetailField('timeZone', copy.travelTimeZone, get('timeZone') || destinationTimeZone)}${travelDetailField('meetingPoint', copy.travelMeetingPoint, get('meetingPoint'))}${travelDetailField('phone', copy.travelPhone, get('phone'))}${common}`
+        : `${travelDetailField('name', copy.travelProviderContactName, get('name'), 'text', true)}${travelDetailField('role', copy.travelRole, get('role'))}${travelDetailField('phone', copy.travelPhone, get('phone'))}${travelDetailField('website', copy.travelWebsite, get('website'))}${travelDetailField('notes', copy.travelNotes, get('notes'))}`;
+  return `<form id="travel-detail-editor" class="travel-detail-editor card" aria-label="${copy.travelDetails}">
+    <div class="card-top"><h4>${travelDetailEditor.mode === 'edit' ? copy.travelEdit : copy.travelAddDetail}: ${travelDetailTypeLabel(type, copy)}</h4><button type="button" class="ghost" id="cancel-travel-detail">${copy.travelCancel}</button></div>
+    <input type="hidden" name="type" value="${type}" />
+    ${travelDetailEditor.id ? `<input type="hidden" name="id" value="${esc(travelDetailEditor.id)}" />` : ''}
+    <div class="grid">${fields}</div>
+    ${travelDetailEditor.error ? `<p class="error">${esc(travelDetailEditor.error)}</p>` : ''}
+    <div class="toolbar"><button type="submit">${copy.travelSave}</button><button type="button" class="ghost" id="cancel-travel-detail-2">${copy.travelCancel}</button></div>
+  </form>`;
+}
+
+function travelDetailsSectionMarkup(copy: typeof labels[Language], destinationTimeZone: string) {
+  const entries = sortTravelDetails(currentTravelDetails.entries);
+  return `<section class="travel-details-section" id="travel-details-section">
+    <div class="card travel-details-shell">
+      <div class="card-top"><div><p class="eyebrow">${copy.travelOptional}</p><h3>${copy.travelDetails}</h3></div><button type="button" id="add-travel-detail">${copy.travelAddDetail}</button></div>
+      <p class="muted">${copy.travelEmptyDescription}</p>
+      <ul class="travel-privacy-list">
+        <li>${copy.travelStoredOnly}</li>
+        <li>${copy.travelStorageNotEncrypted}</li>
+        <li>${copy.travelClearingData}</li>
+        <li>${copy.travelSensitiveWarning}</li>
+      </ul>
+      <div class="travel-detail-type-chooser" id="travel-detail-type-chooser" hidden>
+        <label>${copy.travelChooseType}<select id="travel-detail-type"><option value="flight">${copy.travelDetailFlight}</option><option value="accommodation">${copy.travelDetailAccommodation}</option><option value="reservation">${copy.travelDetailReservation}</option><option value="contact">${copy.travelDetailContact}</option></select></label>
+        <button type="button" class="ghost" id="start-travel-detail">${copy.travelAddDetail}</button>
+      </div>
+      ${travelDetailEditorMarkup(copy, destinationTimeZone)}
+      <p class="status" id="travel-detail-status" role="status" aria-live="polite"></p>
+      <div class="travel-detail-list">${entries.length ? entries.map((entry) => travelDetailCard(entry, copy)).join('') : `<p class="notice">${copy.travelNoDetails}</p>`}</div>
+    </div>
+  </section>`;
+}
+
 function tripHeaderMarkup(city: (typeof cities)[number], planPrefs: PlannerPreferences, items: ItineraryItem[], copy: typeof labels[Language]) {
   const days = itineraryDayKeys(planPrefs.startDate, planPrefs.endDate).length;
   const saved = openedSavedTripId && !hasUnsavedTripChanges();
@@ -3857,7 +3964,7 @@ function tripHeaderMarkup(city: (typeof cities)[number], planPrefs: PlannerPrefe
       <p>${copy.tripStyle}: ${optionLabels.transportation[lang][planPrefs.transportation]} · ${optionLabels.budget[lang][planPrefs.budget]} · ${city.timezone}</p>
       <p>${copy.approximateQibla}: ${calculateQiblaBearing(city.coordinates.lat, city.coordinates.lng).toFixed(1)}°</p>
       <p class="muted">${copy.savedLocally}. ${copy.noCloudSync}. ${copy.offlineLimitNotice}</p>
-      ${savedTripStatus === 'failed' ? `<p class="error">${esc(savedTripMessage || copy.saveFailed)}</p>` : `<p class="status">${saved ? copy.savedStatus : unsaved ? copy.unsavedChanges : copy.savedLocally}</p>`}
+      ${savedTripStatus === 'failed' ? `<p class="error" id="saved-trip-inline-status">${esc(savedTripMessage || copy.saveFailed)}</p>` : `<p class="status" id="saved-trip-inline-status">${saved ? copy.savedStatus : unsaved ? copy.unsavedChanges : copy.savedLocally}</p>`}
     </div>
     <div class="trip-actions">
       <label>${copy.tripName}<input id="trip-name" value="${esc(name)}" maxlength="80" /></label>
@@ -3882,6 +3989,7 @@ function snapshotFromSavedTrip(trip: SavedTrip): TripExportSnapshot {
     },
     preferences: trip.preferences,
     itinerary: trip.itinerary,
+    travelDetails: trip.travelDetails,
     language: lang,
   };
 }
@@ -3895,6 +4003,7 @@ function currentTripSnapshot(): TripExportSnapshot | null {
     city,
     preferences: generatedPrefs,
     itinerary: generatedItems,
+    travelDetails: currentTravelDetails,
     language: lang,
   };
 }
@@ -3944,6 +4053,96 @@ function bindTripExportButtons() {
   document.querySelector<HTMLButtonElement>('#share-trip')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) void shareTrip(snapshot); });
   document.querySelector<HTMLButtonElement>('#copy-itinerary')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) void copyTripItinerary(snapshot); });
   document.querySelector<HTMLButtonElement>('#export-calendar')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) exportTripCalendar(snapshot); });
+}
+
+function renderTravelDetailsOnly(focusSelector?: string) {
+  if (!generatedPrefs) return;
+  const city = cityForPreferences(generatedPrefs);
+  const section = document.querySelector<HTMLElement>('#travel-details-section');
+  if (!city || !section) return;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = travelDetailsSectionMarkup(labels[lang], city.timezone);
+  const next = wrapper.firstElementChild;
+  if (next) section.replaceWith(next);
+  bindTravelDetailsSection();
+  if (focusSelector) document.querySelector<HTMLElement>(focusSelector)?.focus();
+}
+
+function travelDetailErrorMessage(error: string, copy: typeof labels[Language]) {
+  if (error === 'date') return copy.travelInvalidDate;
+  if (error === 'range') return copy.travelEndAfterStart;
+  if (error === 'timezone') return copy.travelInvalidTimeZone;
+  if (error === 'website') return copy.travelInvalidWebsite;
+  return copy.travelRequiredFields;
+}
+
+function readTravelDetailInput(form: HTMLFormElement): TravelDetailInput {
+  const data = new FormData(form);
+  const input: Record<string, string> = {};
+  data.forEach((value, key) => { input[key] = String(value); });
+  return input as TravelDetailInput;
+}
+
+function markTravelDetailsChanged(message: string) {
+  savedTripStatus = openedSavedTripId ? 'unsaved' : savedTripStatus;
+  const status = document.querySelector<HTMLElement>('#travel-detail-status');
+  if (status) status.textContent = message;
+  const savedStatus = document.querySelector<HTMLElement>('#saved-trip-inline-status');
+  if (savedStatus && openedSavedTripId) savedStatus.textContent = labels[lang].unsavedChanges;
+}
+
+function bindTravelDetailsSection() {
+  const copy = labels[lang];
+  document.querySelector<HTMLButtonElement>('#add-travel-detail')?.addEventListener('click', () => {
+    document.querySelector<HTMLElement>('#travel-detail-type-chooser')?.removeAttribute('hidden');
+    document.querySelector<HTMLSelectElement>('#travel-detail-type')?.focus();
+  });
+  document.querySelector<HTMLButtonElement>('#start-travel-detail')?.addEventListener('click', () => {
+    const type = (document.querySelector<HTMLSelectElement>('#travel-detail-type')?.value || 'flight') as TravelDetailType;
+    travelDetailEditor = { mode: 'add', type, triggerId: 'add-travel-detail' };
+    renderTravelDetailsOnly('#travel-detail-editor input:not([type="hidden"])');
+  });
+  const closeEditor = () => {
+    const target = travelDetailEditor?.triggerId ? `#${travelDetailEditor.triggerId}` : '#add-travel-detail';
+    travelDetailEditor = null;
+    renderTravelDetailsOnly(target);
+  };
+  document.querySelector<HTMLButtonElement>('#cancel-travel-detail')?.addEventListener('click', closeEditor);
+  document.querySelector<HTMLButtonElement>('#cancel-travel-detail-2')?.addEventListener('click', closeEditor);
+  document.querySelector<HTMLFormElement>('#travel-detail-editor')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeEditor();
+  });
+  document.querySelector<HTMLFormElement>('#travel-detail-editor')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!generatedPrefs) return;
+    const city = cityForPreferences(generatedPrefs);
+    const result = validateTravelDetailInput(readTravelDetailInput(event.currentTarget as HTMLFormElement), city?.timezone || 'UTC');
+    if (!result.ok) {
+      travelDetailEditor = { ...(travelDetailEditor ?? { mode: 'add', type: 'flight' }), error: travelDetailErrorMessage(result.error, copy) };
+      renderTravelDetailsOnly('#travel-detail-editor');
+      return;
+    }
+    const wasEdit = travelDetailEditor?.mode === 'edit';
+    currentTravelDetails = upsertTravelDetail(currentTravelDetails, result.entry);
+    travelDetailEditor = null;
+    renderTravelDetailsOnly(`[data-edit-travel-detail="${result.entry.id}"]`);
+    markTravelDetailsChanged(wasEdit ? copy.travelDetailUpdated : copy.travelDetailAdded);
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-edit-travel-detail]').forEach((button) => button.addEventListener('click', () => {
+    const entry = currentTravelDetails.entries.find((candidate) => candidate.id === button.dataset.editTravelDetail);
+    if (!entry) return;
+    button.id = button.id || `travel-edit-${entry.id}`;
+    travelDetailEditor = { mode: 'edit', type: entry.type, id: entry.id, triggerId: button.id };
+    renderTravelDetailsOnly('#travel-detail-editor input:not([type="hidden"])');
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-delete-travel-detail]').forEach((button) => button.addEventListener('click', () => {
+    const entry = currentTravelDetails.entries.find((candidate) => candidate.id === button.dataset.deleteTravelDetail);
+    if (!entry || !window.confirm(`${copy.travelDeleteConfirm} ${travelDetailTitle(entry)}?`)) return;
+    currentTravelDetails = deleteTravelDetail(currentTravelDetails, entry.id);
+    travelDetailEditor = null;
+    renderTravelDetailsOnly('#add-travel-detail');
+    markTravelDetailsChanged(copy.travelDetailDeleted);
+  }));
 }
 
 function readPlannerDraftFromForm() {
@@ -4431,6 +4630,7 @@ function render() {
         <p class="sr-only" role="status">${esc(plannerAnnouncement)}</p>
         ${generatedPrefs && generatedCity ? `
           ${tripHeaderMarkup(generatedCity, generatedPrefs, items, copy)}
+          ${travelDetailsSectionMarkup(copy, generatedCity.timezone)}
           <div class="result-header"><div><p>${regionLabels[lang][generatedCity.region]} · ${generatedCity.timezone}</p><p>${copy.transportEstimatesAre}: ${copy.walking} ${generatedCity.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${generatedCity.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${generatedCity.transportEstimates.taxi} ${copy.minutesShort}.</p></div></div>
           ${athanSection(generatedCity, generatedPrefs)}
           ${mapSection(generatedCity, copy)}
@@ -4522,6 +4722,8 @@ function bind() {
     }
     generatedPrefs = { ...next, interests: [...next.interests] };
     generatedItems = generateItinerary(generatedPrefs, 0, lang);
+    currentTravelDetails = emptyTravelDetails();
+    travelDetailEditor = null;
     openedSavedTripId = '';
     savedTripNameDraft = '';
     savedTripStatus = 'unsaved';
@@ -4567,6 +4769,7 @@ function bind() {
   }));
   document.querySelector<HTMLButtonElement>('#stop-athan')?.addEventListener('click', () => void stopAthan());
   bindTripExportButtons();
+  bindTravelDetailsSection();
   document.querySelector<HTMLButtonElement>('#toggle-map-size')?.addEventListener('click', () => {
     const panel = document.querySelector<HTMLElement>('.map-panel');
     if (!panel) return;

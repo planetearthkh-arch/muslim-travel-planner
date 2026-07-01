@@ -1,12 +1,14 @@
 import type { CityData, ItineraryItem, PlannerPreferences } from './models.js';
 import type { Language } from './i18n.js';
 import { labels } from './i18n.js';
+import { travelDetailEndDate, travelDetailPrimaryDate, travelDetailTimeZone, type TravelDetailEntry, type TravelDetailsSnapshot } from './travel-details.js';
 
 export type TripExportSnapshot = {
   name: string;
   city: Pick<CityData, 'city' | 'country' | 'timezone' | 'money'>;
   preferences: PlannerPreferences;
   itinerary: ItineraryItem[];
+  travelDetails?: TravelDetailsSnapshot;
   language: Language;
 };
 
@@ -67,6 +69,12 @@ export function buildItineraryText(snapshot: TripExportSnapshot) {
     });
     lines.push('');
   });
+  const details = snapshot.travelDetails?.entries ?? [];
+  if (details.length) {
+    lines.push(copy.travelDetails);
+    details.forEach((entry) => lines.push(`- ${travelDetailExportSummary(entry, copy)}`));
+    lines.push(copy.travelPrivateReferenceExport);
+  }
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -113,8 +121,40 @@ export function buildIcsCalendar(snapshot: TripExportSnapshot) {
     lines.push(`LOCATION:${escapeIcs(`${snapshot.city.city}, ${snapshot.city.country}`)}`);
     lines.push('END:VEVENT');
   });
+  (snapshot.travelDetails?.entries ?? []).forEach((entry, index) => {
+    if (entry.type === 'contact') return;
+    const start = travelDetailPrimaryDate(entry);
+    const end = travelDetailEndDate(entry);
+    if (!start || !end) return;
+    const tz = travelDetailTimeZone(entry, snapshot.city.timezone);
+    lines.push('BEGIN:VEVENT');
+    lines.push(`UID:${escapeIcs(`travel-${snapshot.name}-${entry.type}-${index}`.replace(/[^a-z0-9-]+/gi, '-').toLowerCase())}@muslim-travel-planner.local`);
+    lines.push(`DTSTART;TZID=${escapeIcs(tz)}:${localDateTimeToIcs(start)}`);
+    lines.push(`DTEND;TZID=${escapeIcs(tz)}:${localDateTimeToIcs(end)}`);
+    lines.push(`SUMMARY:${escapeIcs(travelDetailTitle(entry))}`);
+    lines.push(`DESCRIPTION:${escapeIcs(travelDetailExportSummary(entry, labels[snapshot.language]))}`);
+    lines.push('END:VEVENT');
+  });
   lines.push('END:VCALENDAR');
   return lines.map(foldIcsLine).join('\r\n');
+}
+
+function localDateTimeToIcs(value: string) {
+  return `${value.replace(/[-:]/g, '')}00`;
+}
+
+function travelDetailTitle(entry: TravelDetailEntry) {
+  if (entry.type === 'flight') return [entry.flightNumber, `${entry.departureAirport} to ${entry.arrivalAirport}`].filter(Boolean).join(' - ');
+  if (entry.type === 'accommodation') return entry.propertyName;
+  if (entry.type === 'reservation') return entry.title;
+  return entry.name;
+}
+
+function travelDetailExportSummary(entry: TravelDetailEntry, copy: typeof labels[Language]) {
+  if (entry.type === 'flight') return [copy.travelDetailFlight, entry.airline, entry.flightNumber, `${entry.departureAirport} -> ${entry.arrivalAirport}`, `${entry.departureDateTime} - ${entry.arrivalDateTime}`, entry.notes].filter(Boolean).join(' · ');
+  if (entry.type === 'accommodation') return [copy.travelDetailAccommodation, entry.propertyName, `${entry.checkInDateTime} - ${entry.checkOutDateTime}`, entry.address, entry.phone, entry.notes].filter(Boolean).join(' · ');
+  if (entry.type === 'reservation') return [copy.travelDetailReservation, entry.title, entry.provider, entry.startDateTime, entry.endDateTime, entry.meetingPoint, entry.phone, entry.notes].filter(Boolean).join(' · ');
+  return [copy.travelDetailContact, entry.name, entry.role, entry.phone, entry.website, entry.notes].filter(Boolean).join(' · ');
 }
 
 export function canWebShare(navigatorLike: Pick<Navigator, 'share'> | undefined) {

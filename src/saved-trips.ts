@@ -1,6 +1,7 @@
 import { calculateQiblaBearing } from './qibla.js';
 import type { CityData, ItineraryItem, PlannerPreferences } from './models.js';
 import type { Language } from './i18n.js';
+import { duplicateTravelDetails, emptyTravelDetails, validateTravelDetailsSnapshot, type TravelDetailsSnapshot } from './travel-details.js';
 
 export const SAVED_TRIP_SCHEMA_VERSION = 1;
 export const SAVED_TRIPS_STORAGE_KEY = 'mtp-saved-trips-v1';
@@ -21,6 +22,7 @@ export type SavedTrip = {
     coordinates: { lat: number; lng: number };
   };
   itinerary: ItineraryItem[];
+  travelDetails: TravelDetailsSnapshot;
   dateRange: { startDate: string; endDate: string };
   essentials: {
     localCurrencies: Array<{ code: string; symbol: string; name: string }>;
@@ -82,6 +84,7 @@ export function createSavedTrip(input: {
   preferences: PlannerPreferences;
   city: CityData;
   itinerary: ItineraryItem[];
+  travelDetails?: TravelDetailsSnapshot;
   now?: string;
 }): SavedTrip {
   const now = input.now ?? new Date().toISOString();
@@ -101,6 +104,7 @@ export function createSavedTrip(input: {
       coordinates: { ...input.city.coordinates },
     },
     itinerary: stableItinerarySnapshot(input.itinerary),
+    travelDetails: validateTravelDetailsSnapshot(input.travelDetails ?? emptyTravelDetails()),
     dateRange: { startDate: input.preferences.startDate, endDate: input.preferences.endDate },
     essentials: {
       localCurrencies: input.city.money.localCurrencies.map((currency) => ({ code: currency.code, symbol: currency.symbol, name: currency.name })),
@@ -127,7 +131,7 @@ export function validateSavedTrip(value: unknown): SavedTrip | null {
   if (!isFiniteNumber(destination.coordinates.lat) || !isFiniteNumber(destination.coordinates.lng)) return null;
   if (!isString(value.dateRange.startDate) || !isString(value.dateRange.endDate)) return null;
   if (!Array.isArray(value.essentials.localCurrencies) || !isFiniteNumber(value.essentials.qiblaBearingFromCityCenter)) return null;
-  return value as SavedTrip;
+  return { ...(value as SavedTrip), travelDetails: validateTravelDetailsSnapshot(value.travelDetails) };
 }
 
 export function parseSavedTrips(raw: string | null) {
@@ -172,5 +176,5 @@ export class SavedTripRepository {
 }
 
 export function duplicateSavedTrip(trip: SavedTrip, now = new Date().toISOString()) {
-  return { ...cloneJson(trip), id: createSavedTripId(), name: sanitizeTripName(`${trip.name} copy`), createdAt: now, updatedAt: now, savedAt: now };
+  return { ...cloneJson(trip), id: createSavedTripId(), name: sanitizeTripName(`${trip.name} copy`), travelDetails: duplicateTravelDetails(validateTravelDetailsSnapshot(trip.travelDetails), now), createdAt: now, updatedAt: now, savedAt: now };
 }

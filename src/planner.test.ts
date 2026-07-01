@@ -8,6 +8,7 @@ import { createSavedTrip, defaultTripName, duplicateSavedTrip, parseSavedTrips, 
 import { serviceWorkerUrl } from './offline.js';
 import { buildReportText, canShareReport, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sourcePartsFromOsmUrl } from './place-report.js';
 import { buildIcsCalendar, buildItineraryText, canWebShare, escapeIcs, groupedItinerary, safeTripFilename } from './trip-share.js';
+import { deleteTravelDetail, emptyTravelDetails, isValidTimeZone, sortTravelDetails, upsertTravelDetail, validateTravelDetailInput } from './travel-details.js';
 import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace, optionalLatinDisplayName } from './prayer-spaces.js';
 import { safeExternalUrl } from './urls.js';
 import { RequestError, classifyHttpStatus, classifyRequestError, requestJson, retryAfterMs, retryOnceForTemporary } from './http.js';
@@ -272,6 +273,87 @@ test('saved-trip validation handles unsafe names, corrupted storage, unsupported
   const city = cities[0];
   const trip = createSavedTrip({ language: 'en', preferences: { ...prefs, city: city.city }, city, itinerary: generateItinerary({ ...prefs, city: city.city }) });
   assert.throws(() => repository.upsert(trip), /quota/);
+});
+
+test('travel details validate, sanitize, sort, and protect private booking references', () => {
+  const flight = validateTravelDetailInput({ type: 'flight', airline: ' Safar Air ', flightNumber: 'SF123', departureAirport: 'LHR', arrivalAirport: 'IST', departureDateTime: '2026-07-01T22:30', arrivalDateTime: '2026-07-02T04:20', departureTimeZone: 'Europe/London', arrivalTimeZone: 'Europe/Istanbul', bookingReference: 'SECRET-123', notes: ' Window\u0000 seat <b> ' }, 'Europe/London', '2026-06-01T00:00:00.000Z');
+  assert.equal(flight.ok, true);
+  assert.equal(flight.ok && flight.entry.notes?.includes('<'), false);
+  assert.equal(validateTravelDetailInput({ type: 'flight', departureAirport: '', arrivalAirport: 'IST', departureDateTime: '2026-07-01T10:00', arrivalDateTime: '2026-07-01T12:00' }).ok, false);
+  assert.equal(validateTravelDetailInput({ type: 'accommodation', propertyName: 'Hotel', checkInDateTime: '2026-07-03T15:00', checkOutDateTime: '2026-07-02T11:00' }).ok, false);
+  assert.equal(validateTravelDetailInput({ type: 'reservation', title: 'Museum', startDateTime: '2026-07-01T10:00', timeZone: 'Not/AZone' }).ok, false);
+  assert.equal(validateTravelDetailInput({ type: 'contact', name: 'Hotel desk', website: 'javascript:alert(1)' }).ok, false);
+  assert.equal(validateTravelDetailInput({ type: 'contact', name: 'Hotel desk', website: 'example.com' }).ok, true);
+  assert.equal(isValidTimeZone('Asia/Jerusalem'), true);
+  assert.equal(isValidTimeZone('Bad/Zone'), false);
+  const accommodation = validateTravelDetailInput({ type: 'accommodation', propertyName: 'City Hotel', checkInDateTime: '2026-07-03T15:00', checkOutDateTime: '2026-07-04T11:00' }, 'Europe/London');
+  const reservation = validateTravelDetailInput({ type: 'reservation', title: 'Dinner', startDateTime: '2026-07-02T19:00' }, 'Europe/London');
+  assert.equal(accommodation.ok && reservation.ok, true);
+  if (flight.ok && accommodation.ok && reservation.ok) {
+    const snapshot = upsertTravelDetail(upsertTravelDetail(upsertTravelDetail(emptyTravelDetails(), accommodation.entry), flight.entry), reservation.entry);
+    assert.deepEqual(sortTravelDetails(snapshot.entries).map((entry) => entry.type), ['flight', 'reservation', 'accommodation']);
+    assert.equal(deleteTravelDetail(snapshot, reservation.entry.id).entries.some((entry) => entry.id === reservation.entry.id), false);
+  }
+});
+
+test('saved trips migrate and duplicate travel details without regenerating itineraries', () => {
+  const city = cities.find((candidate) => candidate.city === 'London') ?? cities[0];
+  const itinerary = generateItinerary({ ...prefs, city: city.city });
+  const detail = validateTravelDetailInput({ type: 'reservation', title: 'Dinner', startDateTime: '2026-07-01T19:00', bookingReference: 'PRIVATE-REF' }, city.timezone);
+  assert.equal(detail.ok, true);
+  const travelDetails = detail.ok ? upsertTravelDetail(emptyTravelDetails(), detail.entry) : emptyTravelDetails();
+  const trip = createSavedTrip({ language: 'en', preferences: { ...prefs, city: city.city }, city, itinerary, travelDetails, now: '2026-07-01T10:00:00.000Z' });
+  assert.equal(trip.travelDetails.entries.length, 1);
+  const oldSnapshot = JSON.parse(JSON.stringify(trip));
+  delete oldSnapshot.travelDetails;
+  assert.equal(parseSavedTrips(JSON.stringify({ schemaVersion: 1, trips: [oldSnapshot] })).trips[0]?.travelDetails.entries.length, 0);
+  const duplicated = duplicateSavedTrip(trip, '2026-07-02T10:00:00.000Z');
+  assert.equal(duplicated.travelDetails.entries.length, 1);
+  assert.equal(duplicated.travelDetails.entries[0]?.id !== trip.travelDetails.entries[0]?.id, true);
+  assert.deepEqual(duplicated.itinerary, trip.itinerary);
+  assert.equal(JSON.stringify(trip).includes('weatherForecast'), false);
+});
+
+test('travel details are included in sharing and calendar export without private references', () => {
+  const city = cities.find((candidate) => candidate.city === 'London') ?? cities[0];
+  const preferences = { ...prefs, city: city.city, startDate: '2026-07-01', endDate: '2026-07-02' };
+  const itinerary = generateItinerary(preferences);
+  const flight = validateTravelDetailInput({ type: 'flight', airline: 'Safar Air', flightNumber: 'SF123', departureAirport: 'LHR', arrivalAirport: 'IST', departureDateTime: '2026-07-01T22:30', arrivalDateTime: '2026-07-02T04:20', departureTimeZone: 'Europe/London', arrivalTimeZone: 'Europe/Istanbul', bookingReference: 'SECRET-FLIGHT' }, city.timezone);
+  const contact = validateTravelDetailInput({ type: 'contact', name: 'Hotel desk', phone: '+44 20 0000 0000', website: 'https://example.com', notes: 'Ask about late arrival' }, city.timezone);
+  assert.equal(flight.ok && contact.ok, true);
+  const travelDetails = flight.ok && contact.ok ? upsertTravelDetail(upsertTravelDetail(emptyTravelDetails(), flight.entry), contact.entry) : emptyTravelDetails();
+  const snapshot = { name: 'London trip', city, preferences, itinerary, travelDetails, language: 'en' as const };
+  const text = buildItineraryText(snapshot);
+  assert.equal(text.includes(labels.en.travelDetails), true);
+  assert.equal(text.includes('SF123'), true);
+  assert.equal(text.includes('SECRET-FLIGHT'), false);
+  assert.equal(text.includes(labels.en.travelPrivateReferenceExport), true);
+  const ics = buildIcsCalendar(snapshot);
+  assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, itinerary.length + 1);
+  assert.equal(ics.includes('SECRET-FLIGHT'), false);
+  assert.equal(ics.includes('DTSTART;TZID=Europe/London:20260701T223000'), true);
+});
+
+test('travel details UI labels, print rules, and local handlers are wired', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const fs = await load('node:fs/promises');
+  const source = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const styles = await fs.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  for (const language of languages.map((item) => item.code)) {
+    assert.equal(labels[language].travelDetails.length > 0, true);
+    assert.equal(labels[language].travelPrivateReference.length > 0, true);
+    assert.equal(labels[language].travelSensitiveWarning.length > 0, true);
+  }
+  assert.equal(source.includes('function travelDetailsSectionMarkup'), true);
+  assert.equal(source.includes('bindTravelDetailsSection();'), true);
+  assert.equal(source.includes('saved-trip-inline-status'), true);
+  assert.equal(source.includes('validateTravelDetailInput(readTravelDetailInput'), true);
+  assert.equal(source.includes('void search') || source.includes('requestJson'), true);
+  assert.equal(source.includes('bookingReference') && source.includes('travelPrivateReference'), true);
+  assert.equal(styles.includes('.travel-detail-editor'), true);
+  assert.equal(styles.includes('.travel-detail-actions,'), true);
+  assert.equal(styles.includes('page-break-inside: avoid'), true);
+  assert.equal(languageDirection('ar'), 'rtl');
 });
 
 test('generates inclusive multi-day itineraries with dated unique items', () => {

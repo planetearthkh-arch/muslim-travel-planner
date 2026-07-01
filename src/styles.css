@@ -975,6 +975,39 @@ button:disabled {
 .badge.attraction-theme,
 .badge.attraction-other { background: #dbeafe; color: #1e3a8a; }
 
+.travel-details-section {
+  margin: 18px 0;
+}
+.travel-details-shell {
+  display: grid;
+  gap: 14px;
+}
+.travel-privacy-list {
+  margin: 0;
+  padding-inline-start: 22px;
+  color: var(--color-muted);
+}
+.travel-detail-type-chooser,
+.travel-detail-editor {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #f8fffb;
+  padding: 14px;
+}
+.travel-detail-list {
+  display: grid;
+  gap: 12px;
+}
+.travel-detail-card {
+  box-shadow: none;
+  background: white;
+  page-break-inside: avoid;
+  overflow-wrap: anywhere;
+}
+.travel-detail-actions {
+  margin-top: 8px;
+}
+
 @media (min-width: 800px) {
   .quick-actions { grid-column: 1 / -1; }
   .home-tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1009,8 +1042,11 @@ button:disabled {
   .hero,
   .quick-actions,
   .form,
-  .trip-actions,
-  .report-action,
+	  .trip-actions,
+	  .travel-detail-editor,
+	  .travel-detail-type-chooser,
+	  .travel-detail-actions,
+	  .report-action,
   .report-dialog-backdrop,
   .map-panel,
   .athan-actions,
