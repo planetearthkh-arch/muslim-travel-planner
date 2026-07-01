@@ -158,6 +158,8 @@ import {
 import type { ItineraryItem, PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 import { createSavedTrip, defaultTripName, duplicateSavedTrip, sanitizeTripName, SavedTripRepository, type SavedTrip } from './saved-trips.js';
 import { currentConnectionState, registerAppServiceWorker, type ConnectionState } from './offline.js';
+import { buildReportText, canShareReport, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sanitizeReportNote, type ReportReason, type ReportablePlace } from './place-report.js';
+import { buildIcsCalendar, buildItineraryText, canWebShare, safeTripFilename, type TripExportSnapshot } from './trip-share.js';
 
 (window as unknown as { maplibregl?: typeof maplibregl }).maplibregl = maplibregl;
 
@@ -211,6 +213,8 @@ let savedTrips: SavedTrip[] = [];
 let savedTripsCorrupted = false;
 let savedTripStatus: 'idle' | 'saved' | 'unsaved' | 'failed' | 'deleted' = 'idle';
 let savedTripMessage = '';
+let reportStatus = '';
+let tripShareStatus = '';
 let connectionState: ConnectionState = currentConnectionState();
 let connectionNotice: ConnectionState | 'hidden' = connectionState === 'offline' ? 'offline' : 'hidden';
 let connectionNoticeTimer: number | undefined;
@@ -301,6 +305,118 @@ const stripInternalPlannerText = (value: string) => value
   .replace(/\bprototype\b/gi, 'planner')
   .replace(/Verified in this mock dataset for prototype status-label testing only;?\s*/gi, '')
   .replace(/Sample facility details;?\s*/gi, 'Facility information may be incomplete; ');
+
+function reportReasonLabel(reason: ReportReason, copy: typeof labels[Language]) {
+  return ({
+    'wrong-name': copy.reportWrongName,
+    'wrong-location': copy.reportWrongLocation,
+    closed: copy.reportClosed,
+    'wrong-category': copy.reportWrongCategory,
+    hours: copy.reportHours,
+    contact: copy.reportContact,
+    accessibility: copy.reportAccessibility,
+    halal: copy.reportHalal,
+    other: copy.reportOther,
+  })[reason];
+}
+
+function reportActionMarkup(place: ReportablePlace, includeHalal = false) {
+  const payload = encodeURIComponent(JSON.stringify(place));
+  return `<button type="button" class="ghost report-action" data-report-place="${payload}" data-report-halal="${includeHalal ? 'true' : 'false'}">${labels[lang].reportProblem}</button>`;
+}
+
+function openReportDialog(place: ReportablePlace, includeHalal = false, trigger?: HTMLElement) {
+  reportStatus = '';
+  document.querySelector('.report-dialog-backdrop')?.remove();
+  const copy = labels[lang];
+  const reasons = reportReasons.filter((reason) => includeHalal || reason !== 'halal');
+  const backdrop = document.createElement('div');
+  backdrop.className = 'report-dialog-backdrop';
+  backdrop.innerHTML = `<div class="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title" aria-describedby="report-description" dir="${languageDirection(lang)}">
+    <div class="card-top"><h2 id="report-title">${copy.reportProblem}</h2><button type="button" class="ghost" data-report-close>${copy.reportClose}</button></div>
+    <p id="report-description">${esc(place.name)} · ${esc(place.feature)}</p>
+    <label>${copy.reportWhatWrong}<select id="report-reason">${reasons.map((reason) => `<option value="${reason}">${reportReasonLabel(reason, copy)}</option>`).join('')}</select></label>
+    <label>${copy.reportOptionalNote}<textarea id="report-note" maxlength="500"></textarea></label>
+    <p class="muted">${copy.reportOsmAccount} ${copy.reportGithubAccount} ${copy.reportExternalNotice}</p>
+    <div class="toolbar report-actions">
+      <a class="map-link" data-report-source target="_blank" rel="noopener noreferrer">${copy.reportOpenSource}</a>
+      <a class="map-link" data-report-osm target="_blank" rel="noopener noreferrer">${copy.reportOsm}</a>
+      <a class="map-link" data-report-github target="_blank" rel="noopener noreferrer">${copy.reportAppProblem}</a>
+      <button type="button" class="ghost" data-report-copy>${copy.reportCopy}</button>
+      <button type="button" class="ghost" data-report-share>${copy.reportShare}</button>
+    </div>
+    <p class="status" data-report-status role="status" aria-live="polite"></p>
+  </div>`;
+  document.body.append(backdrop);
+  const reasonInput = backdrop.querySelector<HTMLSelectElement>('#report-reason');
+  const noteInput = backdrop.querySelector<HTMLTextAreaElement>('#report-note');
+  const status = backdrop.querySelector<HTMLElement>('[data-report-status]');
+  const close = () => {
+    backdrop.remove();
+    trigger?.focus();
+  };
+  const currentReport = () => createPlaceReport(place, (reasonInput?.value as ReportReason) || 'other', sanitizeReportNote(noteInput?.value ?? ''), lang);
+  const refreshLinks = () => {
+    const report = currentReport();
+    const source = backdrop.querySelector<HTMLAnchorElement>('[data-report-source]');
+    const osm = backdrop.querySelector<HTMLAnchorElement>('[data-report-osm]');
+    const github = backdrop.querySelector<HTMLAnchorElement>('[data-report-github]');
+    const osmUrl = osmReportUrl(place);
+    const sourceUrl = createPlaceReport(place, report.reason, report.note, lang).sourceUrl;
+    if (source) {
+      source.href = sourceUrl || '#';
+      source.hidden = !sourceUrl;
+      source.textContent = copy.reportOpenSource;
+    }
+    if (osm) {
+      osm.href = osmUrl || '#';
+      osm.hidden = !osmUrl;
+      osm.textContent = copy.reportOsm;
+    }
+    if (github) github.href = githubIssueUrl(report);
+  };
+  refreshLinks();
+  reasonInput?.addEventListener('change', refreshLinks);
+  noteInput?.addEventListener('input', refreshLinks);
+  backdrop.querySelectorAll<HTMLElement>('[data-report-close]').forEach((button) => button.addEventListener('click', close));
+  backdrop.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
+  backdrop.querySelector<HTMLButtonElement>('[data-report-copy]')?.addEventListener('click', async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(buildReportText(currentReport()));
+      reportStatus = copy.reportCopied;
+    } catch {
+      reportStatus = copy.reportCopyFailed;
+    }
+    if (status) status.textContent = reportStatus;
+  });
+  backdrop.querySelector<HTMLButtonElement>('[data-report-share]')?.addEventListener('click', async () => {
+    if (!canShareReport(navigator)) {
+      if (status) status.textContent = copy.sharingUnavailable;
+      return;
+    }
+    try {
+      const report = currentReport();
+      await navigator.share({ title: `${copy.reportProblem}: ${report.name}`, text: buildReportText(report) });
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError' && status) status.textContent = copy.unableToShare;
+    }
+  });
+  backdrop.querySelector<HTMLElement>('#report-reason')?.focus();
+}
+
+function bindReportButtons() {
+  document.querySelectorAll<HTMLButtonElement>('[data-report-place]').forEach((button) => {
+    button.addEventListener('click', () => {
+      try {
+        const place = JSON.parse(decodeURIComponent(button.dataset.reportPlace ?? '')) as ReportablePlace;
+        openReportDialog(place, button.dataset.reportHalal === 'true', button);
+      } catch {
+        reportStatus = labels[lang].reportCopyFailed;
+      }
+    });
+  });
+}
 
 function loadSavedTripsFromStorage() {
   try {
@@ -1115,6 +1231,7 @@ function prayerResultCard(place: PrayerPlace, copy: typeof labels[Language]) {
   const missing = (value: string) => value || copy.prayerUnknown;
   const displayName = ensureLatinDisplayName(getEnglishPlaceName(place), place.type);
   const openLabel = openingStatusLabel(openingState(place.openingHours, prayerCenter?.timezone), copy);
+  const reportPlace: ReportablePlace = { feature: copy.prayerSpacesTitle, name: displayName, sourceUrl: place.sourceUrl, latitude: place.latitude, longitude: place.longitude, city: selectedCity().city, country: selectedCity().country };
   return `<article class="card prayer-place-card" aria-label="${esc(displayName)}">
     <div class="card-top"><span>${place.distanceKm.toFixed(1)} km · ${prayerTypeLabel(place.type, copy)}</span><span class="badge ${place.verification === 'Verified' ? 'verified' : 'unverified'}">${verified(place.verification)}</span></div>
     <h3>${esc(displayName)}</h3>
@@ -1132,6 +1249,7 @@ function prayerResultCard(place: PrayerPlace, copy: typeof labels[Language]) {
       <a class="map-link" href="${place.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
       <a class="map-link" href="${appleMapsUrl(place)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
       <a class="map-link" href="${browserDirectionsUrl(place)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+      ${reportActionMarkup(reportPlace)}
     </div>
   </article>`;
 }
@@ -1187,6 +1305,7 @@ function prayerPage() {
 }
 
 function bindPrayerPage() {
+  bindReportButtons();
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; prayerPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-prayer')?.addEventListener('click', () => { view = 'planner'; prayerMap?.remove(); prayerMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-prayer-location')?.addEventListener('click', requestPrayerLocation);
@@ -1427,6 +1546,7 @@ function restaurantDetails(place: HalalRestaurant, copy: typeof labels[Language]
 function restaurantCard(restaurant: HalalRestaurant, copy: typeof labels[Language]) {
   const openLabel = openingStatusLabel(restaurant.openState, copy);
   const notice = restaurant.halalStatus === 'certification-listed' ? `${copy.halalCertificationNotice}: ${esc(restaurant.certification)}` : restaurant.halalStatus === 'legacy-halal' ? copy.halalLegacyNotice : restaurant.halalStatus === 'possible-unverified' ? copy.halalPossibleNotice : '';
+  const reportPlace: ReportablePlace = { feature: copy.halalRestaurantsTitle, name: restaurant.name, sourceUrl: restaurant.sourceUrl, latitude: restaurant.latitude, longitude: restaurant.longitude, city: selectedCity().city, country: selectedCity().country };
   return `<article class="card restaurant-card ${selectedRestaurantId === restaurant.id ? 'selected' : ''}" aria-label="${esc(restaurant.name)}">
     <div class="card-top"><span>${restaurant.distanceKm.toFixed(1)} km · ${foodTypeLabel(restaurant.type, copy)}</span><span class="badge halal-${restaurant.halalStatus}">${halalStatusLabel(restaurant.halalStatus, copy)}</span></div>
     <h3>${esc(restaurant.name)}</h3>
@@ -1438,8 +1558,8 @@ function restaurantCard(restaurant: HalalRestaurant, copy: typeof labels[Languag
       <a class="map-link" href="${restaurantAppleMapsUrl(restaurant)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
       <a class="map-link" href="${restaurantBrowserDirectionsUrl(restaurant)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
       <button type="button" class="ghost" data-copy-restaurant="${restaurant.id}">${copy.halalCopyDetails}</button>
+      ${reportActionMarkup(reportPlace, true)}
     </div>
-    <p><a class="map-link" href="${restaurant.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.halalInfoIssue}</a></p>
   </article>`;
 }
 
@@ -1506,6 +1626,7 @@ function halalRestaurantsPage() {
 }
 
 function bindHalalRestaurantsPage() {
+  bindReportButtons();
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; halalRestaurantsPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-halal')?.addEventListener('click', () => { view = 'planner'; restaurantMap?.remove(); restaurantMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-halal-location')?.addEventListener('click', requestRestaurantLocation);
@@ -1751,6 +1872,7 @@ function toiletDetails(toilet: PublicToilet, copy: typeof labels[Language]) {
 
 function toiletCard(toilet: PublicToilet, copy: typeof labels[Language]) {
   const openLabel = openingStatusLabel(toilet.openState, copy);
+  const reportPlace: ReportablePlace = { feature: copy.toiletsTitle, name: toilet.name, sourceUrl: toilet.sourceUrl, latitude: toilet.latitude, longitude: toilet.longitude, city: selectedCity().city, country: selectedCity().country };
   return `<article class="card toilet-card" aria-label="${esc(toilet.name)}">
     <div class="card-top"><span>${toilet.distanceKm.toFixed(1)} km · ${toiletKindLabel(toilet, copy)}</span><span class="badge toilet-${toilet.access}">${toiletAccessLabel(toilet.access, copy)}</span></div>
     <h3>${esc(toilet.name)}</h3>
@@ -1761,6 +1883,7 @@ function toiletCard(toilet: PublicToilet, copy: typeof labels[Language]) {
       <a class="map-link" href="${toilet.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
       <a class="map-link" href="${toiletAppleMapsUrl(toilet)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
       <a class="map-link" href="${toiletBrowserDirectionsUrl(toilet)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+      ${reportActionMarkup(reportPlace)}
     </div>
   </article>`;
 }
@@ -1827,6 +1950,7 @@ function publicToiletsPage() {
 }
 
 function bindPublicToiletsPage() {
+  bindReportButtons();
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; publicToiletsPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-toilets')?.addEventListener('click', () => { view = 'planner'; toiletMap?.remove(); toiletMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-toilet-location')?.addEventListener('click', requestToiletLocation);
@@ -2048,6 +2172,7 @@ function carRentalDetails(office: CarRentalOffice, copy: typeof labels[Language]
 
 function carRentalCard(office: CarRentalOffice, copy: typeof labels[Language]) {
   const openLabel = openingStatusLabel(office.openState, copy);
+  const reportPlace: ReportablePlace = { feature: copy.carRentalTitle, name: office.name, sourceUrl: office.sourceUrl, latitude: office.latitude, longitude: office.longitude, city: selectedCity().city, country: selectedCity().country };
   return `<article class="card car-rental-card" aria-label="${esc(office.name)}">
     <div class="card-top"><span>${office.distanceKm.toFixed(1)} km · ${carRentalTypeLabel(office.locationType, copy)}</span><span class="badge car-${office.locationType}">${office.locationType === 'airport' ? 'AIR' : 'CAR'} ${carRentalTypeLabel(office.locationType, copy)}</span></div>
     <h3>${esc(office.name)}</h3>
@@ -2059,6 +2184,7 @@ function carRentalCard(office: CarRentalOffice, copy: typeof labels[Language]) {
       <a class="map-link" href="${carRentalBrowserDirectionsUrl(office)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
       ${office.website ? `<a class="map-link" href="${esc(office.website)}" target="_blank" rel="noopener noreferrer">${copy.carRentalOpenOfficialWebsite}</a>` : ''}
       ${office.phone ? `<a class="map-link" href="tel:${esc(office.phone)}">${copy.carRentalCallOffice}</a>` : ''}
+      ${reportActionMarkup(reportPlace)}
     </div>
   </article>`;
 }
@@ -2135,6 +2261,7 @@ function carRentalPage() {
 }
 
 function bindCarRentalPage() {
+  bindReportButtons();
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; carRentalPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-car-rental')?.addEventListener('click', () => { view = 'planner'; carRentalMap?.remove(); carRentalMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-car-rental-location')?.addEventListener('click', requestCarRentalLocation);
@@ -2355,6 +2482,7 @@ function publicTransportDetails(stop: PublicTransportStop, copy: typeof labels[L
 }
 
 function publicTransportCard(stop: PublicTransportStop, copy: typeof labels[Language]) {
+  const reportPlace: ReportablePlace = { feature: copy.publicTransportTitle, name: stop.name, sourceUrl: stop.sourceUrl, latitude: stop.latitude, longitude: stop.longitude, city: selectedCity().city, country: selectedCity().country };
   return `<article class="card public-transport-card" aria-label="${esc(stop.name)}">
     <div class="card-top"><span>${stop.distanceKm.toFixed(1)} km · ${publicTransportTypeLabel(stop.type, copy)}</span><span class="badge transport-${stop.type}">${publicTransportTypeLabel(stop.type, copy)}</span></div>
     <h3>${esc(stop.name)}</h3>
@@ -2366,6 +2494,7 @@ function publicTransportCard(stop: PublicTransportStop, copy: typeof labels[Lang
       <a class="map-link" href="${publicTransportAppleMapsUrl(stop)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
       <a class="map-link" href="${publicTransportBrowserDirectionsUrl(stop)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
       ${stop.website ? `<a class="map-link" href="${esc(stop.website)}" target="_blank" rel="noopener noreferrer">${copy.transportOfficialWebsite}</a>` : ''}
+      ${reportActionMarkup(reportPlace)}
     </div>
   </article>`;
 }
@@ -2439,6 +2568,7 @@ function publicTransportPage() {
 }
 
 function bindPublicTransportPage() {
+  bindReportButtons();
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; publicTransportPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-public-transport')?.addEventListener('click', () => { view = 'planner'; publicTransportMap?.remove(); publicTransportMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-public-transport-location')?.addEventListener('click', requestPublicTransportLocation);
@@ -2650,6 +2780,7 @@ function taxiDetails(item: TaxiService, copy: typeof labels[Language]) {
 }
 
 function taxiCard(item: TaxiService, copy: typeof labels[Language]) {
+  const reportPlace: ReportablePlace = { feature: copy.taxiTitle, name: item.name, sourceUrl: item.sourceUrl, latitude: item.latitude, longitude: item.longitude, city: selectedCity().city, country: selectedCity().country };
   return `<article class="card taxi-card" aria-label="${esc(item.name)}">
     <div class="card-top"><span>${item.distanceKm.toFixed(1)} km · ${taxiTypeLabel(item.type, copy)}</span><span class="badge taxi-${item.type}">${taxiTypeLabel(item.type, copy)}</span></div>
     <h3>${esc(item.name)}</h3>
@@ -2662,6 +2793,7 @@ function taxiCard(item: TaxiService, copy: typeof labels[Language]) {
       <a class="map-link" href="${taxiBrowserDirectionsUrl(item)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
       ${item.website ? `<a class="map-link" href="${esc(item.website)}" target="_blank" rel="noopener noreferrer">${copy.transportOfficialWebsite}</a>` : ''}
       ${item.callHref ? `<a class="map-link" href="${esc(item.callHref)}">${copy.taxiCall}</a>` : ''}
+      ${reportActionMarkup(reportPlace)}
     </div>
   </article>`;
 }
@@ -2700,6 +2832,7 @@ function taxiPage() {
 }
 
 function bindTaxiPage() {
+  bindReportButtons();
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; taxiPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-taxi')?.addEventListener('click', () => { view = 'planner'; taxiMap?.remove(); taxiMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-taxi-location')?.addEventListener('click', requestTaxiLocation);
@@ -3444,6 +3577,7 @@ function attractionDetailsRows(attraction: Attraction, copy: typeof labels[Langu
 }
 
 function attractionCard(attraction: Attraction, copy: typeof labels[Language]) {
+  const reportPlace: ReportablePlace = { feature: copy.attractionsTitle, name: attraction.name, sourceUrl: attraction.sourceUrl, latitude: attraction.latitude, longitude: attraction.longitude, city: selectedCity().city, country: selectedCity().country };
   return `<article class="card attraction-card" aria-label="${esc(attraction.name)}">
     ${attractionPhoto(attraction, copy)}
     <div class="card-top"><span>${attraction.distanceKm.toFixed(1)} km</span><span class="badge attraction-${attraction.category}">${attractionCategoryLabel(attraction.category, copy)}</span></div>
@@ -3457,6 +3591,7 @@ function attractionCard(attraction: Attraction, copy: typeof labels[Language]) {
       <a class="map-link" href="${attraction.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
       <a class="map-link" href="${attractionAppleMapsUrl(attraction)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
       <a class="map-link" href="${attractionBrowserDirectionsUrl(attraction)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+      ${reportActionMarkup(reportPlace)}
     </div>
   </article>`;
 }
@@ -3508,6 +3643,7 @@ function attractionsPage() {
 }
 
 function bindAttractionsPage() {
+  bindReportButtons();
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; attractionsPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-attractions')?.addEventListener('click', () => { view = 'planner'; attractionAbortController?.abort(); attractionEnrichmentAbortController?.abort(); attractionsMap?.remove(); attractionsMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-attraction-location')?.addEventListener('click', requestAttractionLocation);
@@ -3617,6 +3753,9 @@ function savedTripCard(trip: SavedTrip, copy: typeof labels[Language]) {
     <p>${copy.savedLocally}. ${copy.noCloudSync}.</p>
     <div class="toolbar">
       <button type="button" data-open-trip="${esc(trip.id)}">${copy.reopenTrip}</button>
+      <button type="button" class="ghost" data-share-trip="${esc(trip.id)}">${copy.shareTrip}</button>
+      <button type="button" class="ghost" data-copy-trip="${esc(trip.id)}">${copy.copyItinerary}</button>
+      <button type="button" class="ghost" data-export-trip="${esc(trip.id)}">${copy.exportCalendar}</button>
       <button type="button" class="ghost" data-rename-trip="${esc(trip.id)}">${copy.renameTrip}</button>
       <button type="button" class="ghost" data-duplicate-trip="${esc(trip.id)}">${copy.duplicateTrip}</button>
       <button type="button" class="ghost" data-delete-trip="${esc(trip.id)}">${copy.deleteTrip}</button>
@@ -3642,6 +3781,7 @@ function savedTripsPage() {
     </section>
     <section class="panel results" aria-live="polite">
       ${savedTripsCorrupted ? `<p class="error">${copy.storageRecovered}</p>` : ''}
+      <p class="status" id="trip-share-status" role="status" aria-live="polite">${esc(tripShareStatus)}</p>
       ${savedTrips.length ? savedTrips.map((trip) => savedTripCard(trip, copy)).join('') : `<p class="notice">${copy.savedTripsEmpty}</p>`}
     </section>
   </main>`;
@@ -3722,10 +3862,88 @@ function tripHeaderMarkup(city: (typeof cities)[number], planPrefs: PlannerPrefe
     <div class="trip-actions">
       <label>${copy.tripName}<input id="trip-name" value="${esc(name)}" maxlength="80" /></label>
       <button type="button" id="save-trip">${openedSavedTripId ? copy.saveChanges : copy.saveTrip}</button>
+      <button type="button" class="ghost" id="share-trip">${copy.shareTrip}</button>
+      <button type="button" class="ghost" id="copy-itinerary">${copy.copyItinerary}</button>
+      <button type="button" class="ghost" id="export-calendar">${copy.exportCalendar}</button>
       <button type="button" class="ghost" id="edit-plan">${copy.editPlan}</button>
       <button type="button" class="ghost" id="print-itinerary">${copy.printItinerary}</button>
     </div>
-  </div>${items.length ? '' : `<p>${copy.emptyState}</p>`}`;
+  </div><p class="status" id="trip-share-status" role="status" aria-live="polite">${esc(tripShareStatus)}</p>${items.length ? '' : `<p>${copy.emptyState}</p>`}`;
+}
+
+function snapshotFromSavedTrip(trip: SavedTrip): TripExportSnapshot {
+  return {
+    name: trip.name,
+    city: {
+      city: trip.destination.city,
+      country: trip.destination.country,
+      timezone: trip.destination.timezone,
+      money: { localCurrencies: trip.essentials.localCurrencies, note: '' },
+    },
+    preferences: trip.preferences,
+    itinerary: trip.itinerary,
+    language: lang,
+  };
+}
+
+function currentTripSnapshot(): TripExportSnapshot | null {
+  if (!generatedPrefs || !generatedItems.length) return null;
+  const city = cityForPreferences(generatedPrefs);
+  if (!city) return null;
+  return {
+    name: sanitizeTripName(savedTripNameDraft || defaultTripName(city, generatedPrefs.startDate, generatedPrefs.endDate)),
+    city,
+    preferences: generatedPrefs,
+    itinerary: generatedItems,
+    language: lang,
+  };
+}
+
+function setTripShareStatus(message: string) {
+  tripShareStatus = message;
+  const element = document.querySelector<HTMLElement>('#trip-share-status');
+  if (element) element.textContent = message;
+}
+
+async function copyTripItinerary(snapshot: TripExportSnapshot) {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(buildItineraryText(snapshot));
+    setTripShareStatus(labels[lang].itineraryCopied);
+  } catch {
+    setTripShareStatus(labels[lang].reportCopyFailed);
+  }
+}
+
+async function shareTrip(snapshot: TripExportSnapshot) {
+  if (!canWebShare(navigator)) {
+    setTripShareStatus(labels[lang].sharingUnavailable);
+    return;
+  }
+  try {
+    await navigator.share({ title: snapshot.name, text: buildItineraryText(snapshot) });
+  } catch (error) {
+    setTripShareStatus((error as Error).name === 'AbortError' ? labels[lang].shareCancelled : labels[lang].unableToShare);
+  }
+}
+
+function exportTripCalendar(snapshot: TripExportSnapshot) {
+  const blob = new Blob([buildIcsCalendar(snapshot)], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = safeTripFilename(snapshot.name);
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  setTripShareStatus(labels[lang].calendarDownloaded);
+}
+
+function bindTripExportButtons() {
+  document.querySelector<HTMLButtonElement>('#share-trip')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) void shareTrip(snapshot); });
+  document.querySelector<HTMLButtonElement>('#copy-itinerary')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) void copyTripItinerary(snapshot); });
+  document.querySelector<HTMLButtonElement>('#export-calendar')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) exportTripCalendar(snapshot); });
 }
 
 function readPlannerDraftFromForm() {
@@ -4049,6 +4267,18 @@ function bindSavedTripsPage() {
     const trip = savedTrips.find((candidate) => candidate.id === button.dataset.openTrip);
     if (trip) openSavedTrip(trip);
   }));
+  document.querySelectorAll<HTMLButtonElement>('[data-share-trip]').forEach((button) => button.addEventListener('click', () => {
+    const trip = savedTrips.find((candidate) => candidate.id === button.dataset.shareTrip);
+    if (trip) void shareTrip(snapshotFromSavedTrip(trip));
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-copy-trip]').forEach((button) => button.addEventListener('click', () => {
+    const trip = savedTrips.find((candidate) => candidate.id === button.dataset.copyTrip);
+    if (trip) void copyTripItinerary(snapshotFromSavedTrip(trip));
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-export-trip]').forEach((button) => button.addEventListener('click', () => {
+    const trip = savedTrips.find((candidate) => candidate.id === button.dataset.exportTrip);
+    if (trip) exportTripCalendar(snapshotFromSavedTrip(trip));
+  }));
   document.querySelectorAll<HTMLButtonElement>('[data-rename-trip]').forEach((button) => button.addEventListener('click', () => {
     const trip = savedTrips.find((candidate) => candidate.id === button.dataset.renameTrip);
     if (!trip) return;
@@ -4336,6 +4566,7 @@ function bind() {
     render();
   }));
   document.querySelector<HTMLButtonElement>('#stop-athan')?.addEventListener('click', () => void stopAthan());
+  bindTripExportButtons();
   document.querySelector<HTMLButtonElement>('#toggle-map-size')?.addEventListener('click', () => {
     const panel = document.querySelector<HTMLElement>('.map-panel');
     if (!panel) return;

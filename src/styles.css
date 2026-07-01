@@ -210,6 +210,41 @@ button {
   align-items: end;
   flex-wrap: wrap;
 }
+.report-action {
+  background: #f8fcfa;
+  color: var(--color-emerald-deep);
+}
+.report-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: #062f2a80;
+}
+.report-dialog {
+  width: min(620px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+  color: var(--color-text);
+  box-shadow: 0 24px 80px #05231f40;
+}
+.report-dialog textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.report-actions {
+  align-items: stretch;
+}
+.report-actions > * {
+  min-height: 44px;
+}
 .trip-actions label { min-width: min(100%, 260px); flex: 1; }
 .itinerary-card { overflow-wrap: anywhere; }
 .saved-trip-card h3 { overflow-wrap: anywhere; }
@@ -975,6 +1010,8 @@ button:disabled {
   .quick-actions,
   .form,
   .trip-actions,
+  .report-action,
+  .report-dialog-backdrop,
   .map-panel,
   .athan-actions,
   button,

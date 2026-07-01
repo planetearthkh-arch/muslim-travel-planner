@@ -6,6 +6,8 @@ import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
 import { createSavedTrip, defaultTripName, duplicateSavedTrip, parseSavedTrips, sanitizeTripName, SavedTripRepository } from './saved-trips.js';
 import { serviceWorkerUrl } from './offline.js';
+import { buildReportText, canShareReport, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sourcePartsFromOsmUrl } from './place-report.js';
+import { buildIcsCalendar, buildItineraryText, canWebShare, escapeIcs, groupedItinerary, safeTripFilename } from './trip-share.js';
 import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace, optionalLatinDisplayName } from './prayer-spaces.js';
 import { safeExternalUrl } from './urls.js';
 import { RequestError, classifyHttpStatus, classifyRequestError, requestJson, retryAfterMs, retryOnceForTemporary } from './http.js';
@@ -603,6 +605,97 @@ test('home group labels are translated for English, Arabic, and Indonesian', () 
   assert.equal(labels.id.homeTripsGroup.length > 0, true);
   assert.equal(labels.id.homeEssentialsGroup.length > 0, true);
   assert.equal(labels.id.homeTravelToolsGroup.length > 0, true);
+});
+
+test('place reporting builds safe honest report destinations and text', () => {
+  const place = { feature: 'Halal Restaurants', name: 'Central Grill', sourceUrl: 'https://www.openstreetmap.org/node/123', latitude: 51.5, longitude: -0.1, city: 'London', country: 'United Kingdom' };
+  const report = createPlaceReport(place, 'halal', ' <b>wrong\u0000halal</b> '.repeat(20), 'en', '2026-07-01T10:00:00.000Z');
+  assert.equal(sourcePartsFromOsmUrl(place.sourceUrl).sourceType, 'node');
+  assert.equal(report.sourceId, '123');
+  assert.equal(report.note.includes('<'), false);
+  assert.equal(report.note.length <= 500, true);
+  const text = buildReportText(report);
+  assert.equal(text.includes('Feature: Halal Restaurants'), true);
+  assert.equal(text.includes('Source object: node/123'), true);
+  assert.equal(text.includes('Mapped coordinates: 51.5, -0.1'), true);
+  assert.equal(text.includes('cache'), false);
+  assert.equal(text.includes('payload'), false);
+  assert.equal(osmReportUrl(place), place.sourceUrl);
+  assert.equal(osmReportUrl({ feature: 'Attractions', name: 'No ID', latitude: 1, longitude: 2 }), 'https://www.openstreetmap.org/note/new#map=17/1/2');
+  assert.equal(osmReportUrl({ feature: 'Attractions', name: 'Unsafe', sourceUrl: 'javascript:alert(1)' }), '');
+  const issueUrl = githubIssueUrl(report);
+  assert.equal(issueUrl.startsWith('https://github.com/planetearthkh-arch/muslim-travel-planner/issues/new?'), true);
+  assert.equal(new URL(issueUrl).searchParams.get('body')?.includes('Opening this issue page does not submit automatically'), true);
+  assert.equal(canShareReport({ share: async () => undefined } as Navigator), true);
+});
+
+test('reporting labels and mapped-place source hooks cover only place features', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  for (const language of languages.map((item) => item.code)) {
+    assert.equal(labels[language].reportProblem.length > 0, true);
+    assert.equal(labels[language].reportWrongName.length > 0, true);
+    assert.equal(labels[language].reportOsm.length > 0, true);
+    assert.equal(labels[language].reportGithubAccount.length > 0, true);
+    assert.equal(labels[language].reportExternalNotice.length > 0, true);
+  }
+  assert.equal(reportReasons.includes('halal'), true);
+  assert.equal(source.includes("reportReasons.filter((reason) => includeHalal || reason !== 'halal')"), true);
+  assert.equal((source.match(/reportActionMarkup\(reportPlace/g) ?? []).length, 7);
+  assert.equal(source.includes('weatherPage()') && !source.includes('weatherReport'), true);
+  assert.equal(source.includes('moneyPage()') && !source.includes('moneyReport'), true);
+  assert.equal(source.includes('qiblaPage()') && !source.includes('qiblaReport'), true);
+  assert.equal(source.includes('openReportDialog(place'), true);
+  assert.equal(source.includes('data-report-source'), true);
+  assert.equal(source.includes("if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');"), true);
+  assert.equal(source.includes('navigator.clipboard.writeText(buildReportText(currentReport()))'), true);
+  assert.equal(source.includes('trigger?.focus()'), true);
+});
+
+test('trip sharing builds clean plain text, safe filenames, and ICS calendar exports', () => {
+  const city = cities.find((candidate) => candidate.city === 'London') ?? cities[0];
+  const preferences = { ...prefs, city: city.city, startDate: '2026-07-01', endDate: '2026-07-02' };
+  const itinerary = generateItinerary(preferences);
+  const snapshot = { name: 'London family trip', city, preferences, itinerary, language: 'en' as const };
+  const text = buildItineraryText(snapshot);
+  assert.equal(text.includes('London, United Kingdom'), true);
+  assert.equal(text.includes(labels.en.shareLiveInfoWarning), true);
+  assert.equal(text.includes('{'), false);
+  assert.equal(text.includes('cache'), false);
+  assert.equal(groupedItinerary(itinerary).length, 2);
+  assert.equal(text.includes('Dhuhr'), true);
+  const ics = buildIcsCalendar(snapshot);
+  assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, itinerary.length);
+  assert.equal(ics.includes(`TZID=${city.timezone}`), true);
+  assert.equal(ics.includes('UID:'), true);
+  assert.equal(escapeIcs('a,b;c\\d\ne'), 'a\\,b\\;c\\\\d\\ne');
+  assert.equal(safeTripFilename('London: Family/Trip?'), 'London-Family-Trip.ics');
+  assert.equal(canWebShare({ share: async () => undefined } as Navigator), true);
+});
+
+test('trip sharing UI preserves saved snapshots and print-safe controls', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const fs = await load('node:fs/promises');
+  const source = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const styles = await fs.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  assert.equal(labels.en.printItinerary, 'Print / Save PDF');
+  for (const language of languages.map((item) => item.code)) {
+    assert.equal(labels[language].shareTrip.length > 0, true);
+    assert.equal(labels[language].copyItinerary.length > 0, true);
+    assert.equal(labels[language].exportCalendar.length > 0, true);
+    assert.equal(labels[language].shareLiveInfoWarning.length > 0, true);
+  }
+  assert.equal(source.includes('function snapshotFromSavedTrip(trip: SavedTrip): TripExportSnapshot'), true);
+  assert.equal(source.includes('itinerary: trip.itinerary'), true);
+  assert.equal(source.includes('generateItinerary') && !source.includes('function snapshotFromSavedTrip(trip: SavedTrip): TripExportSnapshot {\\n  return generateItinerary'), true);
+  assert.equal(source.includes('id="share-trip"'), true);
+  assert.equal(source.includes('id="copy-itinerary"'), true);
+  assert.equal(source.includes('id="export-calendar"'), true);
+  assert.equal(source.includes('data-share-trip'), true);
+  assert.equal(styles.includes('.report-action'), true);
+  assert.equal(styles.includes('.report-dialog-backdrop'), true);
+  assert.equal(styles.includes('.report-action,'), true);
+  assert.equal(styles.includes('.map-panel,'), true);
 });
 
 test('provides natural Indonesian interface labels without translating place names', () => {
