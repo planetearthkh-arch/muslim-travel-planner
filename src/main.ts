@@ -371,6 +371,38 @@ function plannerFacilityStatus(status: VerificationStatus, copy: typeof labels[L
   return copy.facilityEstimatedInfo;
 }
 
+function homeIcon(name: string) {
+  const common = 'class="home-card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"';
+  const paths: Record<string, string> = {
+    saved: '<path d="M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2z"/><path d="M9 8h6"/>',
+    qibla: '<circle cx="12" cy="12" r="8"/><path d="m15.5 8.5-2.2 5.1-4.8 1.9 2.2-5.1 4.8-1.9z"/>',
+    prayer: '<path d="M4 19h16"/><path d="M6 19V10l6-5 6 5v9"/><path d="M9 19v-5a3 3 0 0 1 6 0v5"/><path d="M12 5V3"/>',
+    halal: '<circle cx="12" cy="12" r="7"/><path d="M8 13c1.5 2 5.5 2 7-2"/><path d="M8 8v4"/><path d="M16 8v4"/>',
+    money: '<circle cx="8" cy="9" r="4"/><circle cx="15" cy="14" r="4"/><path d="M8 7v4M6.5 9h3M15 12v4M13.5 14h3"/>',
+    toilets: '<path d="M7 11v8"/><path d="M17 11v8"/><circle cx="7" cy="6" r="2"/><circle cx="17" cy="6" r="2"/><path d="M4 12h6l-1 7H5l-1-7z"/><path d="M14 12h6l-1 7h-4l-1-7z"/>',
+    car: '<path d="M5 16h14"/><path d="M7 16l1.5-5h7L17 16"/><circle cx="8" cy="17" r="1.5"/><circle cx="16" cy="17" r="1.5"/><path d="M8 11h8"/>',
+    transport: '<rect x="6" y="4" width="12" height="13" rx="2"/><path d="M8 8h8M8 12h8"/><path d="M9 20l2-3M15 20l-2-3"/>',
+    taxi: '<path d="M5 16h14"/><path d="M7 16l1.5-5h7L17 16"/><path d="M10 8h4l1 3H9l1-3z"/><circle cx="8" cy="17" r="1.5"/><circle cx="16" cy="17" r="1.5"/>',
+    weather: '<path d="M8 17h8a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.5A3.5 3.5 0 0 0 8 17z"/><path d="M17 3v2M21 7h-2M19.5 4.5 18 6"/>',
+    attractions: '<path d="M4 20h16"/><path d="M6 18V9l6-4 6 4v9"/><path d="M9 18v-6h6v6"/><path d="M10 9h4"/>',
+  };
+  return `<svg ${common}>${paths[name] ?? paths.attractions}</svg>`;
+}
+
+function homeActionCard(icon: string, title: string, description: string, buttonLabel: string, buttonId: string) {
+  return `<article class="quick-action">
+    <div class="home-card-top">${homeIcon(icon)}<div><h3>${title}</h3><p>${description}</p></div></div>
+    <button type="button" id="${buttonId}">${buttonLabel}</button>
+  </article>`;
+}
+
+function homeToolGroup(id: string, title: string, cards: string[]) {
+  return `<section class="home-tool-group" aria-labelledby="${id}">
+    <h2 id="${id}">${title}</h2>
+    <div class="home-tool-grid">${cards.join('')}</div>
+  </section>`;
+}
+
 function field(name: keyof PlannerPreferences, value: string, label: string, type = 'text', placeholder = '') {
   return `<label>${label}<input data-field="${String(name)}" type="${type}" value="${esc(value)}" ${placeholder ? `placeholder="${esc(placeholder)}"` : ''} /></label>`;
 }
@@ -4127,18 +4159,24 @@ function render() {
         <p>${copy.subtitle}</p>
         ${connectionStatusMarkup(copy)}
       </section>
-      <section class="panel quick-actions">
-        <article class="quick-action"><div><h2>${copy.savedTripsTitle}</h2><p>${copy.savedTripsSubtitle}</p></div><button type="button" id="open-saved-trips">${copy.savedTripsOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.qiblaTitle}</h2><p>${copy.qiblaSubtitle}</p></div><button type="button" id="open-qibla">${copy.qiblaOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.prayerSpacesTitle}</h2><p>${copy.prayerSpacesSubtitle}</p></div><button type="button" id="open-prayer-spaces">${copy.prayerSpacesOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.moneyTitle}</h2><p>${copy.moneySubtitle}</p></div><button type="button" id="open-money">${copy.moneyOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.halalRestaurantsTitle}</h2><p>${copy.halalRestaurantsSubtitle}</p></div><button type="button" id="open-halal-restaurants">${copy.halalRestaurantsOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.toiletsTitle}</h2><p>${copy.toiletsSubtitle}</p></div><button type="button" id="open-public-toilets">${copy.toiletsOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.carRentalTitle}</h2><p>${copy.carRentalSubtitle}</p></div><button type="button" id="open-car-rental">${copy.carRentalOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.publicTransportTitle}</h2><p>${copy.publicTransportSubtitle}</p></div><button type="button" id="open-public-transport">${copy.publicTransportOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.taxiTitle}</h2><p>${copy.taxiSubtitle}</p></div><button type="button" id="open-taxi-services">${copy.taxiOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.weatherTitle}</h2><p>${copy.weatherSubtitle}</p></div><button type="button" id="open-weather">${copy.weatherOpen}</button></article>
-        <article class="quick-action"><div><h2>${copy.attractionsTitle}</h2><p>${copy.attractionsSubtitle}</p></div><button type="button" id="open-attractions">${copy.attractionsOpen}</button></article>
+      <section class="quick-actions" aria-label="${copy.homeTravelToolsGroup}">
+        ${homeToolGroup('home-trips-heading', copy.homeTripsGroup, [
+          homeActionCard('saved', copy.savedTripsTitle, copy.savedTripsSubtitle, copy.savedTripsOpen, 'open-saved-trips'),
+        ])}
+        ${homeToolGroup('home-essentials-heading', copy.homeEssentialsGroup, [
+          homeActionCard('qibla', copy.qiblaTitle, copy.qiblaSubtitle, copy.qiblaOpen, 'open-qibla'),
+          homeActionCard('prayer', copy.prayerSpacesTitle, copy.prayerSpacesSubtitle, copy.prayerSpacesOpen, 'open-prayer-spaces'),
+          homeActionCard('halal', copy.halalRestaurantsTitle, copy.halalRestaurantsSubtitle, copy.halalRestaurantsOpen, 'open-halal-restaurants'),
+        ])}
+        ${homeToolGroup('home-travel-tools-heading', copy.homeTravelToolsGroup, [
+          homeActionCard('money', copy.moneyTitle, copy.moneySubtitle, copy.moneyOpen, 'open-money'),
+          homeActionCard('toilets', copy.toiletsTitle, copy.toiletsSubtitle, copy.toiletsOpen, 'open-public-toilets'),
+          homeActionCard('car', copy.carRentalTitle, copy.carRentalSubtitle, copy.carRentalOpen, 'open-car-rental'),
+          homeActionCard('transport', copy.publicTransportTitle, copy.publicTransportSubtitle, copy.publicTransportOpen, 'open-public-transport'),
+          homeActionCard('taxi', copy.taxiTitle, copy.taxiSubtitle, copy.taxiOpen, 'open-taxi-services'),
+          homeActionCard('weather', copy.weatherTitle, copy.weatherSubtitle, copy.weatherOpen, 'open-weather'),
+          homeActionCard('attractions', copy.attractionsTitle, copy.attractionsSubtitle, copy.attractionsOpen, 'open-attractions'),
+        ])}
       </section>
       <section class="panel form" aria-label="${copy.formAria}">
         <div class="grid">

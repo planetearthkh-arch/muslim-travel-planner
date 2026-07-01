@@ -546,6 +546,65 @@ test('connection indicator is a noninteractive status with offline and temporary
   assert.equal(connectionCss.includes(':focus'), false);
 });
 
+test('home dashboard groups every feature card with local icons and responsive layout', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const fs = await load('node:fs/promises');
+  const main = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const styles = await fs.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const packageJson = await fs.readFile(new URL('../package.json', import.meta.url), 'utf8');
+  const featureIds = [
+    'open-saved-trips',
+    'open-qibla',
+    'open-prayer-spaces',
+    'open-halal-restaurants',
+    'open-money',
+    'open-public-toilets',
+    'open-car-rental',
+    'open-public-transport',
+    'open-taxi-services',
+    'open-weather',
+    'open-attractions',
+  ];
+  assert.equal((main.match(/homeActionCard\('/g) ?? []).length, 11);
+  assert.equal(main.includes("copy.homeTripsGroup"), true);
+  assert.equal(main.includes("copy.homeEssentialsGroup"), true);
+  assert.equal(main.includes("copy.homeTravelToolsGroup"), true);
+  assert.equal(main.includes('function homeIcon(name: string)'), true);
+  assert.equal(main.includes('class="home-card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"'), true);
+  for (const id of featureIds) {
+    assert.equal(main.includes(`'${id}'`), true);
+    assert.equal(main.includes(`document.querySelector<HTMLButtonElement>('#${id}')`), true);
+  }
+  assert.equal(packageJson.includes('lucide'), false);
+  assert.equal(packageJson.includes('fontawesome'), false);
+  assert.equal(styles.includes('--color-emerald-deep'), true);
+  assert.equal(styles.includes('--color-emerald'), true);
+  assert.equal(styles.includes('--color-mint-soft'), true);
+  assert.equal(styles.includes('--color-gold'), true);
+  assert.equal(styles.includes('font-size: clamp(2rem, 5vw, 3.25rem)'), true);
+  assert.equal(styles.includes('padding: 22px 24px'), true);
+  assert.equal(styles.includes('.home-tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }'), true);
+  assert.equal(styles.includes('.home-tool-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }'), true);
+  assert.equal(styles.includes('.home-tool-grid {\n  display: grid;\n  gap: 12px;\n  grid-template-columns: 1fr;'), true);
+  assert.equal(styles.includes('overflow-wrap: anywhere'), true);
+  assert.equal(styles.includes('white-space: normal'), true);
+  assert.equal(styles.includes('@media (prefers-reduced-motion: reduce)'), true);
+  assert.equal(styles.includes('.lang {\n    position: static;'), true);
+});
+
+test('home group labels are translated for English, Arabic, and Indonesian', () => {
+  assert.equal(labels.en.homeTripsGroup, 'Your Trips');
+  assert.equal(labels.en.homeEssentialsGroup, 'Muslim Essentials');
+  assert.equal(labels.en.homeTravelToolsGroup, 'Travel Tools');
+  assert.equal(labels.ar.homeTripsGroup.length > 0, true);
+  assert.equal(labels.ar.homeEssentialsGroup.length > 0, true);
+  assert.equal(labels.ar.homeTravelToolsGroup.length > 0, true);
+  assert.equal(languageDirection('ar'), 'rtl');
+  assert.equal(labels.id.homeTripsGroup.length > 0, true);
+  assert.equal(labels.id.homeEssentialsGroup.length > 0, true);
+  assert.equal(labels.id.homeTravelToolsGroup.length > 0, true);
+});
+
 test('provides natural Indonesian interface labels without translating place names', () => {
   assert.equal(labels.id.title, 'Perencana Perjalanan Muslim');
   assert.equal(labels.id.plan, 'Buat Rencana Perjalanan');
