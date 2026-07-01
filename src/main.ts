@@ -212,6 +212,9 @@ let savedTripsCorrupted = false;
 let savedTripStatus: 'idle' | 'saved' | 'unsaved' | 'failed' | 'deleted' = 'idle';
 let savedTripMessage = '';
 let connectionState: ConnectionState = currentConnectionState();
+let connectionNotice: ConnectionState | 'hidden' = connectionState === 'offline' ? 'offline' : 'hidden';
+let connectionNoticeTimer: number | undefined;
+let connectionWasOffline = connectionState === 'offline';
 let plannerValidation = '';
 let plannerAnnouncement = '';
 const savedTripRepository = new SavedTripRepository(localStorage);
@@ -311,6 +314,56 @@ function loadSavedTripsFromStorage() {
 }
 
 loadSavedTripsFromStorage();
+
+function connectionStatusMarkup(copy: typeof labels[Language]) {
+  const visible = connectionNotice === 'online' || connectionNotice === 'offline';
+  const text = connectionNotice === 'offline' ? copy.offlineIndicator : connectionNotice === 'online' ? copy.onlineIndicator : '';
+  return `<div id="connection-status" class="connection-status ${connectionNotice}" role="status" aria-live="polite" aria-atomic="true" ${visible ? '' : 'hidden'}>${visible ? `<span class="connection-dot" aria-hidden="true"></span><span>${text}</span>` : ''}</div>`;
+}
+
+function updateConnectionStatusElement() {
+  const element = document.querySelector<HTMLDivElement>('#connection-status');
+  if (!element) return;
+  const copy = labels[lang];
+  const visible = connectionNotice === 'online' || connectionNotice === 'offline';
+  const text = connectionNotice === 'offline' ? copy.offlineIndicator : connectionNotice === 'online' ? copy.onlineIndicator : '';
+  element.className = `connection-status ${connectionNotice}`;
+  element.setAttribute('role', 'status');
+  element.setAttribute('aria-live', 'polite');
+  element.setAttribute('aria-atomic', 'true');
+  if (!visible) {
+    element.hidden = true;
+    element.replaceChildren();
+    return;
+  }
+  element.hidden = false;
+  const dot = document.createElement('span');
+  dot.className = 'connection-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('span');
+  label.textContent = text;
+  element.replaceChildren(dot, label);
+}
+
+function showConnectionNotice(nextState: ConnectionState) {
+  connectionState = nextState;
+  if (connectionNoticeTimer) window.clearTimeout(connectionNoticeTimer);
+  if (nextState === 'online' && !connectionWasOffline) {
+    connectionNotice = 'hidden';
+    updateConnectionStatusElement();
+    return;
+  }
+  connectionWasOffline = nextState === 'offline';
+  connectionNotice = nextState;
+  updateConnectionStatusElement();
+  if (nextState === 'online') {
+    connectionNoticeTimer = window.setTimeout(() => {
+      if (connectionNotice !== 'online') return;
+      connectionNotice = 'hidden';
+      updateConnectionStatusElement();
+    }, 4000);
+  }
+}
 
 function plannerFacilityStatus(status: VerificationStatus, copy: typeof labels[Language]) {
   if (status === 'Verified') return copy.facilityAvailable;
@@ -3551,12 +3604,12 @@ function savedTripsPage() {
       ${languageSelector()}
       <h1>${copy.savedTripsTitle}</h1>
       <p>${copy.savedTripsSubtitle}</p>
+      ${connectionStatusMarkup(copy)}
       <p class="notice">${copy.savedLocally}. ${copy.noCloudSync}.</p>
       <button type="button" class="ghost hero-action" id="back-from-saved-trips">${copy.savedTripsBack}</button>
     </section>
     <section class="panel results" aria-live="polite">
       ${savedTripsCorrupted ? `<p class="error">${copy.storageRecovered}</p>` : ''}
-      ${connectionState === 'offline' ? `<p class="notice">${copy.offlineIndicator}</p>` : ''}
       ${savedTrips.length ? savedTrips.map((trip) => savedTripCard(trip, copy)).join('') : `<p class="notice">${copy.savedTripsEmpty}</p>`}
     </section>
   </main>`;
@@ -4072,7 +4125,7 @@ function render() {
         ${languageSelector()}
         <h1>${copy.title}</h1>
         <p>${copy.subtitle}</p>
-        <div class="connection-status" aria-live="polite">${connectionState === 'offline' ? copy.offlineIndicator : copy.onlineIndicator}</div>
+        ${connectionStatusMarkup(copy)}
       </section>
       <section class="panel quick-actions">
         <article class="quick-action"><div><h2>${copy.savedTripsTitle}</h2><p>${copy.savedTripsSubtitle}</p></div><button type="button" id="open-saved-trips">${copy.savedTripsOpen}</button></article>
@@ -4305,13 +4358,11 @@ window.addEventListener('hashchange', () => {
 });
 
 window.addEventListener('online', () => {
-  connectionState = 'online';
-  render();
+  showConnectionNotice('online');
 });
 
 window.addEventListener('offline', () => {
-  connectionState = 'offline';
-  render();
+  showConnectionNotice('offline');
 });
 
 window.addEventListener('storage', (event) => {

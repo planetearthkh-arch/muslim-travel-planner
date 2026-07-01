@@ -518,6 +518,34 @@ test('saved trips and offline labels are translated in English, Arabic, and Indo
   }
 });
 
+test('connection indicator is a noninteractive status with offline and temporary online states', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const fs = await load('node:fs/promises');
+  const main = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const styles = await fs.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  assert.equal(main.includes("let connectionNotice: ConnectionState | 'hidden' = connectionState === 'offline' ? 'offline' : 'hidden'"), true);
+  assert.equal(main.includes("let connectionWasOffline = connectionState === 'offline'"), true);
+  assert.equal(main.includes('id="connection-status"'), true);
+  assert.equal(main.includes('role="status"'), true);
+  assert.equal(main.includes('aria-live="polite"'), true);
+  assert.equal(main.includes('aria-atomic="true"'), true);
+  assert.equal(main.includes('connection-status ${connectionNotice}'), true);
+  assert.equal(main.includes('connectionNoticeTimer = window.setTimeout'), true);
+  assert.equal(main.includes('}, 4000);'), true);
+  assert.equal(main.includes("if (nextState === 'online' && !connectionWasOffline)"), true);
+  assert.equal(main.includes("window.addEventListener('online', () => {\n  showConnectionNotice('online');\n});"), true);
+  assert.equal(main.includes("window.addEventListener('offline', () => {\n  showConnectionNotice('offline');\n});"), true);
+  assert.equal(main.includes("window.addEventListener('online', () => {\n  connectionState = 'online';\n  render();\n});"), false);
+  assert.equal(main.includes("window.addEventListener('offline', () => {\n  connectionState = 'offline';\n  render();\n});"), false);
+  assert.equal(styles.includes('.connection-status.online'), true);
+  assert.equal(styles.includes('.connection-status.offline'), true);
+  assert.equal(styles.includes('.connection-dot'), true);
+  const connectionCss = styles.slice(styles.indexOf('.connection-status'), styles.indexOf('.trip-header'));
+  assert.equal(connectionCss.includes('cursor:'), false);
+  assert.equal(connectionCss.includes(':hover'), false);
+  assert.equal(connectionCss.includes(':focus'), false);
+});
+
 test('provides natural Indonesian interface labels without translating place names', () => {
   assert.equal(labels.id.title, 'Perencana Perjalanan Muslim');
   assert.equal(labels.id.plan, 'Buat Rencana Perjalanan');

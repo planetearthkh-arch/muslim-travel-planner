@@ -138,12 +138,32 @@ button {
 .muted { color: #5a786f; font-weight: 700; }
 .connection-status {
   display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 10px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: #ffffff22;
-  border: 1px solid #ffffff55;
+  border: 1px solid transparent;
   font-weight: 800;
+  width: fit-content;
+}
+.connection-status.online {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #14532d;
+}
+.connection-status.offline {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #713f12;
+}
+.connection-status[hidden] { display: none; }
+.connection-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: currentColor;
+  flex: 0 0 auto;
 }
 .trip-header {
   display: grid;
