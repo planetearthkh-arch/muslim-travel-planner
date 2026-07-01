@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Muslim Travel Planner">
+  <rect width="512" height="512" rx="112" fill="#0f766e"/>
+  <circle cx="256" cy="246" r="154" fill="#f6fbf8"/>
+  <circle cx="310" cy="210" r="118" fill="#0f766e"/>
+  <path d="M252 106l34 72 79 10-58 54 15 78-70-39-70 39 15-78-58-54 79-10 34-72z" fill="#f8d56b"/>
+  <path d="M128 384c48-34 91-50 128-50s80 16 128 50" fill="none" stroke="#f6fbf8" stroke-width="28" stroke-linecap="round"/>
+</svg>

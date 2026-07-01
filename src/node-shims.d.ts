@@ -1,3 +1,5 @@
+/// <reference types="geojson" />
+
 declare module 'node:test' {
   export default function test(name: string, fn: () => void): void;
 }
@@ -10,4 +12,10 @@ declare module 'node:assert/strict' {
     throws(fn: () => void, expected?: RegExp): void;
   };
   export default assert;
+}
+declare module '*.css';
+interface ImportMeta {
+  readonly env: {
+    readonly BASE_URL: string;
+  };
 }

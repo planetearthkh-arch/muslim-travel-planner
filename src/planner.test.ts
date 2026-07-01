@@ -4,6 +4,8 @@ import { cities } from './data.js';
 import { labels, languageDirection, languages, nextLanguage, regionLabels } from './i18n.js';
 import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
+import { createSavedTrip, defaultTripName, duplicateSavedTrip, parseSavedTrips, sanitizeTripName, SavedTripRepository } from './saved-trips.js';
+import { serviceWorkerUrl } from './offline.js';
 import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace, optionalLatinDisplayName } from './prayer-spaces.js';
 import { safeExternalUrl } from './urls.js';
 import { RequestError, classifyHttpStatus, classifyRequestError, requestJson, retryAfterMs, retryOnceForTemporary } from './http.js';
@@ -142,6 +144,16 @@ async function rejectsWith(fn: () => Promise<unknown>, predicate: (error: unknow
   }
 }
 
+class MemoryStorage implements Storage {
+  private values = new Map<string, string>();
+  get length() { return this.values.size; }
+  clear() { this.values.clear(); }
+  getItem(key: string) { return this.values.get(key) ?? null; }
+  key(index: number) { return [...this.values.keys()][index] ?? null; }
+  removeItem(key: string) { this.values.delete(key); }
+  setItem(key: string, value: string) { this.values.set(key, value); }
+}
+
 test('contains all required sample cities', () => {
   assert.deepEqual(cities.map((c) => c.city), [
     'Jerusalem',
@@ -215,6 +227,49 @@ test('generates prayer, attraction, travel, and halal-conscious meal items', () 
   assert.equal(items.some((i) => i.kind === 'meal' && i.details.includes('Halal status has not been independently confirmed')), true);
   assert.equal(items.some((i) => /Sample|Verified|Unverified/.test(i.details)), false);
   assert.equal(new Set(items.map((item) => item.date)).size, 1);
+});
+
+test('saved-trip repository saves, reopens, updates, renames, duplicates, deletes, and sorts trips', () => {
+  const storage = new MemoryStorage();
+  const repository = new SavedTripRepository(storage);
+  const city = cities.find((candidate) => candidate.city === 'Tokyo') ?? cities[0];
+  const itinerary = generateItinerary(prefs);
+  const storedItinerary = JSON.parse(JSON.stringify(itinerary));
+  const first = createSavedTrip({ language: 'en', preferences: prefs, city, itinerary, now: '2026-07-01T10:00:00.000Z' });
+  assert.equal(first.name, defaultTripName(city, prefs.startDate, prefs.endDate));
+  assert.deepEqual(first.itinerary, storedItinerary);
+  assert.equal(JSON.stringify(first).includes('weatherForecast'), false);
+  assert.equal(JSON.stringify(first).includes('exchange'), false);
+  repository.upsert(first);
+  const reopened = repository.read().trips[0];
+  assert.deepEqual(reopened?.itinerary, storedItinerary);
+  const updated = { ...first, name: 'Tokyo family trip', updatedAt: '2026-07-02T10:00:00.000Z', savedAt: '2026-07-02T10:00:00.000Z' };
+  repository.upsert(updated);
+  assert.equal(repository.read().trips[0]?.id, first.id);
+  assert.equal(repository.read().trips[0]?.name, 'Tokyo family trip');
+  const second = createSavedTrip({ language: 'id', preferences: { ...prefs, city: 'London' }, city: cities.find((candidate) => candidate.city === 'London') ?? city, itinerary, now: '2026-07-03T10:00:00.000Z' });
+  repository.upsert(second);
+  assert.deepEqual(repository.read().trips.map((trip) => trip.id), [second.id, first.id]);
+  const duplicated = duplicateSavedTrip(updated, '2026-07-04T10:00:00.000Z');
+  assert.equal(duplicated.id === updated.id, false);
+  repository.upsert(duplicated);
+  assert.equal(repository.read().trips.length, 3);
+  repository.delete(second.id);
+  assert.equal(repository.read().trips.some((trip) => trip.id === second.id), false);
+  assert.equal(repository.read().trips.some((trip) => trip.id === first.id), true);
+});
+
+test('saved-trip validation handles unsafe names, corrupted storage, unsupported schema, and write failure', () => {
+  assert.equal(sanitizeTripName(' <b>Summer\u0000Trip</b> '.repeat(4)).includes('<'), false);
+  assert.equal(sanitizeTripName(' <b>Summer\u0000Trip</b> '.repeat(4)).length <= 80, true);
+  assert.equal(parseSavedTrips('{').corrupted, true);
+  assert.equal(parseSavedTrips(JSON.stringify({ schemaVersion: 999, trips: [] })).corrupted, true);
+  const failingStorage = new MemoryStorage();
+  failingStorage.setItem = () => { throw new Error('quota'); };
+  const repository = new SavedTripRepository(failingStorage);
+  const city = cities[0];
+  const trip = createSavedTrip({ language: 'en', preferences: { ...prefs, city: city.city }, city, itinerary: generateItinerary({ ...prefs, city: city.city }) });
+  assert.throws(() => repository.upsert(trip), /quota/);
 });
 
 test('generates inclusive multi-day itineraries with dated unique items', () => {
@@ -332,10 +387,12 @@ test('Generate Itinerary button controls planner generation workflow', async () 
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
   const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
   assert.equal(source.includes('let generatedPrefs: PlannerPreferences | null = null'), true);
-  assert.equal(source.includes('const items = generatedPrefs && generatedCity ? generateItinerary(generatedPrefs, replan, lang) : []'), true);
+  assert.equal(source.includes('let generatedItems: ItineraryItem[] = []'), true);
+  assert.equal(source.includes('const items = generatedPrefs && generatedCity ? generatedItems : []'), true);
   assert.equal(source.includes('plannerValidation || (visibleCities.length ? copy.generatePrompt : copy.noCities)'), true);
   assert.equal(source.includes('const next = readPlannerDraftFromForm()'), true);
   assert.equal(source.includes('generatedPrefs = { ...next, interests: [...next.interests] }'), true);
+  assert.equal(source.includes('generatedItems = generateItinerary(generatedPrefs, 0, lang)'), true);
   assert.equal(source.includes('plannerAnnouncement = copy.itineraryReady'), true);
   assert.equal(source.includes("document.querySelector('#planner-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' })"), true);
   assert.equal(source.includes("document.querySelector<HTMLSelectElement>('[data-region=\"filter\"]')?.addEventListener"), true);
@@ -345,7 +402,7 @@ test('Generate Itinerary button controls planner generation workflow', async () 
   assert.equal(source.includes("if (key === 'city' || key === 'prayerMethod' || key === 'startDate') {\n      athanStatus = '';"), true);
   assert.equal(source.includes('generateItinerary(prefs, replan, lang)'), false);
   assert.equal(source.includes('replan = Number(button.dataset.replan)'), true);
-  assert.equal(source.includes('generateItinerary(generatedPrefs, replan, lang)'), true);
+  assert.equal(source.includes('generatedItems = generateItinerary(generatedPrefs, replan, lang)'), true);
   assert.equal(source.includes('invalidTripTooLong'), true);
 });
 
@@ -371,6 +428,26 @@ test('main planner render hides internal verification labels from itinerary UI',
   assert.equal(labels.en.facilityEstimatedInfo, 'Estimated information');
   assert.equal(labels.ar.facilityAvailable.length > 0, true);
   assert.equal(labels.id.facilityAvailable.length > 0, true);
+});
+
+test('itinerary screen uses saved snapshots, clear trip actions, print styles, and sanitized planner wording', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const fs = await load('node:fs/promises');
+  const source = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const styles = await fs.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  assert.equal(source.includes("type View = 'planner' | 'saved-trips'"), true);
+  assert.equal(source.includes("window.location.hash === '#saved-trips'"), true);
+  assert.equal(source.includes('function savedTripsPage()'), true);
+  assert.equal(source.includes('function openSavedTrip(trip: SavedTrip)'), true);
+  assert.equal(source.includes('generatedItems = trip.itinerary.map'), true);
+  assert.equal(source.includes('saveCurrentTrip(labels[lang])'), true);
+  assert.equal(source.includes("window.addEventListener('storage'"), true);
+  assert.equal(source.includes('stripInternalPlannerText(item.title)'), true);
+  assert.equal(source.includes('stripInternalPlannerText(item.details)'), true);
+  assert.equal(styles.includes('@media print'), true);
+  assert.equal(styles.includes('.trip-header'), true);
+  assert.equal(styles.includes('.trip-actions'), true);
+  assert.equal(styles.includes('overflow-wrap: anywhere'), true);
 });
 
 test('planner validation and pre-generation messages are translated', () => {
@@ -408,6 +485,37 @@ test('package scripts lint source and discover all compiled test files', async (
   assert.equal(packageJson.scripts.test.includes('scripts/run-tests.mjs'), true);
   assert.equal(packageJson.scripts.test.includes('planner.test.js'), false);
   assert.equal(testRunner.includes("endsWith('.test.js')"), true);
+});
+
+test('offline app shell uses local MapLibre bundle, manifest, and conservative service-worker caching', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const fs = await load('node:fs/promises');
+  const index = await fs.readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const main = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const sw = await fs.readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
+  const manifest = await fs.readFile(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8');
+  assert.equal(index.includes('Sample Muslim travel planner prototype'), false);
+  assert.equal(index.includes('unpkg.com/maplibre-gl'), false);
+  assert.equal(index.includes('manifest.webmanifest'), true);
+  assert.equal(main.includes("import maplibregl from 'maplibre-gl'"), true);
+  assert.equal(main.includes("import 'maplibre-gl/dist/maplibre-gl.css'"), true);
+  assert.equal(serviceWorkerUrl('/muslim-travel-planner/'), '/muslim-travel-planner/sw.js');
+  assert.equal(sw.includes('CACHE_VERSION'), true);
+  assert.equal(sw.includes("request.mode === 'navigate'"), true);
+  assert.equal(sw.includes("['script', 'style', 'image', 'font']"), true);
+  assert.equal(sw.includes('isLiveApi'), true);
+  assert.equal(sw.includes('localStorage'), false);
+  assert.equal(JSON.parse(manifest).start_url, '/muslim-travel-planner/');
+});
+
+test('saved trips and offline labels are translated in English, Arabic, and Indonesian', () => {
+  for (const language of languages.map((item) => item.code)) {
+    assert.equal(labels[language].savedTripsTitle.length > 0, true);
+    assert.equal(labels[language].saveTrip.length > 0, true);
+    assert.equal(labels[language].offlineIndicator.length > 0, true);
+    assert.equal(labels[language].approximateQibla.length > 0, true);
+    assert.equal(labels[language].internetRequired.length > 0, true);
+  }
 });
 
 test('provides natural Indonesian interface labels without translating place names', () => {

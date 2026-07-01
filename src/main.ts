@@ -1,4 +1,6 @@
 import { cities } from './data.js';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { generateItinerary } from './planner.js';
 import { RequestError, classifyRequestError, requestJson, retryOnceForTemporary } from './http.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
@@ -141,7 +143,6 @@ import {
   optionLabels,
   prayerLabels,
   regionLabels,
-  statusLabels,
   type Language,
 } from './i18n.js';
 import { athanLabels } from './athan-i18n.js';
@@ -155,16 +156,20 @@ import {
   stopAthan,
 } from './athan.js';
 import type { ItineraryItem, PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
+import { createSavedTrip, defaultTripName, duplicateSavedTrip, sanitizeTripName, SavedTripRepository, type SavedTrip } from './saved-trips.js';
+import { currentConnectionState, registerAppServiceWorker, type ConnectionState } from './offline.js';
+
+(window as unknown as { maplibregl?: typeof maplibregl }).maplibregl = maplibregl;
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'taxi-services' | 'weather' | 'attractions';
+type View = 'planner' | 'saved-trips' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'taxi-services' | 'weather' | 'attractions';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#public-transport' ? 'public-transport' : window.location.hash === '#taxi-services' ? 'taxi-services' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#saved-trips' ? 'saved-trips' : window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#public-transport' ? 'public-transport' : window.location.hash === '#taxi-services' ? 'taxi-services' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -199,8 +204,17 @@ let prefs: PlannerPreferences = {
   halalPreference: 'strictly labelled',
 };
 let generatedPrefs: PlannerPreferences | null = null;
+let generatedItems: ItineraryItem[] = [];
+let openedSavedTripId = '';
+let savedTripNameDraft = '';
+let savedTrips: SavedTrip[] = [];
+let savedTripsCorrupted = false;
+let savedTripStatus: 'idle' | 'saved' | 'unsaved' | 'failed' | 'deleted' = 'idle';
+let savedTripMessage = '';
+let connectionState: ConnectionState = currentConnectionState();
 let plannerValidation = '';
 let plannerAnnouncement = '';
+const savedTripRepository = new SavedTripRepository(localStorage);
 
 let currencies: CurrencyInfo[] = fallbackCurrencies;
 let currencySearch = '';
@@ -274,7 +288,29 @@ const englishMapNameExpression = [
 ];
 
 const esc = (value: string) => value.replace(/[&<>\"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[character] ?? character);
-const statusBadge = (status: VerificationStatus) => `<span class="badge ${status.toLowerCase()}">${statusLabels[lang][status]}</span>`;
+const addMinutes = (time: string, minutes: number) => {
+  const [h, m] = time.split(':').map(Number);
+  const date = new Date(2026, 0, 1, h, m + minutes);
+  return date.toTimeString().slice(0, 5);
+};
+const stripInternalPlannerText = (value: string) => value
+  .replace(/\bSample\b/gi, 'Suggested')
+  .replace(/\bprototype\b/gi, 'planner')
+  .replace(/Verified in this mock dataset for prototype status-label testing only;?\s*/gi, '')
+  .replace(/Sample facility details;?\s*/gi, 'Facility information may be incomplete; ');
+
+function loadSavedTripsFromStorage() {
+  try {
+    const result = savedTripRepository.read();
+    savedTrips = result.trips;
+    savedTripsCorrupted = result.corrupted;
+  } catch {
+    savedTrips = [];
+    savedTripsCorrupted = true;
+  }
+}
+
+loadSavedTripsFromStorage();
 
 function plannerFacilityStatus(status: VerificationStatus, copy: typeof labels[Language]) {
   if (status === 'Verified') return copy.facilityAvailable;
@@ -3422,6 +3458,111 @@ function cityForPreferences(planPrefs: PlannerPreferences) {
   return cities.find((candidate) => candidate.city.toLowerCase() === planPrefs.city.toLowerCase());
 }
 
+function activeSavedTrip() {
+  return savedTrips.find((trip) => trip.id === openedSavedTripId);
+}
+
+function hasUnsavedTripChanges() {
+  const trip = activeSavedTrip();
+  if (!trip || !generatedPrefs || !generatedItems.length) return Boolean(generatedPrefs && generatedItems.length && !openedSavedTripId);
+  return JSON.stringify(trip.preferences) !== JSON.stringify(generatedPrefs)
+    || JSON.stringify(trip.itinerary) !== JSON.stringify(generatedItems)
+    || trip.name !== sanitizeTripName(savedTripNameDraft || trip.name);
+}
+
+function refreshSavedTrips() {
+  loadSavedTripsFromStorage();
+  if (openedSavedTripId && !activeSavedTrip()) {
+    openedSavedTripId = '';
+    savedTripNameDraft = '';
+    savedTripStatus = 'deleted';
+  }
+}
+
+function saveCurrentTrip(copy: typeof labels[Language]) {
+  if (!generatedPrefs || !generatedItems.length) return;
+  const city = cityForPreferences(generatedPrefs);
+  if (!city) {
+    savedTripStatus = 'failed';
+    savedTripMessage = copy.invalidCity;
+    render();
+    return;
+  }
+  const existing = activeSavedTrip();
+  const now = new Date().toISOString();
+  const name = sanitizeTripName(savedTripNameDraft || existing?.name || defaultTripName(city, generatedPrefs.startDate, generatedPrefs.endDate));
+  try {
+    const trip = createSavedTrip({ id: existing?.id, name, language: lang, preferences: generatedPrefs, city, itinerary: generatedItems, now });
+    const savedTrip = existing ? { ...trip, createdAt: existing.createdAt } : trip;
+    savedTrips = savedTripRepository.upsert(savedTrip);
+    openedSavedTripId = savedTrip.id;
+    savedTripNameDraft = savedTrip.name;
+    savedTripStatus = 'saved';
+    savedTripMessage = copy.savedLocally;
+    plannerAnnouncement = copy.savedLocally;
+  } catch {
+    savedTripStatus = 'failed';
+    savedTripMessage = copy.saveFailed;
+  }
+  render();
+}
+
+function openSavedTrip(trip: SavedTrip) {
+  prefs = { ...trip.preferences, interests: [...trip.preferences.interests] };
+  generatedPrefs = { ...trip.preferences, interests: [...trip.preferences.interests] };
+  generatedItems = trip.itinerary.map((item) => ({ ...item }));
+  openedSavedTripId = trip.id;
+  savedTripNameDraft = trip.name;
+  savedTripStatus = 'saved';
+  savedTripMessage = labels[lang].savedLocally;
+  selectedRegion = '';
+  plannerValidation = '';
+  plannerAnnouncement = labels[lang].savedLocally;
+  view = 'planner';
+  if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search);
+  render();
+}
+
+function savedTripCard(trip: SavedTrip, copy: typeof labels[Language]) {
+  const dateRange = trip.dateRange.startDate === trip.dateRange.endDate ? trip.dateRange.startDate : `${trip.dateRange.startDate} - ${trip.dateRange.endDate}`;
+  return `<article class="card saved-trip-card">
+    <div class="card-top"><h3>${esc(trip.name)}</h3><span>${esc(trip.destination.city)}, ${esc(trip.destination.country)}</span></div>
+    <p>${copy.tripDates}: ${esc(dateRange)} · ${copy.tripDays}: ${itineraryDayKeys(trip.dateRange.startDate, trip.dateRange.endDate).length}</p>
+    <p>${copy.savedAt}: ${new Intl.DateTimeFormat(localeForLanguage(lang), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(trip.savedAt))}</p>
+    <p>${copy.savedLocally}. ${copy.noCloudSync}.</p>
+    <div class="toolbar">
+      <button type="button" data-open-trip="${esc(trip.id)}">${copy.reopenTrip}</button>
+      <button type="button" class="ghost" data-rename-trip="${esc(trip.id)}">${copy.renameTrip}</button>
+      <button type="button" class="ghost" data-duplicate-trip="${esc(trip.id)}">${copy.duplicateTrip}</button>
+      <button type="button" class="ghost" data-delete-trip="${esc(trip.id)}">${copy.deleteTrip}</button>
+    </div>
+  </article>`;
+}
+
+function savedTripsPage() {
+  if (!root) return;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  refreshSavedTrips();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `<main dir="${dir}" class="app saved-trips-app">
+    <section class="hero">
+      ${languageSelector()}
+      <h1>${copy.savedTripsTitle}</h1>
+      <p>${copy.savedTripsSubtitle}</p>
+      <p class="notice">${copy.savedLocally}. ${copy.noCloudSync}.</p>
+      <button type="button" class="ghost hero-action" id="back-from-saved-trips">${copy.savedTripsBack}</button>
+    </section>
+    <section class="panel results" aria-live="polite">
+      ${savedTripsCorrupted ? `<p class="error">${copy.storageRecovered}</p>` : ''}
+      ${connectionState === 'offline' ? `<p class="notice">${copy.offlineIndicator}</p>` : ''}
+      ${savedTrips.length ? savedTrips.map((trip) => savedTripCard(trip, copy)).join('') : `<p class="notice">${copy.savedTripsEmpty}</p>`}
+    </section>
+  </main>`;
+  bindSavedTripsPage();
+}
+
 function plannerValidationMessage(planPrefs: PlannerPreferences, copy: typeof labels[Language]) {
   if (!cityForPreferences(planPrefs)) return copy.invalidCity;
   if (!Number.isFinite(planPrefs.groupSize) || planPrefs.groupSize < 1) return copy.invalidGroupSize;
@@ -3443,6 +3584,16 @@ function itineraryDayKeys(startDate: string, endDate: string) {
   return dates;
 }
 
+function minutesOfDay(time: string) {
+  const match = /(\d{1,2}):(\d{2})/.exec(time);
+  if (!match) return Number.NaN;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (/\bPM\b/i.test(time) && hour < 12) hour += 12;
+  if (/\bAM\b/i.test(time) && hour === 12) hour = 0;
+  return hour * 60 + minute;
+}
+
 function formatItineraryDayHeading(date: string, dayIndex: number, copy: typeof labels[Language]) {
   const locale = lang === 'en' ? 'en-GB' : localeForLanguage(lang);
   const formatted = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${date}T12:00:00`));
@@ -3452,16 +3603,44 @@ function formatItineraryDayHeading(date: string, dayIndex: number, copy: typeof 
 function groupItineraryItems(items: ItineraryItem[]) {
   const groups = new Map<string, ItineraryItem[]>();
   items.forEach((item) => groups.set(item.date, [...(groups.get(item.date) ?? []), item]));
-  return [...groups.entries()];
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, dayItems]) => [date, dayItems.sort((a, b) => minutesOfDay(a.time) - minutesOfDay(b.time))] as [string, ItineraryItem[]]);
 }
 
 function itineraryCard(item: ItineraryItem, index: number, city: (typeof cities)[number], copy: typeof labels[Language]) {
-  return `<article class="card ${item.kind}"><div class="card-top"><span>${item.time} · ${item.durationMinutes} ${copy.minutesShort}</span></div><h3>${item.title}</h3><p>${item.details}</p>${item.place?.facility ? `<p>${copy.women}: ${plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)} · ${copy.wudu}: ${plannerFacilityStatus(item.place.facility.wudu, copy)} · ${copy.accessibility}: ${plannerFacilityStatus(item.place.facility.accessibility, copy)}</p>` : ''}${item.place ? `<p><a class="map-link" href="${osmSearchUrl(item.place.name, city.city, city.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a></p>` : ''}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></article>`;
+  const endTime = addMinutes(item.time, item.durationMinutes);
+  const facility = item.place?.facility ? `<p class="muted">${copy.women}: ${plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)} · ${copy.wudu}: ${plannerFacilityStatus(item.place.facility.wudu, copy)} · ${copy.accessibility}: ${plannerFacilityStatus(item.place.facility.accessibility, copy)}</p>` : '';
+  const map = item.place ? `<a class="map-link" href="${osmSearchUrl(item.place.name, city.city, city.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a>` : '';
+  return `<article class="card itinerary-card ${item.kind}"><div class="card-top"><span>${esc(item.time)}-${esc(endTime)} · ${item.durationMinutes} ${copy.minutesShort}</span><span>${esc(item.kind)}</span></div><h3>${esc(stripInternalPlannerText(item.title))}</h3><p>${esc(stripInternalPlannerText(item.details))}</p>${facility}<div class="itinerary-actions">${map}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></div></article>`;
 }
 
 function itineraryGroupsMarkup(items: ItineraryItem[], city: (typeof cities)[number], copy: typeof labels[Language]) {
   let itemIndex = 0;
   return groupItineraryItems(items).map(([date, dayItems], dayIndex) => `<section class="itinerary-day"><h3>${formatItineraryDayHeading(date, dayIndex, copy)}</h3>${dayItems.map((item) => itineraryCard(item, itemIndex++, city, copy)).join('')}</section>`).join('');
+}
+
+function tripHeaderMarkup(city: (typeof cities)[number], planPrefs: PlannerPreferences, items: ItineraryItem[], copy: typeof labels[Language]) {
+  const days = itineraryDayKeys(planPrefs.startDate, planPrefs.endDate).length;
+  const saved = openedSavedTripId && !hasUnsavedTripChanges();
+  const unsaved = hasUnsavedTripChanges();
+  const name = sanitizeTripName(savedTripNameDraft || defaultTripName(city, planPrefs.startDate, planPrefs.endDate));
+  const dateRange = planPrefs.startDate === planPrefs.endDate ? planPrefs.startDate : `${planPrefs.startDate} - ${planPrefs.endDate}`;
+  return `<div class="trip-header">
+    <div>
+      <p class="eyebrow">${copy.tripSummary}</p>
+      <h2>${esc(city.city)}, ${esc(city.country)}</h2>
+      <p>${copy.tripDates}: ${esc(dateRange)} · ${copy.tripDays}: ${days} · ${copy.tripGroup}: ${planPrefs.groupSize}</p>
+      <p>${copy.tripStyle}: ${optionLabels.transportation[lang][planPrefs.transportation]} · ${optionLabels.budget[lang][planPrefs.budget]} · ${city.timezone}</p>
+      <p>${copy.approximateQibla}: ${calculateQiblaBearing(city.coordinates.lat, city.coordinates.lng).toFixed(1)}°</p>
+      <p class="muted">${copy.savedLocally}. ${copy.noCloudSync}. ${copy.offlineLimitNotice}</p>
+      ${savedTripStatus === 'failed' ? `<p class="error">${esc(savedTripMessage || copy.saveFailed)}</p>` : `<p class="status">${saved ? copy.savedStatus : unsaved ? copy.unsavedChanges : copy.savedLocally}</p>`}
+    </div>
+    <div class="trip-actions">
+      <label>${copy.tripName}<input id="trip-name" value="${esc(name)}" maxlength="80" /></label>
+      <button type="button" id="save-trip">${openedSavedTripId ? copy.saveChanges : copy.saveTrip}</button>
+      <button type="button" class="ghost" id="edit-plan">${copy.editPlan}</button>
+      <button type="button" class="ghost" id="print-itinerary">${copy.printItinerary}</button>
+    </div>
+  </div>${items.length ? '' : `<p>${copy.emptyState}</p>`}`;
 }
 
 function readPlannerDraftFromForm() {
@@ -3716,7 +3895,7 @@ function moneyPage() {
           <h3>${copy.moneyInfo}</h3>
           <p>${copy.officialCurrency}: ${city.money.localCurrencies.map((item) => `${item.name} - ${item.code} (${item.symbol})`).join(', ')}</p>
           ${city.money.denominations ? `<p>${copy.denominations}: ${esc(city.money.denominations)}</p>` : ''}
-          ${city.money.cardsCommonlyAccepted ? `<p>${copy.cardsAccepted}: ${statusBadge(city.money.cardsCommonlyAccepted)}</p>` : ''}
+          ${city.money.cardsCommonlyAccepted ? `<p>${copy.cardsAccepted}: ${plannerFacilityStatus(city.money.cardsCommonlyAccepted, copy)}</p>` : ''}
           <p>${copy.paymentWarning}</p>
         </article>
         <article class="card">
@@ -3778,6 +3957,58 @@ function bindMoneyPage() {
   });
 }
 
+function bindSavedTripsPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; savedTripsPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-saved-trips')?.addEventListener('click', () => { view = 'planner'; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-open-trip]').forEach((button) => button.addEventListener('click', () => {
+    const trip = savedTrips.find((candidate) => candidate.id === button.dataset.openTrip);
+    if (trip) openSavedTrip(trip);
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-rename-trip]').forEach((button) => button.addEventListener('click', () => {
+    const trip = savedTrips.find((candidate) => candidate.id === button.dataset.renameTrip);
+    if (!trip) return;
+    const nextName = sanitizeTripName(window.prompt(labels[lang].tripName, trip.name) ?? trip.name);
+    if (!nextName || nextName === trip.name) return;
+    try {
+      savedTrips = savedTripRepository.upsert({ ...trip, name: nextName, updatedAt: new Date().toISOString() });
+      savedTripsPage();
+    } catch {
+      savedTripStatus = 'failed';
+      savedTripMessage = labels[lang].saveFailed;
+      savedTripsPage();
+    }
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-duplicate-trip]').forEach((button) => button.addEventListener('click', () => {
+    const trip = savedTrips.find((candidate) => candidate.id === button.dataset.duplicateTrip);
+    if (!trip) return;
+    try {
+      savedTrips = savedTripRepository.upsert(duplicateSavedTrip(trip));
+      savedTripsPage();
+    } catch {
+      savedTripStatus = 'failed';
+      savedTripMessage = labels[lang].saveFailed;
+      savedTripsPage();
+    }
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-delete-trip]').forEach((button) => button.addEventListener('click', () => {
+    const trip = savedTrips.find((candidate) => candidate.id === button.dataset.deleteTrip);
+    if (!trip || !window.confirm(`${labels[lang].deleteTripConfirm}: ${trip.name}?`)) return;
+    try {
+      savedTrips = savedTripRepository.delete(trip.id);
+      if (openedSavedTripId === trip.id) {
+        openedSavedTripId = '';
+        savedTripNameDraft = '';
+        savedTripStatus = 'deleted';
+      }
+      savedTripsPage();
+    } catch {
+      savedTripStatus = 'failed';
+      savedTripMessage = labels[lang].saveFailed;
+      savedTripsPage();
+    }
+  }));
+}
+
 function render() {
   if (!root) return;
   if (view === 'qibla') {
@@ -3785,6 +4016,10 @@ function render() {
     return;
   }
   stopQiblaOrientation();
+  if (view === 'saved-trips') {
+    savedTripsPage();
+    return;
+  }
   if (view === 'prayer-spaces') {
     prayerPage();
     return;
@@ -3828,7 +4063,7 @@ function render() {
   const draftCity = cityForPreferences(prefs) ?? cities[0];
   const selectedFormCity = visibleCities.find((candidate) => candidate.city.toLowerCase() === prefs.city.toLowerCase()) ?? visibleCities[0] ?? draftCity;
   const generatedCity = generatedPrefs ? cityForPreferences(generatedPrefs) : undefined;
-  const items = generatedPrefs && generatedCity ? generateItinerary(generatedPrefs, replan, lang) : [];
+  const items = generatedPrefs && generatedCity ? generatedItems : [];
   document.documentElement.lang = lang;
   document.documentElement.dir = dir;
   root.innerHTML = `
@@ -3837,8 +4072,10 @@ function render() {
         ${languageSelector()}
         <h1>${copy.title}</h1>
         <p>${copy.subtitle}</p>
+        <div class="connection-status" aria-live="polite">${connectionState === 'offline' ? copy.offlineIndicator : copy.onlineIndicator}</div>
       </section>
       <section class="panel quick-actions">
+        <article class="quick-action"><div><h2>${copy.savedTripsTitle}</h2><p>${copy.savedTripsSubtitle}</p></div><button type="button" id="open-saved-trips">${copy.savedTripsOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.qiblaTitle}</h2><p>${copy.qiblaSubtitle}</p></div><button type="button" id="open-qibla">${copy.qiblaOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.prayerSpacesTitle}</h2><p>${copy.prayerSpacesSubtitle}</p></div><button type="button" id="open-prayer-spaces">${copy.prayerSpacesOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.moneyTitle}</h2><p>${copy.moneySubtitle}</p></div><button type="button" id="open-money">${copy.moneyOpen}</button></article>
@@ -3872,7 +4109,8 @@ function render() {
       <section class="panel results" id="planner-results" aria-live="polite">
         <p class="sr-only" role="status">${esc(plannerAnnouncement)}</p>
         ${generatedPrefs && generatedCity ? `
-          <div class="result-header"><div><h2>${generatedCity.city}, ${generatedCity.country}</h2><p>${regionLabels[lang][generatedCity.region]} · ${generatedCity.timezone}</p><p>${copy.transportEstimatesAre}: ${copy.walking} ${generatedCity.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${generatedCity.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${generatedCity.transportEstimates.taxi} ${copy.minutesShort}.</p></div></div>
+          ${tripHeaderMarkup(generatedCity, generatedPrefs, items, copy)}
+          <div class="result-header"><div><p>${regionLabels[lang][generatedCity.region]} · ${generatedCity.timezone}</p><p>${copy.transportEstimatesAre}: ${copy.walking} ${generatedCity.transportEstimates.walking} ${copy.minutesShort} · ${copy.publicTransport} ${generatedCity.transportEstimates.publicTransport} ${copy.minutesShort} · ${copy.taxi} ${generatedCity.transportEstimates.taxi} ${copy.minutesShort}.</p></div></div>
           ${athanSection(generatedCity, generatedPrefs)}
           ${mapSection(generatedCity, copy)}
           ${items.length ? itineraryGroupsMarkup(items, generatedCity, copy) : `<p>${copy.emptyState}</p>`}
@@ -3887,6 +4125,11 @@ function bind() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
     lang = (event.target as HTMLSelectElement).value as Language;
     athanStatus = '';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-saved-trips')?.addEventListener('click', () => {
+    view = 'saved-trips';
+    if (window.location.hash !== '#saved-trips') window.location.hash = 'saved-trips';
     render();
   });
   document.querySelector<HTMLButtonElement>('#open-qibla')?.addEventListener('click', () => {
@@ -3957,6 +4200,11 @@ function bind() {
       return;
     }
     generatedPrefs = { ...next, interests: [...next.interests] };
+    generatedItems = generateItinerary(generatedPrefs, 0, lang);
+    openedSavedTripId = '';
+    savedTripNameDraft = '';
+    savedTripStatus = 'unsaved';
+    savedTripMessage = '';
     replan = 0;
     plannerAnnouncement = copy.itineraryReady;
     render();
@@ -4021,6 +4269,7 @@ function bind() {
     prefs = { ...prefs, [key]: key === 'groupSize' ? Number(value) : key === 'interests' ? String(value).split(',').map((interest) => interest.trim()).filter(Boolean) : value } as PlannerPreferences;
     plannerValidation = '';
     plannerAnnouncement = '';
+    if (generatedPrefs) savedTripStatus = 'unsaved';
     if (key === 'city' || key === 'prayerMethod' || key === 'startDate') {
       athanStatus = '';
       render();
@@ -4028,9 +4277,18 @@ function bind() {
   }));
   document.querySelectorAll<HTMLButtonElement>('[data-replan]').forEach((button) => button.addEventListener('click', () => {
     replan = Number(button.dataset.replan);
+    if (generatedPrefs) generatedItems = generateItinerary(generatedPrefs, replan, lang);
+    savedTripStatus = openedSavedTripId ? 'unsaved' : savedTripStatus;
     plannerAnnouncement = '';
     render();
   }));
+  document.querySelector<HTMLInputElement>('#trip-name')?.addEventListener('input', (event) => {
+    savedTripNameDraft = (event.target as HTMLInputElement).value;
+    savedTripStatus = openedSavedTripId ? 'unsaved' : savedTripStatus;
+  });
+  document.querySelector<HTMLButtonElement>('#save-trip')?.addEventListener('click', () => saveCurrentTrip(labels[lang]));
+  document.querySelector<HTMLButtonElement>('#edit-plan')?.addEventListener('click', () => document.querySelector<HTMLElement>('.form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  document.querySelector<HTMLButtonElement>('#print-itinerary')?.addEventListener('click', () => window.print());
 }
 
 window.addEventListener('hashchange', () => {
@@ -4046,6 +4304,23 @@ window.addEventListener('hashchange', () => {
   render();
 });
 
+window.addEventListener('online', () => {
+  connectionState = 'online';
+  render();
+});
+
+window.addEventListener('offline', () => {
+  connectionState = 'offline';
+  render();
+});
+
+window.addEventListener('storage', (event) => {
+  if (event.key !== 'mtp-saved-trips-v1') return;
+  const hadUnsavedEdits = hasUnsavedTripChanges();
+  refreshSavedTrips();
+  if (view === 'saved-trips' || !hadUnsavedEdits) render();
+});
+
 if (view === 'money') {
   toCurrency = destinationCurrency(selectedCity());
   void loadCurrencies();
@@ -4055,3 +4330,4 @@ if (view === 'public-transport') void searchPublicTransport(publicTransportDesti
 if (view === 'taxi-services') void searchTaxiServices(taxiDestinationCenter());
 
 render();
+void registerAppServiceWorker();
