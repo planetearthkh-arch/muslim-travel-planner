@@ -60,6 +60,15 @@ import {
   type CarRentalOffice,
 } from './car-rental.js';
 import {
+  buildPublicTransportOverpassQuery,
+  classifyPublicTransport,
+  dedupePublicTransportStops,
+  filterPublicTransportStops,
+  normalizePublicTransportStop,
+  sortPublicTransportStops,
+  type PublicTransportStop,
+} from './public-transport.js';
+import {
   buildWeatherUrl,
   convertPrecipitationFromMm,
   convertWindFromKmh,
@@ -1028,6 +1037,114 @@ test('builds bounded car-rental Overpass queries and includes language states', 
   assert.equal(labels.en.carRentalNoResults, 'No mapped car-rental offices were found in this area. This does not necessarily mean that none exist.');
   assert.equal(labels.ar.carRentalTitle.length > 0, true);
   assert.equal(labels.id.carRentalTitle.length > 0, true);
+});
+
+test('classifies public transport from structured OSM tags without name guessing', () => {
+  assert.equal(classifyPublicTransport({ railway: 'station' }), 'train');
+  assert.equal(classifyPublicTransport({ railway: 'halt' }), 'train');
+  assert.equal(classifyPublicTransport({ station: 'subway' }), 'metro');
+  assert.equal(classifyPublicTransport({ railway: 'subway_entrance' }), 'metro');
+  assert.equal(classifyPublicTransport({ station: 'light_rail' }), 'light-rail');
+  assert.equal(classifyPublicTransport({ railway: 'tram_stop' }), 'tram');
+  assert.equal(classifyPublicTransport({ amenity: 'bus_station' }), 'bus-station');
+  assert.equal(classifyPublicTransport({ highway: 'bus_stop' }), 'bus-stop');
+  assert.equal(classifyPublicTransport({ amenity: 'ferry_terminal' }), 'ferry');
+  assert.equal(classifyPublicTransport({ name: 'Central Station' }), undefined);
+});
+
+test('normalizes public transport details, safe websites, and destination-local opening state', () => {
+  const origin = { latitude: 35.68, longitude: 139.76, timezone: 'Asia/Tokyo' };
+  const stop = normalizePublicTransportStop({
+    type: 'node',
+    id: 1,
+    lat: 35.6812,
+    lon: 139.7671,
+    tags: {
+      railway: 'station',
+      name: '東京駅',
+      'name:en': 'Tokyo Station',
+      operator: 'JR East',
+      network: 'JR',
+      ref: 'TYO',
+      line: 'Yamanote',
+      opening_hours: 'Mo-Su 00:00-24:00',
+      wheelchair: 'yes',
+      shelter: 'yes',
+      bench: 'yes',
+      toilets: 'yes',
+      website: 'tokyostation.example',
+    },
+  }, origin);
+  assert.equal(stop?.name, 'Tokyo Station');
+  assert.equal(stop?.originalName, '東京駅');
+  assert.equal(stop?.operator, 'JR East');
+  assert.equal(stop?.network, 'JR');
+  assert.equal(stop?.ref, 'TYO');
+  assert.equal(stop?.routes, 'Yamanote');
+  assert.equal(stop?.openState, 'open');
+  assert.equal(stop?.wheelchair, 'yes');
+  assert.equal(stop?.shelter, 'yes');
+  assert.equal(stop?.seating, 'yes');
+  assert.equal(stop?.toilets, 'yes');
+  assert.equal(stop?.website, 'https://tokyostation.example/');
+  const unsafe = normalizePublicTransportStop({ type: 'node', id: 2, lat: 0, lon: 0, tags: { highway: 'bus_stop', website: 'javascript:alert(1)' } }, origin);
+  assert.equal(unsafe?.website, '');
+});
+
+test('deduplicates public transport stations, platforms, and subway entrances carefully', () => {
+  const origin = { latitude: 0, longitude: 0, timezone: 'UTC' };
+  const stops = [
+    normalizePublicTransportStop({ type: 'node', id: 1, lat: 0, lon: 0, tags: { railway: 'station', station: 'subway', name: 'Central' } }, origin),
+    normalizePublicTransportStop({ type: 'node', id: 2, lat: 0.0002, lon: 0.0002, tags: { railway: 'subway_entrance', name: 'Central Entrance A' } }, origin),
+    normalizePublicTransportStop({ type: 'node', id: 3, lat: 0.00021, lon: 0.0002, tags: { public_transport: 'platform', subway: 'yes', name: 'Central Platform' } }, origin),
+    normalizePublicTransportStop({ type: 'node', id: 4, lat: 0.01, lon: 0.01, tags: { railway: 'station', station: 'subway', name: 'Central North' } }, origin),
+  ].filter((stop): stop is PublicTransportStop => Boolean(stop));
+  const deduped = dedupePublicTransportStops(stops);
+  assert.equal(deduped.some((stop) => stop.name === 'Central'), true);
+  assert.equal(deduped.some((stop) => stop.name === 'Central North'), true);
+  assert.equal(deduped.some((stop) => /Entrance|Platform/.test(stop.name)), false);
+});
+
+test('filters and sorts public transport by accessibility, open state, facilities, and type', () => {
+  const origin = { latitude: 0, longitude: 0, timezone: 'UTC' };
+  const stops = [
+    normalizePublicTransportStop({ type: 'node', id: 1, lat: 0.02, lon: 0, tags: { railway: 'station', name: 'Train', opening_hours: '24/7', wheelchair: 'yes', toilets: 'yes' } }, origin),
+    normalizePublicTransportStop({ type: 'node', id: 2, lat: 0.01, lon: 0, tags: { highway: 'bus_stop', name: 'Bus', shelter: 'yes' } }, origin),
+    normalizePublicTransportStop({ type: 'node', id: 3, lat: 0.03, lon: 0, tags: { amenity: 'ferry_terminal', name: 'Ferry' } }, origin),
+  ].filter((stop): stop is PublicTransportStop => Boolean(stop));
+  assert.equal(sortPublicTransportStops(stops, 'distance')[0]?.name, 'Bus');
+  assert.equal(sortPublicTransportStops(stops, 'type')[0]?.type, 'train');
+  assert.equal(sortPublicTransportStops(stops, 'accessibility')[0]?.name, 'Train');
+  assert.equal(filterPublicTransportStops(stops, { type: 'train', wheelchair: true, openNow: true, toilets: true, shelter: false }).length, 1);
+  assert.equal(filterPublicTransportStops(stops, { type: 'all', wheelchair: false, openNow: false, toilets: false, shelter: true })[0]?.name, 'Bus');
+});
+
+test('builds bounded public transport Overpass queries and includes language labels', () => {
+  const query = buildPublicTransportOverpassQuery(51.5, -0.1, 100);
+  assert.equal(query.includes('around:50000,51.5,-0.1'), true);
+  assert.equal(query.includes('["railway"~"^(station|halt|tram_stop|light_rail|subway_entrance)$"]'), true);
+  assert.equal(query.includes('["public_transport"~"^(station|platform|stop_position)$"]'), true);
+  assert.equal(query.includes('["highway"="bus_stop"]'), true);
+  assert.equal(query.includes('["amenity"~"^(bus_station|ferry_terminal)$"]'), true);
+  assert.equal(labels.en.publicTransportTitle, 'Public Transport');
+  assert.equal(labels.ar.publicTransportTitle.length > 0, true);
+  assert.equal(labels.id.publicTransportTitle.length > 0, true);
+});
+
+test('public transport route source handles cache, stale requests, errors, and responsive labels', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes("'public-transport'"), true);
+  assert.equal(source.includes("window.location.hash === '#public-transport'"), true);
+  assert.equal(source.includes('publicTransportAbortController = nextAbortController(publicTransportAbortController)'), true);
+  assert.equal(source.includes('const isCurrentPublicTransportSearch = () => sequence === publicTransportSearchSequence'), true);
+  assert.equal(source.includes("requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 20000)"), true);
+  assert.equal(source.includes('publicTransportCache.set(cacheKey'), true);
+  assert.equal(source.includes('refreshOpenState(cached.results, searchCenter.timezone)'), true);
+  assert.equal(source.includes("classifyRequestError(error).kind === 'timeout' ? 'timeout' : 'service-unavailable'"), true);
+  assert.equal(source.includes('data-public-transport-filter'), true);
+  assert.equal(source.includes('public-transport-map'), true);
+  assert.equal(source.includes('390') || labels.en.publicTransportSubtitle.length > 0, true);
 });
 
 const sampleWeatherResponse = () => {

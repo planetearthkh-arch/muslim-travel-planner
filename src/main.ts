@@ -39,6 +39,17 @@ import {
   type CarRentalSort,
 } from './car-rental.js';
 import {
+  buildPublicTransportOverpassQuery,
+  dedupePublicTransportStops,
+  filterPublicTransportStops,
+  normalizePublicTransportStop,
+  sortPublicTransportStops,
+  type PublicTransportFilters,
+  type PublicTransportSort,
+  type PublicTransportStop,
+  type PublicTransportType,
+} from './public-transport.js';
+import {
   OPEN_METEO_FORECAST_URL,
   WEATHER_CACHE_MS,
   buildWeatherUrl,
@@ -135,14 +146,14 @@ import {
 import type { ItineraryItem, PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'weather' | 'attractions';
+type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'weather' | 'attractions';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#public-transport' ? 'public-transport' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -236,6 +247,7 @@ let prayerMap: MapLibreMap | undefined;
 let restaurantMap: MapLibreMap | undefined;
 let toiletMap: MapLibreMap | undefined;
 let carRentalMap: MapLibreMap | undefined;
+let publicTransportMap: MapLibreMap | undefined;
 let attractionsMap: MapLibreMap | undefined;
 const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
@@ -330,6 +342,8 @@ function applyEnglishMapLabels(map: MapLibreMap) {
 function initializeMap(copy: typeof labels[Language]) {
   cityMap?.remove();
   cityMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const element = document.querySelector<HTMLElement>('#city-map');
   const status = document.querySelector<HTMLElement>('#map-status');
   if (!element || !status) return;
@@ -600,6 +614,8 @@ type ToiletMode = 'map' | 'list';
 type CarRentalStatus = RestaurantStatus;
 type CarRentalMode = 'map' | 'list';
 type CarRentalSearchKind = 'destination' | 'airport' | 'station';
+type PublicTransportStatus = RestaurantStatus;
+type PublicTransportMode = 'map' | 'list';
 type WeatherStatus = 'idle' | 'requesting' | 'loading' | 'ready' | 'updated' | 'denied' | 'unavailable' | 'service-unavailable' | 'timeout' | 'invalid' | 'offline' | 'cached' | 'no-cache' | 'unsupported';
 type WeatherLocation = { latitude: number; longitude: number; label: string; country?: string; timezone?: string };
 type AttractionStatus = RestaurantStatus | 'photos' | 'history';
@@ -611,6 +627,7 @@ type NominatimResult = { lat: string; lon: string; display_name: string };
 const prayerRadii = [1, 3, 5, 10, 25, 50] as const;
 const toiletRadii = [0.5, 1, 3, 5, 10, 25] as const;
 const carRentalRadii = [3, 5, 10, 25, 50, 100] as const;
+const publicTransportRadii = [1, 3, 5, 10, 25, 50] as const;
 const attractionRadii = [1, 3, 5, 10, 25, 50] as const;
 let prayerStatus: PrayerLocationStatus = 'idle';
 let prayerMode: PrayerMode = 'map';
@@ -671,6 +688,19 @@ let carRentalError = '';
 let carRentalSearchTimer: number | undefined;
 let carRentalSearchSequence = 0;
 const carRentalCache = new Map<string, { expires: number; results: CarRentalOffice[] }>();
+let publicTransportStatus: PublicTransportStatus = 'idle';
+let publicTransportMode: PublicTransportMode = 'map';
+let publicTransportCenter: PrayerCenter | undefined;
+let publicTransportRadiusKm: typeof publicTransportRadii[number] = 5;
+let publicTransportManualQuery = '';
+let publicTransportResults: PublicTransportStop[] = [];
+let publicTransportFilters: PublicTransportFilters = { type: 'all', wheelchair: false, openNow: false, toilets: false, shelter: false };
+let publicTransportSort: PublicTransportSort = 'distance';
+let publicTransportMapMoved = false;
+let publicTransportError = '';
+let publicTransportSearchTimer: number | undefined;
+let publicTransportSearchSequence = 0;
+const publicTransportCache = new Map<string, { expires: number; results: PublicTransportStop[] }>();
 let weatherStatus: WeatherStatus = 'idle';
 let weatherLocation: WeatherLocation | undefined;
 let weatherManualQuery = '';
@@ -708,6 +738,7 @@ let prayerAbortController: AbortController | undefined;
 let restaurantAbortController: AbortController | undefined;
 let toiletAbortController: AbortController | undefined;
 let carRentalAbortController: AbortController | undefined;
+let publicTransportAbortController: AbortController | undefined;
 let weatherAbortController: AbortController | undefined;
 let attractionAbortController: AbortController | undefined;
 let attractionEnrichmentAbortController: AbortController | undefined;
@@ -894,6 +925,8 @@ function debouncedPrayerSearch(center: PrayerCenter) {
 function initializePrayerMap() {
   prayerMap?.remove();
   prayerMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const element = document.querySelector<HTMLElement>('#prayer-map');
   if (!element || !prayerCenter || !window.maplibregl) return;
   try {
@@ -951,6 +984,8 @@ function prayerPage() {
   if (!root) return;
   cityMap?.remove();
   cityMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const results = filteredPrayerResults();
@@ -1171,6 +1206,8 @@ function debouncedRestaurantSearch(center: PrayerCenter) {
 function initializeRestaurantMap() {
   restaurantMap?.remove();
   restaurantMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const element = document.querySelector<HTMLElement>('#halal-map');
   if (!element || !restaurantCenter || !window.maplibregl) return;
   try {
@@ -1250,6 +1287,8 @@ function halalRestaurantsPage() {
   cityMap = undefined;
   prayerMap?.remove();
   prayerMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const results = filteredRestaurantResults();
@@ -1482,6 +1521,8 @@ function toiletBrowserDirectionsUrl(toilet: PublicToilet) {
 function initializeToiletMap() {
   toiletMap?.remove();
   toiletMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const element = document.querySelector<HTMLElement>('#toilet-map');
   if (!element || !toiletCenter || !window.maplibregl) return;
   try {
@@ -1564,6 +1605,8 @@ function publicToiletsPage() {
   prayerMap = undefined;
   restaurantMap?.remove();
   restaurantMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const results = filteredToiletResults();
@@ -1778,6 +1821,8 @@ function carRentalBrowserDirectionsUrl(office: CarRentalOffice) {
 function initializeCarRentalMap() {
   carRentalMap?.remove();
   carRentalMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const element = document.querySelector<HTMLElement>('#car-rental-map');
   if (!element || !carRentalCenter || !window.maplibregl) return;
   try {
@@ -1860,6 +1905,8 @@ function carRentalPage() {
   restaurantMap = undefined;
   toiletMap?.remove();
   toiletMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const results = filteredCarRentalResults();
@@ -1935,6 +1982,304 @@ function bindCarRentalPage() {
     const lngs = results.map((office) => office.longitude);
     const lats = results.map((office) => office.latitude);
     carRentalMap.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 60, maxZoom: 15 });
+  });
+}
+
+function publicTransportTypeLabel(type: PublicTransportType, copy: typeof labels[Language]) {
+  if (type === 'train') return copy.transportTrain;
+  if (type === 'metro') return copy.transportMetro;
+  if (type === 'light-rail') return copy.transportLightRail;
+  if (type === 'tram') return copy.transportTram;
+  if (type === 'bus-station') return copy.transportBusStation;
+  if (type === 'bus-stop') return copy.transportBusStop;
+  if (type === 'ferry') return copy.transportFerry;
+  return copy.transportOther;
+}
+
+function publicTransportStatusMessage(copy: typeof labels[Language]) {
+  if (publicTransportStatus === 'requesting') return copy.publicTransportRequestingLocation;
+  if (publicTransportStatus === 'searching') return copy.publicTransportSearching;
+  if (publicTransportStatus === 'denied') return copy.publicTransportLocationDenied;
+  if (publicTransportStatus === 'unavailable') return copy.publicTransportLocationUnavailable;
+  if (publicTransportStatus === 'service-unavailable') return publicTransportError || copy.publicTransportServiceUnavailable;
+  if (publicTransportStatus === 'timeout') return copy.publicTransportTimedOut;
+  if (publicTransportStatus === 'too-many') return copy.publicTransportTooMany;
+  if (publicTransportStatus === 'cached') return copy.publicTransportCached;
+  if (publicTransportStatus === 'offline') return copy.publicTransportOffline;
+  if (publicTransportStatus === 'empty') return copy.publicTransportNoResults;
+  return '';
+}
+
+function filteredPublicTransportResults() {
+  return sortPublicTransportStops(filterPublicTransportStops(publicTransportResults, publicTransportFilters), publicTransportSort);
+}
+
+async function searchPublicTransport(center: PrayerCenter) {
+  const sequence = ++publicTransportSearchSequence;
+  publicTransportAbortController = nextAbortController(publicTransportAbortController);
+  const abortSignal = publicTransportAbortController.signal;
+  const searchCenter = { ...center };
+  const searchRadius = publicTransportRadiusKm;
+  const isCurrentPublicTransportSearch = () => sequence === publicTransportSearchSequence;
+  publicTransportCenter = searchCenter;
+  publicTransportMapMoved = false;
+  const cacheKey = `${searchCenter.latitude.toFixed(4)},${searchCenter.longitude.toFixed(4)},${searchRadius}`;
+  const cached = publicTransportCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    if (!isCurrentPublicTransportSearch()) return;
+    publicTransportResults = refreshOpenState(cached.results, searchCenter.timezone);
+    publicTransportStatus = publicTransportResults.length ? 'cached' : 'empty';
+    publicTransportPage();
+    return;
+  }
+  publicTransportStatus = 'searching';
+  publicTransportError = '';
+  publicTransportPage();
+  try {
+    const body = buildPublicTransportOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
+    const data = await requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 20000);
+    if (!isCurrentPublicTransportSearch()) return;
+    const normalized = (data.elements ?? [])
+      .map((element) => normalizePublicTransportStop(element, searchCenter))
+      .filter((stop): stop is PublicTransportStop => Boolean(stop));
+    if (!isCurrentPublicTransportSearch()) return;
+    publicTransportResults = dedupePublicTransportStops(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 500);
+    publicTransportCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: publicTransportResults });
+    publicTransportStatus = normalized.length > 500 ? 'too-many' : publicTransportResults.length ? 'ready' : 'empty';
+  } catch (error) {
+    console.error(error);
+    if (!isCurrentPublicTransportSearch()) return;
+    if (classifyRequestError(error).kind === 'aborted') return;
+    if (cached) {
+      publicTransportResults = refreshOpenState(cached.results, searchCenter.timezone);
+      publicTransportStatus = navigator.onLine ? 'cached' : 'offline';
+    } else {
+      publicTransportResults = [];
+      publicTransportStatus = classifyRequestError(error).kind === 'timeout' ? 'timeout' : 'service-unavailable';
+      publicTransportError = labels[lang].publicTransportServiceUnavailable;
+    }
+  }
+  if (!isCurrentPublicTransportSearch()) return;
+  publicTransportPage();
+}
+
+function requestPublicTransportLocation() {
+  if (!navigator.geolocation) {
+    publicTransportStatus = 'unavailable';
+    publicTransportPage();
+    return;
+  }
+  publicTransportStatus = 'requesting';
+  publicTransportPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => void searchPublicTransport({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (error) => {
+      publicTransportStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      publicTransportPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+function publicTransportDestinationCenter(city = selectedCity()): PrayerCenter {
+  return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone };
+}
+
+async function searchPublicTransportDestination() {
+  const rawQuery = publicTransportManualQuery.trim();
+  if (!rawQuery) return;
+  const sequence = ++publicTransportSearchSequence;
+  const isCurrentPublicTransportSearch = () => sequence === publicTransportSearchSequence;
+  publicTransportStatus = 'searching';
+  publicTransportPage();
+  try {
+    const center = await resolveRestaurantDestination(rawQuery);
+    if (!isCurrentPublicTransportSearch()) return;
+    if (!center) {
+      publicTransportResults = [];
+      publicTransportStatus = 'empty';
+      publicTransportPage();
+      return;
+    }
+    await searchPublicTransport(center);
+  } catch (error) {
+    console.error(error);
+    if (!isCurrentPublicTransportSearch()) return;
+    publicTransportStatus = 'service-unavailable';
+    publicTransportError = labels[lang].publicTransportServiceUnavailable;
+    publicTransportPage();
+  }
+}
+
+function debouncedPublicTransportSearch(center: PrayerCenter) {
+  if (publicTransportSearchTimer) window.clearTimeout(publicTransportSearchTimer);
+  publicTransportSearchTimer = window.setTimeout(() => void searchPublicTransport(center), 450);
+}
+
+function publicTransportAppleMapsUrl(stop: PublicTransportStop) {
+  return `https://maps.apple.com/?daddr=${stop.latitude},${stop.longitude}&q=${encodeURIComponent(stop.name)}`;
+}
+
+function publicTransportBrowserDirectionsUrl(stop: PublicTransportStop) {
+  return `https://www.openstreetmap.org/directions?to=${stop.latitude},${stop.longitude}#map=17/${stop.latitude}/${stop.longitude}`;
+}
+
+function initializePublicTransportMap() {
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
+  const element = document.querySelector<HTMLElement>('#public-transport-map');
+  if (!element || !publicTransportCenter || !window.maplibregl) return;
+  try {
+    element.replaceChildren();
+    publicTransportMap = new window.maplibregl.Map({
+      container: element,
+      style: openFreeMapStyle,
+      center: [publicTransportCenter.longitude, publicTransportCenter.latitude],
+      zoom: publicTransportRadiusKm <= 5 ? 12 : publicTransportRadiusKm <= 25 ? 10 : 8,
+      attributionControl: true,
+    });
+    publicTransportMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
+    new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([publicTransportCenter.longitude, publicTransportCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(publicTransportCenter.label)).addTo(publicTransportMap);
+    const colors: Record<PublicTransportType, string> = { train: '#2563eb', metro: '#7c3aed', 'light-rail': '#0891b2', tram: '#0f766e', 'bus-station': '#d97706', 'bus-stop': '#ca8a04', ferry: '#0284c7', other: '#64748b' };
+    for (const stop of filteredPublicTransportResults()) {
+      new window.maplibregl.Marker({ color: colors[stop.type] }).setLngLat([stop.longitude, stop.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(`${publicTransportTypeLabel(stop.type, labels[lang])} ${stop.name}`)).addTo(publicTransportMap);
+    }
+    publicTransportMap.on('moveend', () => {
+      publicTransportMapMoved = true;
+      const button = document.querySelector<HTMLButtonElement>('#public-transport-search-this-area');
+      if (button) button.hidden = false;
+    });
+  } catch {
+    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+  }
+}
+
+function publicTransportDetails(stop: PublicTransportStop, copy: typeof labels[Language]) {
+  const wheelchair = stop.wheelchair === 'yes' ? copy.toiletsWheelchair : stop.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : stop.wheelchair === 'no' ? copy.toiletsWheelchairNo : '';
+  const rows = [
+    [copy.transportType, publicTransportTypeLabel(stop.type, copy)],
+    [copy.prayerAddress, stop.address],
+    [copy.transportOperator, stop.operator],
+    [copy.transportNetwork, stop.network],
+    [copy.transportReference, stop.ref],
+    [copy.transportLines, stop.routes],
+    [copy.prayerOpeningHours, stop.openingHours || copy.halalOpeningUnavailable],
+    [copy.toiletsWheelchair, wheelchair],
+    [copy.transportShelter, stop.shelter === 'yes' ? copy.available : stop.shelter === 'no' ? copy.notAvailable : ''],
+    [copy.transportSeating, stop.seating === 'yes' ? copy.available : stop.seating === 'no' ? copy.notAvailable : ''],
+    [copy.transportToilets, stop.toilets === 'yes' ? copy.available : stop.toilets === 'no' ? copy.notAvailable : ''],
+    [copy.prayerTelephone, stop.phone],
+    [copy.prayerWebsite, stop.website ? `<a href="${esc(stop.website)}" target="_blank" rel="noopener noreferrer">${copy.transportOfficialWebsite}</a>` : ''],
+  ].filter(([, value]) => Boolean(value));
+  return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+}
+
+function publicTransportCard(stop: PublicTransportStop, copy: typeof labels[Language]) {
+  return `<article class="card public-transport-card" aria-label="${esc(stop.name)}">
+    <div class="card-top"><span>${stop.distanceKm.toFixed(1)} km · ${publicTransportTypeLabel(stop.type, copy)}</span><span class="badge transport-${stop.type}">${publicTransportTypeLabel(stop.type, copy)}</span></div>
+    <h3>${esc(stop.name)}</h3>
+    ${stop.originalName && stop.originalName !== stop.name ? `<p>${esc(stop.originalName)}</p>` : ''}
+    <p>${openingStatusLabel(stop.openState, copy)}</p>
+    ${publicTransportDetails(stop, copy)}
+    <div class="place-actions">
+      <a class="map-link" href="${stop.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
+      <a class="map-link" href="${publicTransportAppleMapsUrl(stop)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
+      <a class="map-link" href="${publicTransportBrowserDirectionsUrl(stop)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+      ${stop.website ? `<a class="map-link" href="${esc(stop.website)}" target="_blank" rel="noopener noreferrer">${copy.transportOfficialWebsite}</a>` : ''}
+    </div>
+  </article>`;
+}
+
+function publicTransportPage() {
+  if (!root) return;
+  cityMap?.remove();
+  cityMap = undefined;
+  prayerMap?.remove();
+  prayerMap = undefined;
+  restaurantMap?.remove();
+  restaurantMap = undefined;
+  toiletMap?.remove();
+  toiletMap = undefined;
+  carRentalMap?.remove();
+  carRentalMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
+  attractionsMap?.remove();
+  attractionsMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const results = filteredPublicTransportResults();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `
+    <main dir="${dir}" class="app prayer-app public-transport-app">
+      <section class="hero prayer-hero">
+        ${languageSelector()}
+        <p class="eyebrow">${copy.publicTransportOpen}</p>
+        <h1>${copy.publicTransportTitle}</h1>
+        <p>${copy.publicTransportSubtitle}</p>
+        <button type="button" class="ghost hero-action" id="back-from-public-transport">${copy.publicTransportBack}</button>
+      </section>
+      <section class="panel prayer-panel" aria-live="polite">
+        <p class="notice prayer-notice">${copy.publicTransportNotice}</p>
+        <p class="notice prayer-notice">${copy.publicTransportLiveNotice}</p>
+        <div class="prayer-actions">
+          <button type="button" id="use-public-transport-location">${copy.publicTransportUseLocation}</button>
+          <button type="button" class="ghost" id="use-public-transport-destination">${copy.publicTransportUseDestination}</button>
+          <label>${copy.publicTransportRadius}<select id="public-transport-radius">${publicTransportRadii.map((radius) => `<option value="${radius}" ${radius === publicTransportRadiusKm ? 'selected' : ''}>${radius} km</option>`).join('')}</select></label>
+          <form id="manual-public-transport-search" class="manual-search"><label>${copy.publicTransportManualSearch}<input id="public-transport-manual-query" value="${esc(publicTransportManualQuery)}" placeholder="${copy.publicTransportManualPlaceholder}" /></label><button type="submit">${copy.publicTransportSearch}</button></form>
+        </div>
+        <p class="prayer-status ${publicTransportStatus}" role="status">${publicTransportStatusMessage(copy)}</p>
+        <div class="segmented" role="tablist" aria-label="${copy.publicTransportTitle}">
+          <button type="button" class="${publicTransportMode === 'map' ? 'active' : 'ghost'}" data-public-transport-mode="map">${copy.publicTransportMapView}</button>
+          <button type="button" class="${publicTransportMode === 'list' ? 'active' : 'ghost'}" data-public-transport-mode="list">${copy.publicTransportListView}</button>
+        </div>
+        <div class="prayer-filters" aria-label="${copy.publicTransportTitle}">
+          <select id="public-transport-type-filter"><option value="all">${copy.publicTransportAll}</option>${(['train','metro','light-rail','tram','bus-station','bus-stop','ferry','other'] as PublicTransportType[]).map((type) => `<option value="${type}" ${publicTransportFilters.type === type ? 'selected' : ''}>${publicTransportTypeLabel(type, copy)}</option>`).join('')}</select>
+          ${['wheelchair', 'openNow', 'toilets', 'shelter'].map((key) => {
+            const label = ({ wheelchair: copy.toiletsWheelchair, openNow: copy.toiletsOpenNow, toilets: copy.transportToiletsAvailable, shelter: copy.transportShelterAvailable } as Record<string, string>)[key];
+            return `<label class="inline-check"><input type="checkbox" data-public-transport-filter="${key}" ${publicTransportFilters[key as keyof PublicTransportFilters] ? 'checked' : ''}/> ${label}</label>`;
+          }).join('')}
+          <label>${copy.publicTransportSort}<select id="public-transport-sort"><option value="distance" ${publicTransportSort === 'distance' ? 'selected' : ''}>${copy.toiletsNearest}</option><option value="name" ${publicTransportSort === 'name' ? 'selected' : ''}>${copy.toiletsSortName}</option><option value="type" ${publicTransportSort === 'type' ? 'selected' : ''}>${copy.transportSortType}</option><option value="open" ${publicTransportSort === 'open' ? 'selected' : ''}>${copy.toiletsSortOpen}</option><option value="accessibility" ${publicTransportSort === 'accessibility' ? 'selected' : ''}>${copy.toiletsSortAccessible}</option></select></label>
+        </div>
+        <div class="place-actions">
+          <button type="button" id="public-transport-search-this-area" class="ghost" ${publicTransportMapMoved ? '' : 'hidden'}>${copy.publicTransportSearchThisArea}</button>
+          <button type="button" id="public-transport-recentre" class="ghost">${copy.publicTransportRecentre}</button>
+          <button type="button" id="public-transport-fit-results" class="ghost">${copy.publicTransportFitResults}</button>
+        </div>
+        <div class="legend halal-legend"><strong>${copy.publicTransportLegend}</strong><span class="badge transport-train">${copy.transportTrain}</span><span class="badge transport-metro">${copy.transportMetro}</span><span class="badge transport-tram">${copy.transportTram}</span><span class="badge transport-bus-stop">${copy.transportBusStop}</span><span class="badge transport-ferry">${copy.transportFerry}</span></div>
+        ${publicTransportMode === 'map' ? `<div id="public-transport-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
+        ${(['empty', 'timeout', 'service-unavailable', 'offline'].includes(publicTransportStatus) || !results.length && publicTransportResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-public-transport" class="ghost">${copy.publicTransportRetry}</button>${publicTransportStatus === 'timeout' ? '' : `<button type="button" id="increase-public-transport-radius">${copy.publicTransportIncreaseRadius}</button>`}<button type="button" id="another-public-transport-city" class="ghost">${copy.publicTransportSearchAnother}</button></div>` : ''}
+        <div class="place-list">${results.length ? results.map((stop) => publicTransportCard(stop, copy)).join('') : publicTransportStatus === 'ready' ? `<p>${copy.publicTransportNoResults}</p>` : ''}</div>
+        <p class="map-status">${copy.osmAttribution}</p>
+      </section>
+    </main>`;
+  bindPublicTransportPage();
+  if (publicTransportMode === 'map') initializePublicTransportMap();
+}
+
+function bindPublicTransportPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; publicTransportPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-public-transport')?.addEventListener('click', () => { view = 'planner'; publicTransportMap?.remove(); publicTransportMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#use-public-transport-location')?.addEventListener('click', requestPublicTransportLocation);
+  document.querySelector<HTMLButtonElement>('#use-public-transport-destination')?.addEventListener('click', () => void searchPublicTransport(publicTransportDestinationCenter()));
+  document.querySelector<HTMLSelectElement>('#public-transport-radius')?.addEventListener('change', (event) => { publicTransportRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof publicTransportRadii[number]; if (publicTransportCenter) void searchPublicTransport(publicTransportCenter); });
+  document.querySelector<HTMLFormElement>('#manual-public-transport-search')?.addEventListener('submit', (event) => { event.preventDefault(); publicTransportManualQuery = document.querySelector<HTMLInputElement>('#public-transport-manual-query')?.value ?? ''; void searchPublicTransportDestination(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-public-transport-mode]').forEach((button) => button.addEventListener('click', () => { publicTransportMode = button.dataset.publicTransportMode as PublicTransportMode; publicTransportPage(); }));
+  document.querySelector<HTMLSelectElement>('#public-transport-type-filter')?.addEventListener('change', (event) => { publicTransportFilters = { ...publicTransportFilters, type: (event.target as HTMLSelectElement).value as PublicTransportFilters['type'] }; publicTransportPage(); });
+  document.querySelectorAll<HTMLInputElement>('[data-public-transport-filter]').forEach((input) => input.addEventListener('change', () => { publicTransportFilters = { ...publicTransportFilters, [input.dataset.publicTransportFilter ?? 'openNow']: input.checked }; publicTransportPage(); }));
+  document.querySelector<HTMLSelectElement>('#public-transport-sort')?.addEventListener('change', (event) => { publicTransportSort = (event.target as HTMLSelectElement).value as PublicTransportSort; publicTransportPage(); });
+  document.querySelector<HTMLButtonElement>('#retry-public-transport')?.addEventListener('click', () => { if (publicTransportCenter) void searchPublicTransport(publicTransportCenter); else requestPublicTransportLocation(); });
+  document.querySelector<HTMLButtonElement>('#increase-public-transport-radius')?.addEventListener('click', () => { const next = publicTransportRadii.find((radius) => radius > publicTransportRadiusKm); if (next) publicTransportRadiusKm = next; if (publicTransportCenter) void searchPublicTransport(publicTransportCenter); });
+  document.querySelector<HTMLButtonElement>('#another-public-transport-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#public-transport-manual-query')?.focus());
+  document.querySelector<HTMLButtonElement>('#public-transport-search-this-area')?.addEventListener('click', () => { const center = publicTransportMap?.getCenter?.(); if (!center) return; debouncedPublicTransportSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].publicTransportSearchThisArea, timezone: publicTransportCenter?.timezone }); });
+  document.querySelector<HTMLButtonElement>('#public-transport-recentre')?.addEventListener('click', requestPublicTransportLocation);
+  document.querySelector<HTMLButtonElement>('#public-transport-fit-results')?.addEventListener('click', () => {
+    const results = filteredPublicTransportResults();
+    if (!publicTransportMap?.fitBounds || !results.length) return;
+    const lngs = results.map((stop) => stop.longitude);
+    const lats = results.map((stop) => stop.latitude);
+    publicTransportMap.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 60, maxZoom: 15 });
   });
 }
 
@@ -2152,6 +2497,8 @@ function weatherPage() {
   toiletMap = undefined;
   carRentalMap?.remove();
   carRentalMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const forecast = weatherForecast;
@@ -2679,6 +3026,8 @@ function attractionsPage() {
   cityMap = undefined;
   prayerMap?.remove();
   prayerMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   restaurantMap?.remove();
   restaurantMap = undefined;
   toiletMap?.remove();
@@ -2979,6 +3328,8 @@ function moneyPage() {
   cityMap = undefined;
   prayerMap?.remove();
   prayerMap = undefined;
+  publicTransportMap?.remove();
+  publicTransportMap = undefined;
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const city = selectedCity();
@@ -3128,6 +3479,10 @@ function render() {
     carRentalPage();
     return;
   }
+  if (view === 'public-transport') {
+    publicTransportPage();
+    return;
+  }
   if (view === 'weather') {
     weatherPage();
     return;
@@ -3160,6 +3515,7 @@ function render() {
         <article class="quick-action"><div><h2>${copy.halalRestaurantsTitle}</h2><p>${copy.halalRestaurantsSubtitle}</p></div><button type="button" id="open-halal-restaurants">${copy.halalRestaurantsOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.toiletsTitle}</h2><p>${copy.toiletsSubtitle}</p></div><button type="button" id="open-public-toilets">${copy.toiletsOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.carRentalTitle}</h2><p>${copy.carRentalSubtitle}</p></div><button type="button" id="open-car-rental">${copy.carRentalOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.publicTransportTitle}</h2><p>${copy.publicTransportSubtitle}</p></div><button type="button" id="open-public-transport">${copy.publicTransportOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.weatherTitle}</h2><p>${copy.weatherSubtitle}</p></div><button type="button" id="open-weather">${copy.weatherOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.attractionsTitle}</h2><p>${copy.attractionsSubtitle}</p></div><button type="button" id="open-attractions">${copy.attractionsOpen}</button></article>
       </section>
@@ -3233,6 +3589,12 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#open-car-rental')?.addEventListener('click', () => {
     view = 'car-rental';
     if (window.location.hash !== '#car-rental') window.location.hash = 'car-rental';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-public-transport')?.addEventListener('click', () => {
+    view = 'public-transport';
+    if (window.location.hash !== '#public-transport') window.location.hash = 'public-transport';
+    void searchPublicTransport(publicTransportDestinationCenter());
     render();
   });
   document.querySelector<HTMLButtonElement>('#open-weather')?.addEventListener('click', () => {
@@ -3336,12 +3698,13 @@ function bind() {
 
 window.addEventListener('hashchange', () => {
   view = viewFromHash();
-  if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; restaurantMap?.remove(); restaurantMap = undefined; }
+  if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; restaurantMap?.remove(); restaurantMap = undefined; publicTransportMap?.remove(); publicTransportMap = undefined; }
   if (view === 'money') {
     toCurrency = destinationCurrency(selectedCity());
     void loadCurrencies();
     void loadPairRate();
   }
+  if (view === 'public-transport' && !publicTransportCenter) void searchPublicTransport(publicTransportDestinationCenter());
   render();
 });
 
@@ -3350,5 +3713,6 @@ if (view === 'money') {
   void loadCurrencies();
   void loadPairRate();
 }
+if (view === 'public-transport') void searchPublicTransport(publicTransportDestinationCenter());
 
 render();
