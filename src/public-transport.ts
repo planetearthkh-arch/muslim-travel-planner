@@ -1,4 +1,4 @@
-import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
+import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
@@ -128,8 +128,8 @@ export function normalizePublicTransportStop(element: OverpassElement, origin: {
     longitude,
     distanceKm: distanceKm(origin.latitude, origin.longitude, latitude, longitude),
     address: formatAddress(tags),
-    operator: ensureLatinDisplayName(taggedValue(tags, ['operator:en', 'operator']), undefined),
-    network: ensureLatinDisplayName(taggedValue(tags, ['network:en', 'network']), undefined),
+    operator: optionalLatinDisplayName(taggedValue(tags, ['operator:en', 'operator'])),
+    network: optionalLatinDisplayName(taggedValue(tags, ['network:en', 'network'])),
     ref: taggedValue(tags, ['ref', 'station:ref', 'uic_ref', 'iata', 'local_ref']),
     routes,
     openingHours,

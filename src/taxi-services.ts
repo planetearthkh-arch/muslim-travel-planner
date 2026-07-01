@@ -1,4 +1,4 @@
-import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
+import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
@@ -129,7 +129,7 @@ export function normalizeTaxiService(element: OverpassElement, origin: { latitud
     longitude,
     distanceKm: distanceKm(origin.latitude, origin.longitude, latitude, longitude),
     address: formatAddress(tags),
-    operator: ensureLatinDisplayName(taggedValue(tags, ['operator:en', 'operator', 'brand:en', 'brand']), undefined),
+    operator: optionalLatinDisplayName(taggedValue(tags, ['operator:en', 'operator', 'brand:en', 'brand'])),
     phone,
     callHref: call ? `tel:${call}` : '',
     website: safeExternalUrl(tags.website ?? tags['contact:website']),

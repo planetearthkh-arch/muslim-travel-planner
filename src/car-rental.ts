@@ -1,4 +1,4 @@
-import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
+import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { isAlwaysOpen, openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
@@ -121,10 +121,10 @@ export function normalizeCarRentalOffice(element: OverpassElement, origin: { lat
     id: `${element.type}-${element.id}`,
     name: rentalName(tags, locationType),
     originalName: getOriginalPlaceName(tags),
-    brand: ensureLatinDisplayName(tags['brand:en'] ?? tags.brand ?? '', undefined),
-    operator: ensureLatinDisplayName(tags['operator:en'] ?? tags.operator ?? '', undefined),
+    brand: optionalLatinDisplayName(tags['brand:en'] ?? tags.brand),
+    operator: optionalLatinDisplayName(tags['operator:en'] ?? tags.operator),
     locationType,
-    locationContext: ensureLatinDisplayName(englishTag(tags, ['airport:name', 'station:name', 'addr:place', 'inside']) || origin.label || '', undefined),
+    locationContext: optionalLatinDisplayName(englishTag(tags, ['airport:name', 'station:name', 'addr:place', 'inside']) || origin.label),
     latitude,
     longitude,
     distanceKm: distanceKm(origin.latitude, origin.longitude, latitude, longitude),

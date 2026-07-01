@@ -136,6 +136,15 @@ export function ensureLatinDisplayName(name: string | undefined, placeType: Pray
   return fallbackForType(placeType);
 }
 
+const generatedPrayerFallbackPattern = /^Unnamed Quiet Prayer Space$|^Unnamed Mosque$|^Unnamed Prayer Room$/;
+
+export function optionalLatinDisplayName(value: string | undefined) {
+  const cleaned = cleanLatinName(value ?? '');
+  if (!cleaned) return '';
+  const display = ensureLatinDisplayName(cleaned, undefined);
+  return generatedPrayerFallbackPattern.test(display) ? '' : display;
+}
+
 export function getEnglishPlaceName(place: PlaceNameInput) {
   const tags = place.tags ?? {};
   const type = place.type;

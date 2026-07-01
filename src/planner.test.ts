@@ -4,7 +4,7 @@ import { cities } from './data.js';
 import { labels, languageDirection, languages, nextLanguage, regionLabels } from './i18n.js';
 import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
-import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace } from './prayer-spaces.js';
+import { classifyPrayerPlace, distanceKm, ensureLatinDisplayName, getEnglishPlaceName, normalizePrayerPlace, optionalLatinDisplayName } from './prayer-spaces.js';
 import { safeExternalUrl } from './urls.js';
 import { RequestError, classifyHttpStatus, classifyRequestError, requestJson, retryAfterMs, retryOnceForTemporary } from './http.js';
 import {
@@ -728,6 +728,13 @@ test('english place names use int_name and fallbacks', () => {
   assert.equal(namedPlace({}, 'prayer-room'), 'Unnamed Prayer Room');
 });
 
+test('optional metadata helper never invents prayer-place fallback values', () => {
+  assert.equal(optionalLatinDisplayName(''), '');
+  assert.equal(optionalLatinDisplayName(undefined), '');
+  assert.equal(optionalLatinDisplayName('City Operator'), 'City Operator');
+  assert.equal(optionalLatinDisplayName('   '), '');
+});
+
 test('normalization keeps original name internally but displays Latin only', () => {
   const place = normalizePrayerPlace({ type: 'node', id: 21, lat: 1, lon: 1, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'مسجد الأقصى' } }, { latitude: 1, longitude: 1 });
   assert.equal(place?.name, 'Al-Aqsa Mosque');
@@ -998,9 +1005,14 @@ test('uses safe car-rental names, brand/operator fallbacks, and missing-name fal
   const operator = normalizeCarRentalOffice({ type: 'node', id: 3, lat: 0, lon: 0, tags: { amenity: 'car_rental', operator: 'Operator Cars' } }, origin);
   const transliterated = normalizeCarRentalOffice({ type: 'node', id: 4, lat: 0, lon: 0, tags: { amenity: 'car_rental', name: 'تأجير سيارات' } }, origin);
   assert.equal(fallback?.name, 'City Car Rental Office');
+  assert.equal(fallback?.brand, '');
+  assert.equal(fallback?.operator, '');
   assert.equal(brand?.name, 'RentCo');
+  assert.equal(brand?.brand, 'RentCo');
   assert.equal(operator?.name, 'Operator Cars');
+  assert.equal(operator?.operator, 'Operator Cars');
   assert.equal(latinOnly(transliterated?.name ?? ''), true);
+  assert.equal(Object.values(fallback ?? {}).includes('Unnamed Quiet Prayer Space'), false);
 });
 
 test('classifies car-rental office context without broad assumptions', () => {
@@ -1100,6 +1112,10 @@ test('normalizes public transport details, safe websites, and destination-local 
   assert.equal(stop?.website, 'https://tokyostation.example/');
   const unsafe = normalizePublicTransportStop({ type: 'node', id: 2, lat: 0, lon: 0, tags: { highway: 'bus_stop', website: 'javascript:alert(1)' } }, origin);
   assert.equal(unsafe?.website, '');
+  const unnamed = normalizePublicTransportStop({ type: 'node', id: 3, lat: 0, lon: 0, tags: { highway: 'bus_stop' } }, origin);
+  assert.equal(unnamed?.operator, '');
+  assert.equal(unnamed?.network, '');
+  assert.equal(Object.values(unnamed ?? {}).includes('Unnamed Quiet Prayer Space'), false);
 });
 
 test('deduplicates public transport stations, platforms, and subway entrances carefully', () => {
@@ -1187,6 +1203,19 @@ test('normalizes taxi nodes, areas, phones, websites, and destination-local open
   assert.equal(area?.type, 'airport');
   assert.equal(normalizeTaxiService({ type: 'node', id: 3, lat: 0, lon: 0, tags: { taxi: 'yes' } }, origin), undefined);
   assert.equal(normalizeTaxiService({ type: 'node', id: 4, lat: 0, lon: 0, tags: { office: 'company', name: 'Taxi Dispatch', website: 'javascript:alert(1)' } }, origin)?.website, '');
+});
+
+test('taxi optional metadata stays empty unless source data provides it', () => {
+  const origin = { latitude: 0, longitude: 0, timezone: 'UTC' };
+  const unnamed = normalizeTaxiService({ type: 'node', id: 10, lat: 0, lon: 0, tags: { amenity: 'taxi' } }, origin);
+  const operated = normalizeTaxiService({ type: 'node', id: 11, lat: 0, lon: 0, tags: { amenity: 'taxi', operator: 'City Taxi Cooperative' } }, origin);
+  const branded = normalizeTaxiService({ type: 'node', id: 12, lat: 0, lon: 0, tags: { amenity: 'taxi', brand: 'Airport Cabs' } }, origin);
+  assert.equal(unnamed?.name, 'Taxi Rank');
+  assert.equal(unnamed?.operator, '');
+  assert.equal(Object.values(unnamed ?? {}).includes('Unnamed Quiet Prayer Space'), false);
+  assert.equal(Object.values(unnamed ?? {}).includes('Unnamed Mosque'), false);
+  assert.equal(operated?.operator, 'City Taxi Cooperative');
+  assert.equal(branded?.operator, 'Airport Cabs');
 });
 
 test('normalizes taxi phones conservatively', () => {
@@ -1706,4 +1735,17 @@ test('rendered prayer-place titles use the shared English-name safety function',
   assert.equal(source.includes('setText(place.name)'), false);
   assert.equal(source.includes('encodeURIComponent(place.name)'), false);
   assert.equal(source.includes('ensureLatinDisplayName(getEnglishPlaceName(place), place.type)'), true);
+});
+
+test('mapped feature cards omit missing optional rows and avoid duplicate opening-hours fallback text', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  const taxiDetails = source.slice(source.indexOf('function taxiDetails'), source.indexOf('function taxiCard'));
+  const publicTransportDetails = source.slice(source.indexOf('function publicTransportDetails'), source.indexOf('function publicTransportCard'));
+  const carRentalDetails = source.slice(source.indexOf('function carRentalDetails'), source.indexOf('function carRentalCard'));
+  assert.equal(taxiDetails.includes('[copy.transportOperator, item.operator]'), true);
+  assert.equal(taxiDetails.includes('[copy.prayerOpeningHours, item.openingHours]'), true);
+  assert.equal(taxiDetails.includes('item.openingHours || copy.halalOpeningUnavailable'), false);
+  assert.equal(publicTransportDetails.includes('stop.openingHours || copy.halalOpeningUnavailable'), false);
+  assert.equal(carRentalDetails.includes('office.openingHours || copy.halalOpeningUnavailable'), false);
 });

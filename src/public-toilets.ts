@@ -1,4 +1,4 @@
-import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
+import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { isAlwaysOpen, openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
 
@@ -130,6 +130,10 @@ function toiletName(tags: OsmTags, kind: ToiletKind) {
   return 'Public Toilets';
 }
 
+function hostVenueName(tags: OsmTags) {
+  return optionalLatinDisplayName(tags['name:en'] ?? tags['official_name:en'] ?? tags['alt_name:en'] ?? tags.int_name ?? tags.name ?? tags.official_name ?? tags.alt_name);
+}
+
 export function normalizePublicToilet(element: OverpassElement, origin: { latitude: number; longitude: number; timezone?: string }): PublicToilet | undefined {
   const tags = element.tags ?? {};
   const latitude = element.lat ?? element.center?.lat;
@@ -150,7 +154,7 @@ export function normalizePublicToilet(element: OverpassElement, origin: { latitu
     longitude,
     distanceKm: distanceKm(origin.latitude, origin.longitude, latitude, longitude),
     address: formatAddress(tags),
-    inside: tags.amenity === 'toilets' || tags.building === 'toilets' ? '' : ensureLatinDisplayName(getEnglishPlaceName({ tags, type: undefined }), undefined),
+    inside: tags.amenity === 'toilets' || tags.building === 'toilets' ? '' : hostVenueName(tags),
     fee: feeData.fee,
     feeAmount: feeData.amount,
     openingHours,
