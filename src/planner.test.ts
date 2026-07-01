@@ -69,6 +69,17 @@ import {
   type PublicTransportStop,
 } from './public-transport.js';
 import {
+  buildTaxiOverpassQuery,
+  classifyTaxiService,
+  dedupeTaxiServices,
+  filterTaxiServices,
+  isTaxiOffice,
+  normalizeTaxiPhone,
+  normalizeTaxiService,
+  sortTaxiServices,
+  type TaxiService,
+} from './taxi-services.js';
+import {
   buildWeatherUrl,
   convertPrecipitationFromMm,
   convertWindFromKmh,
@@ -1145,6 +1156,88 @@ test('public transport route source handles cache, stale requests, errors, and r
   assert.equal(source.includes('data-public-transport-filter'), true);
   assert.equal(source.includes('public-transport-map'), true);
   assert.equal(source.includes('390') || labels.en.publicTransportSubtitle.length > 0, true);
+});
+
+test('classifies taxi services conservatively from structured tags', () => {
+  assert.equal(classifyTaxiService({ amenity: 'taxi' }), 'rank');
+  assert.equal(classifyTaxiService({ amenity: 'taxi', aeroway: 'terminal' }), 'airport');
+  assert.equal(classifyTaxiService({ amenity: 'taxi', railway: 'station' }), 'station');
+  assert.equal(classifyTaxiService({ amenity: 'taxi', bus: 'yes' }), 'bus');
+  assert.equal(classifyTaxiService({ amenity: 'taxi', taxi_vehicle: 'motorcycle' }), 'motorcycle');
+  assert.equal(classifyTaxiService({ amenity: 'taxi', taxi_vehicle: 'motorboat' }), 'water');
+  assert.equal(classifyTaxiService({ taxi: 'yes' }), undefined);
+  assert.equal(classifyTaxiService({ name: 'Airport Taxi' }), undefined);
+  assert.equal(isTaxiOffice({ office: 'company', name: 'Taxi Dispatch', phone: '+12345' }), true);
+  assert.equal(isTaxiOffice({ office: 'company', name: 'City Transport' }), false);
+});
+
+test('normalizes taxi nodes, areas, phones, websites, and destination-local opening state', () => {
+  const origin = { latitude: 51.5, longitude: -0.1, timezone: 'Europe/London' };
+  const node = normalizeTaxiService({ type: 'node', id: 1, lat: 51.5, lon: -0.1, tags: { amenity: 'taxi', name: 'Station Taxi Rank', phone: '+44 20 1234 5678', website: 'taxi.example', opening_hours: '24/7', capacity: '12', wheelchair: 'limited', shelter: 'yes', lit: 'yes', fee: 'yes' } }, origin);
+  const area = normalizeTaxiService({ type: 'way', id: 2, center: { lat: 51.51, lon: -0.11 }, tags: { amenity: 'taxi', name: 'Airport Taxi', aeroway: 'terminal' } }, origin);
+  assert.equal(node?.type, 'rank');
+  assert.equal(node?.callHref, 'tel:+442012345678');
+  assert.equal(node?.website, 'https://taxi.example/');
+  assert.equal(node?.openState, 'open');
+  assert.equal(node?.capacity, '12');
+  assert.equal(node?.wheelchair, 'limited');
+  assert.equal(node?.shelter, 'yes');
+  assert.equal(node?.lit, 'yes');
+  assert.equal(node?.fee, 'yes');
+  assert.equal(area?.type, 'airport');
+  assert.equal(normalizeTaxiService({ type: 'node', id: 3, lat: 0, lon: 0, tags: { taxi: 'yes' } }, origin), undefined);
+  assert.equal(normalizeTaxiService({ type: 'node', id: 4, lat: 0, lon: 0, tags: { office: 'company', name: 'Taxi Dispatch', website: 'javascript:alert(1)' } }, origin)?.website, '');
+});
+
+test('normalizes taxi phones conservatively', () => {
+  assert.equal(normalizeTaxiPhone('+1 (555) 123-4567'), '+15551234567');
+  assert.equal(normalizeTaxiPhone('020 1234 5678'), '02012345678');
+  assert.equal(normalizeTaxiPhone('call station desk'), '');
+  assert.equal(normalizeTaxiPhone('123'), '');
+});
+
+test('deduplicates, filters, and sorts taxi services safely', () => {
+  const origin = { latitude: 0, longitude: 0, timezone: 'UTC' };
+  const taxis = [
+    normalizeTaxiService({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'taxi', name: 'Terminal 1 Taxi', operator: 'City Taxi', phone: '+1234567', opening_hours: '24/7', wheelchair: 'yes' } }, origin),
+    normalizeTaxiService({ type: 'way', id: 2, center: { lat: 0.0001, lon: 0.0001 }, tags: { amenity: 'taxi', name: 'Terminal 1 Taxi', operator: 'City Taxi', website: 'https://taxi.example' } }, origin),
+    normalizeTaxiService({ type: 'node', id: 3, lat: 0.01, lon: 0.01, tags: { amenity: 'taxi', name: 'Terminal 2 Taxi', aeroway: 'terminal' } }, origin),
+    normalizeTaxiService({ type: 'node', id: 4, lat: 0.02, lon: 0, tags: { office: 'taxi', name: 'Office Taxi', phone: '+7654321' } }, origin),
+  ].filter((item): item is TaxiService => Boolean(item));
+  const deduped = dedupeTaxiServices(taxis);
+  assert.equal(deduped.length, 3);
+  assert.equal(deduped.some((item) => item.name === 'Terminal 2 Taxi'), true);
+  assert.equal(filterTaxiServices(deduped, { type: 'all', openNow: true, phone: true, website: false, wheelchairInfo: true, shelter: false }).length, 1);
+  assert.equal(sortTaxiServices(deduped, 'contact')[0]?.callHref.length || sortTaxiServices(deduped, 'contact')[0]?.website.length ? true : false, true);
+  assert.equal(sortTaxiServices(deduped, 'type')[0]?.type, 'airport');
+});
+
+test('builds bounded taxi Overpass queries and includes labels', () => {
+  const query = buildTaxiOverpassQuery(31.78, 35.22, 100);
+  assert.equal(query.includes('around:50000,31.78,35.22'), true);
+  assert.equal(query.includes('["amenity"="taxi"]'), true);
+  assert.equal(query.includes('["office"="taxi"]'), true);
+  assert.equal(query.includes('["taxi:dispatch"="yes"]'), true);
+  assert.equal(query.includes('["taxi"="yes"]'), false);
+  assert.equal(labels.en.taxiTitle, 'Taxi Services');
+  assert.equal(labels.ar.taxiTitle.length > 0, true);
+  assert.equal(labels.id.taxiTitle.length > 0, true);
+});
+
+test('taxi route source handles cache, stale requests, errors, and mobile labels', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  assert.equal(source.includes("'taxi-services'"), true);
+  assert.equal(source.includes("window.location.hash === '#taxi-services'"), true);
+  assert.equal(source.includes('taxiAbortController = nextAbortController(taxiAbortController)'), true);
+  assert.equal(source.includes('const isCurrentTaxiSearch = () => sequence === taxiSearchSequence'), true);
+  assert.equal(source.includes("requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 20000)"), true);
+  assert.equal(source.includes('taxiCache.set(cacheKey'), true);
+  assert.equal(source.includes('refreshOpenState(cached.results, searchCenter.timezone)'), true);
+  assert.equal(source.includes("classifyRequestError(error).kind === 'timeout' ? 'timeout' : 'service-unavailable'"), true);
+  assert.equal(source.includes('data-taxi-filter'), true);
+  assert.equal(source.includes('taxi-map'), true);
+  assert.equal(labels.en.taxiSubtitle.length > 0 && labels.ar.taxiSubtitle.length > 0 && labels.id.taxiSubtitle.length > 0, true);
 });
 
 const sampleWeatherResponse = () => {

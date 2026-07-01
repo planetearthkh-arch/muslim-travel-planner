@@ -50,6 +50,17 @@ import {
   type PublicTransportType,
 } from './public-transport.js';
 import {
+  buildTaxiOverpassQuery,
+  dedupeTaxiServices,
+  filterTaxiServices,
+  normalizeTaxiService,
+  sortTaxiServices,
+  type TaxiFilters,
+  type TaxiService,
+  type TaxiServiceType,
+  type TaxiSort,
+} from './taxi-services.js';
+import {
   OPEN_METEO_FORECAST_URL,
   WEATHER_CACHE_MS,
   buildWeatherUrl,
@@ -146,14 +157,14 @@ import {
 import type { ItineraryItem, PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 
 let lang: Language = 'en';
-type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'weather' | 'attractions';
+type View = 'planner' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'taxi-services' | 'weather' | 'attractions';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#public-transport' ? 'public-transport' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#public-transport' ? 'public-transport' : window.location.hash === '#taxi-services' ? 'taxi-services' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -248,6 +259,7 @@ let restaurantMap: MapLibreMap | undefined;
 let toiletMap: MapLibreMap | undefined;
 let carRentalMap: MapLibreMap | undefined;
 let publicTransportMap: MapLibreMap | undefined;
+let taxiMap: MapLibreMap | undefined;
 let attractionsMap: MapLibreMap | undefined;
 const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
@@ -616,6 +628,8 @@ type CarRentalMode = 'map' | 'list';
 type CarRentalSearchKind = 'destination' | 'airport' | 'station';
 type PublicTransportStatus = RestaurantStatus;
 type PublicTransportMode = 'map' | 'list';
+type TaxiStatus = RestaurantStatus;
+type TaxiMode = 'map' | 'list';
 type WeatherStatus = 'idle' | 'requesting' | 'loading' | 'ready' | 'updated' | 'denied' | 'unavailable' | 'service-unavailable' | 'timeout' | 'invalid' | 'offline' | 'cached' | 'no-cache' | 'unsupported';
 type WeatherLocation = { latitude: number; longitude: number; label: string; country?: string; timezone?: string };
 type AttractionStatus = RestaurantStatus | 'photos' | 'history';
@@ -628,6 +642,7 @@ const prayerRadii = [1, 3, 5, 10, 25, 50] as const;
 const toiletRadii = [0.5, 1, 3, 5, 10, 25] as const;
 const carRentalRadii = [3, 5, 10, 25, 50, 100] as const;
 const publicTransportRadii = [1, 3, 5, 10, 25, 50] as const;
+const taxiRadii = [1, 3, 5, 10, 25, 50] as const;
 const attractionRadii = [1, 3, 5, 10, 25, 50] as const;
 let prayerStatus: PrayerLocationStatus = 'idle';
 let prayerMode: PrayerMode = 'map';
@@ -701,6 +716,19 @@ let publicTransportError = '';
 let publicTransportSearchTimer: number | undefined;
 let publicTransportSearchSequence = 0;
 const publicTransportCache = new Map<string, { expires: number; results: PublicTransportStop[] }>();
+let taxiStatus: TaxiStatus = 'idle';
+let taxiMode: TaxiMode = 'map';
+let taxiCenter: PrayerCenter | undefined;
+let taxiRadiusKm: typeof taxiRadii[number] = 5;
+let taxiManualQuery = '';
+let taxiResults: TaxiService[] = [];
+let taxiFilters: TaxiFilters = { type: 'all', openNow: false, phone: false, website: false, wheelchairInfo: false, shelter: false };
+let taxiSort: TaxiSort = 'distance';
+let taxiMapMoved = false;
+let taxiError = '';
+let taxiSearchTimer: number | undefined;
+let taxiSearchSequence = 0;
+const taxiCache = new Map<string, { expires: number; results: TaxiService[] }>();
 let weatherStatus: WeatherStatus = 'idle';
 let weatherLocation: WeatherLocation | undefined;
 let weatherManualQuery = '';
@@ -739,6 +767,7 @@ let restaurantAbortController: AbortController | undefined;
 let toiletAbortController: AbortController | undefined;
 let carRentalAbortController: AbortController | undefined;
 let publicTransportAbortController: AbortController | undefined;
+let taxiAbortController: AbortController | undefined;
 let weatherAbortController: AbortController | undefined;
 let attractionAbortController: AbortController | undefined;
 let attractionEnrichmentAbortController: AbortController | undefined;
@@ -2283,6 +2312,261 @@ function bindPublicTransportPage() {
   });
 }
 
+function taxiTypeLabel(type: TaxiServiceType, copy: typeof labels[Language]) {
+  if (type === 'airport') return copy.taxiAirportRank;
+  if (type === 'station') return copy.taxiStationRank;
+  if (type === 'bus') return copy.taxiBusRank;
+  if (type === 'office') return copy.taxiOffice;
+  if (type === 'motorcycle') return copy.taxiMotorcycle;
+  if (type === 'water') return copy.taxiWater;
+  if (type === 'other') return copy.taxiOther;
+  return copy.taxiRank;
+}
+
+function taxiStatusMessage(copy: typeof labels[Language]) {
+  if (taxiStatus === 'requesting') return copy.taxiRequestingLocation;
+  if (taxiStatus === 'searching') return copy.taxiSearching;
+  if (taxiStatus === 'denied') return copy.taxiLocationDenied;
+  if (taxiStatus === 'unavailable') return copy.taxiLocationUnavailable;
+  if (taxiStatus === 'service-unavailable') return taxiError || copy.taxiServiceUnavailable;
+  if (taxiStatus === 'timeout') return copy.taxiTimedOut;
+  if (taxiStatus === 'too-many') return copy.taxiTooMany;
+  if (taxiStatus === 'cached') return copy.taxiCached;
+  if (taxiStatus === 'offline') return copy.taxiOffline;
+  if (taxiStatus === 'empty') return copy.taxiNoResults;
+  return '';
+}
+
+function filteredTaxiResults() {
+  return sortTaxiServices(filterTaxiServices(taxiResults, taxiFilters), taxiSort);
+}
+
+function taxiDestinationCenter(city = selectedCity()): PrayerCenter {
+  return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone };
+}
+
+async function searchTaxiServices(center: PrayerCenter) {
+  const sequence = ++taxiSearchSequence;
+  taxiAbortController = nextAbortController(taxiAbortController);
+  const abortSignal = taxiAbortController.signal;
+  const searchCenter = { ...center };
+  const searchRadius = taxiRadiusKm;
+  const isCurrentTaxiSearch = () => sequence === taxiSearchSequence;
+  taxiCenter = searchCenter;
+  taxiMapMoved = false;
+  const cacheKey = `${searchCenter.latitude.toFixed(4)},${searchCenter.longitude.toFixed(4)},${searchRadius}`;
+  const cached = taxiCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    if (!isCurrentTaxiSearch()) return;
+    taxiResults = refreshOpenState(cached.results, searchCenter.timezone);
+    taxiStatus = taxiResults.length ? 'cached' : 'empty';
+    taxiPage();
+    return;
+  }
+  taxiStatus = 'searching';
+  taxiError = '';
+  taxiPage();
+  try {
+    const body = buildTaxiOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
+    const data = await requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 20000);
+    if (!isCurrentTaxiSearch()) return;
+    const normalized = (data.elements ?? [])
+      .map((element) => normalizeTaxiService(element, searchCenter))
+      .filter((item): item is TaxiService => Boolean(item));
+    if (!isCurrentTaxiSearch()) return;
+    taxiResults = dedupeTaxiServices(normalized).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 500);
+    taxiCache.set(cacheKey, { expires: Date.now() + 5 * 60 * 1000, results: taxiResults });
+    taxiStatus = normalized.length > 500 ? 'too-many' : taxiResults.length ? 'ready' : 'empty';
+  } catch (error) {
+    console.error(error);
+    if (!isCurrentTaxiSearch()) return;
+    if (classifyRequestError(error).kind === 'aborted') return;
+    if (cached) {
+      taxiResults = refreshOpenState(cached.results, searchCenter.timezone);
+      taxiStatus = navigator.onLine ? 'cached' : 'offline';
+    } else {
+      taxiResults = [];
+      taxiStatus = classifyRequestError(error).kind === 'timeout' ? 'timeout' : 'service-unavailable';
+      taxiError = labels[lang].taxiServiceUnavailable;
+    }
+  }
+  if (!isCurrentTaxiSearch()) return;
+  taxiPage();
+}
+
+function requestTaxiLocation() {
+  if (!navigator.geolocation) {
+    taxiStatus = 'unavailable';
+    taxiPage();
+    return;
+  }
+  taxiStatus = 'requesting';
+  taxiPage();
+  navigator.geolocation.getCurrentPosition(
+    (position) => void searchTaxiServices({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }),
+    (error) => {
+      taxiStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      taxiPage();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+async function searchTaxiDestination() {
+  const rawQuery = taxiManualQuery.trim();
+  if (!rawQuery) return;
+  const sequence = ++taxiSearchSequence;
+  const isCurrentTaxiSearch = () => sequence === taxiSearchSequence;
+  taxiStatus = 'searching';
+  taxiPage();
+  try {
+    const center = await resolveRestaurantDestination(rawQuery);
+    if (!isCurrentTaxiSearch()) return;
+    if (!center) {
+      taxiResults = [];
+      taxiStatus = 'empty';
+      taxiPage();
+      return;
+    }
+    await searchTaxiServices(center);
+  } catch (error) {
+    console.error(error);
+    if (!isCurrentTaxiSearch()) return;
+    taxiStatus = 'service-unavailable';
+    taxiError = labels[lang].taxiServiceUnavailable;
+    taxiPage();
+  }
+}
+
+function debouncedTaxiSearch(center: PrayerCenter) {
+  if (taxiSearchTimer) window.clearTimeout(taxiSearchTimer);
+  taxiSearchTimer = window.setTimeout(() => void searchTaxiServices(center), 450);
+}
+
+function taxiAppleMapsUrl(item: TaxiService) {
+  return `https://maps.apple.com/?daddr=${item.latitude},${item.longitude}&q=${encodeURIComponent(item.name)}`;
+}
+
+function taxiBrowserDirectionsUrl(item: TaxiService) {
+  return `https://www.openstreetmap.org/directions?to=${item.latitude},${item.longitude}#map=17/${item.latitude}/${item.longitude}`;
+}
+
+function initializeTaxiMap() {
+  taxiMap?.remove();
+  taxiMap = undefined;
+  const element = document.querySelector<HTMLElement>('#taxi-map');
+  if (!element || !taxiCenter || !window.maplibregl) return;
+  try {
+    element.replaceChildren();
+    taxiMap = new window.maplibregl.Map({ container: element, style: openFreeMapStyle, center: [taxiCenter.longitude, taxiCenter.latitude], zoom: taxiRadiusKm <= 5 ? 12 : taxiRadiusKm <= 25 ? 10 : 8, attributionControl: true });
+    taxiMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
+    new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([taxiCenter.longitude, taxiCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(taxiCenter.label)).addTo(taxiMap);
+    const colors: Record<TaxiServiceType, string> = { rank: '#d97706', airport: '#7c3aed', station: '#2563eb', bus: '#0891b2', office: '#0f766e', motorcycle: '#ca8a04', water: '#0284c7', other: '#64748b' };
+    for (const item of filteredTaxiResults()) new window.maplibregl.Marker({ color: colors[item.type] }).setLngLat([item.longitude, item.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(`${taxiTypeLabel(item.type, labels[lang])} ${item.name}`)).addTo(taxiMap);
+    taxiMap.on('moveend', () => {
+      taxiMapMoved = true;
+      const button = document.querySelector<HTMLButtonElement>('#taxi-search-this-area');
+      if (button) button.hidden = false;
+    });
+  } catch {
+    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+  }
+}
+
+function taxiDetails(item: TaxiService, copy: typeof labels[Language]) {
+  const wheelchair = item.wheelchair === 'yes' ? copy.toiletsWheelchair : item.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : item.wheelchair === 'no' ? copy.toiletsWheelchairNo : '';
+  const rows = [
+    [copy.taxiType, taxiTypeLabel(item.type, copy)],
+    [copy.prayerAddress, item.address],
+    [copy.transportOperator, item.operator],
+    [copy.prayerOpeningHours, item.openingHours || copy.halalOpeningUnavailable],
+    [copy.taxiCapacity, item.capacity],
+    [copy.taxiVehicle, item.vehicle],
+    [copy.toiletsWheelchair, wheelchair],
+    [copy.transportShelter, item.shelter === 'yes' ? copy.available : item.shelter === 'no' ? copy.notAvailable : ''],
+    [copy.taxiLit, item.lit === 'yes' ? copy.available : item.lit === 'no' ? copy.notAvailable : ''],
+    [copy.taxiFee, item.fee],
+    [copy.prayerTelephone, item.callHref ? `<a href="${esc(item.callHref)}">${esc(item.phone)}</a>` : esc(item.phone)],
+    [copy.prayerWebsite, item.website ? `<a href="${esc(item.website)}" target="_blank" rel="noopener noreferrer">${copy.transportOfficialWebsite}</a>` : ''],
+  ].filter(([, value]) => Boolean(value));
+  return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+}
+
+function taxiCard(item: TaxiService, copy: typeof labels[Language]) {
+  return `<article class="card taxi-card" aria-label="${esc(item.name)}">
+    <div class="card-top"><span>${item.distanceKm.toFixed(1)} km · ${taxiTypeLabel(item.type, copy)}</span><span class="badge taxi-${item.type}">${taxiTypeLabel(item.type, copy)}</span></div>
+    <h3>${esc(item.name)}</h3>
+    ${item.originalName && item.originalName !== item.name ? `<p>${esc(item.originalName)}</p>` : ''}
+    <p>${openingStatusLabel(item.openState, copy)}</p>
+    ${taxiDetails(item, copy)}
+    <div class="place-actions">
+      <a class="map-link" href="${item.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
+      <a class="map-link" href="${taxiAppleMapsUrl(item)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
+      <a class="map-link" href="${taxiBrowserDirectionsUrl(item)}" target="_blank" rel="noopener noreferrer">${copy.prayerBrowserMap}</a>
+      ${item.website ? `<a class="map-link" href="${esc(item.website)}" target="_blank" rel="noopener noreferrer">${copy.transportOfficialWebsite}</a>` : ''}
+      ${item.callHref ? `<a class="map-link" href="${esc(item.callHref)}">${copy.taxiCall}</a>` : ''}
+    </div>
+  </article>`;
+}
+
+function taxiPage() {
+  if (!root) return;
+  cityMap?.remove(); cityMap = undefined;
+  prayerMap?.remove(); prayerMap = undefined;
+  restaurantMap?.remove(); restaurantMap = undefined;
+  toiletMap?.remove(); toiletMap = undefined;
+  carRentalMap?.remove(); carRentalMap = undefined;
+  publicTransportMap?.remove(); publicTransportMap = undefined;
+  taxiMap?.remove(); taxiMap = undefined;
+  attractionsMap?.remove(); attractionsMap = undefined;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  const results = filteredTaxiResults();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  root.innerHTML = `<main dir="${dir}" class="app prayer-app taxi-app">
+    <section class="hero prayer-hero">${languageSelector()}<p class="eyebrow">${copy.taxiOpen}</p><h1>${copy.taxiTitle}</h1><p>${copy.taxiSubtitle}</p><button type="button" class="ghost hero-action" id="back-from-taxi">${copy.taxiBack}</button></section>
+    <section class="panel prayer-panel" aria-live="polite">
+      <p class="notice prayer-notice">${copy.taxiNotice}</p><p class="notice prayer-notice">${copy.taxiLiveNotice}</p>
+      <div class="prayer-actions"><button type="button" id="use-taxi-location">${copy.taxiUseLocation}</button><button type="button" class="ghost" id="use-taxi-destination">${copy.taxiUseDestination}</button><label>${copy.taxiRadius}<select id="taxi-radius">${taxiRadii.map((radius) => `<option value="${radius}" ${radius === taxiRadiusKm ? 'selected' : ''}>${radius} km</option>`).join('')}</select></label><form id="manual-taxi-search" class="manual-search"><label>${copy.taxiManualSearch}<input id="taxi-manual-query" value="${esc(taxiManualQuery)}" placeholder="${copy.taxiManualPlaceholder}" /></label><button type="submit">${copy.taxiSearch}</button></form></div>
+      <p class="prayer-status ${taxiStatus}" role="status">${taxiStatusMessage(copy)}</p>
+      <div class="segmented" role="tablist" aria-label="${copy.taxiTitle}"><button type="button" class="${taxiMode === 'map' ? 'active' : 'ghost'}" data-taxi-mode="map">${copy.taxiMapView}</button><button type="button" class="${taxiMode === 'list' ? 'active' : 'ghost'}" data-taxi-mode="list">${copy.taxiListView}</button></div>
+      <div class="prayer-filters" aria-label="${copy.taxiTitle}"><select id="taxi-type-filter"><option value="all">${copy.taxiAll}</option>${(['rank','airport','station','bus','office','motorcycle','water','other'] as TaxiServiceType[]).map((type) => `<option value="${type}" ${taxiFilters.type === type ? 'selected' : ''}>${taxiTypeLabel(type, copy)}</option>`).join('')}</select>${['openNow','phone','website','wheelchairInfo','shelter'].map((key) => { const label = ({ openNow: copy.toiletsOpenNow, phone: copy.taxiPhoneAvailable, website: copy.carRentalWebsiteAvailable, wheelchairInfo: copy.taxiWheelchairInfo, shelter: copy.transportShelterAvailable } as Record<string, string>)[key]; return `<label class="inline-check"><input type="checkbox" data-taxi-filter="${key}" ${taxiFilters[key as keyof TaxiFilters] ? 'checked' : ''}/> ${label}</label>`; }).join('')}<label>${copy.taxiSort}<select id="taxi-sort"><option value="distance" ${taxiSort === 'distance' ? 'selected' : ''}>${copy.toiletsNearest}</option><option value="name" ${taxiSort === 'name' ? 'selected' : ''}>${copy.toiletsSortName}</option><option value="type" ${taxiSort === 'type' ? 'selected' : ''}>${copy.taxiSortType}</option><option value="open" ${taxiSort === 'open' ? 'selected' : ''}>${copy.toiletsSortOpen}</option><option value="contact" ${taxiSort === 'contact' ? 'selected' : ''}>${copy.taxiSortContact}</option></select></label></div>
+      <div class="place-actions"><button type="button" id="taxi-search-this-area" class="ghost" ${taxiMapMoved ? '' : 'hidden'}>${copy.taxiSearchThisArea}</button><button type="button" id="taxi-recentre" class="ghost">${copy.taxiRecentre}</button><button type="button" id="taxi-fit-results" class="ghost">${copy.taxiFitResults}</button></div>
+      <div class="legend halal-legend"><strong>${copy.taxiLegend}</strong><span class="badge taxi-rank">${copy.taxiRank}</span><span class="badge taxi-airport">${copy.taxiAirportRank}</span><span class="badge taxi-office">${copy.taxiOffice}</span><span class="badge taxi-motorcycle">${copy.taxiMotorcycle}</span><span class="badge taxi-water">${copy.taxiWater}</span></div>
+      ${taxiMode === 'map' ? `<div id="taxi-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : ''}
+      ${(['empty', 'timeout', 'service-unavailable', 'offline'].includes(taxiStatus) || !results.length && taxiResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-taxi" class="ghost">${copy.taxiRetry}</button>${taxiStatus === 'timeout' ? '' : `<button type="button" id="increase-taxi-radius">${copy.taxiIncreaseRadius}</button>`}<button type="button" id="another-taxi-city" class="ghost">${copy.taxiSearchAnother}</button></div>` : ''}
+      <div class="place-list">${results.length ? results.map((item) => taxiCard(item, copy)).join('') : taxiStatus === 'ready' ? `<p>${copy.taxiNoResults}</p>` : ''}</div><p class="map-status">${copy.osmAttribution}</p>
+    </section></main>`;
+  bindTaxiPage();
+  if (taxiMode === 'map') initializeTaxiMap();
+}
+
+function bindTaxiPage() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; taxiPage(); });
+  document.querySelector<HTMLButtonElement>('#back-from-taxi')?.addEventListener('click', () => { view = 'planner'; taxiMap?.remove(); taxiMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
+  document.querySelector<HTMLButtonElement>('#use-taxi-location')?.addEventListener('click', requestTaxiLocation);
+  document.querySelector<HTMLButtonElement>('#use-taxi-destination')?.addEventListener('click', () => void searchTaxiServices(taxiDestinationCenter()));
+  document.querySelector<HTMLSelectElement>('#taxi-radius')?.addEventListener('change', (event) => { taxiRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof taxiRadii[number]; if (taxiCenter) void searchTaxiServices(taxiCenter); });
+  document.querySelector<HTMLFormElement>('#manual-taxi-search')?.addEventListener('submit', (event) => { event.preventDefault(); taxiManualQuery = document.querySelector<HTMLInputElement>('#taxi-manual-query')?.value ?? ''; void searchTaxiDestination(); });
+  document.querySelectorAll<HTMLButtonElement>('[data-taxi-mode]').forEach((button) => button.addEventListener('click', () => { taxiMode = button.dataset.taxiMode as TaxiMode; taxiPage(); }));
+  document.querySelector<HTMLSelectElement>('#taxi-type-filter')?.addEventListener('change', (event) => { taxiFilters = { ...taxiFilters, type: (event.target as HTMLSelectElement).value as TaxiFilters['type'] }; taxiPage(); });
+  document.querySelectorAll<HTMLInputElement>('[data-taxi-filter]').forEach((input) => input.addEventListener('change', () => { taxiFilters = { ...taxiFilters, [input.dataset.taxiFilter ?? 'openNow']: input.checked }; taxiPage(); }));
+  document.querySelector<HTMLSelectElement>('#taxi-sort')?.addEventListener('change', (event) => { taxiSort = (event.target as HTMLSelectElement).value as TaxiSort; taxiPage(); });
+  document.querySelector<HTMLButtonElement>('#retry-taxi')?.addEventListener('click', () => { if (taxiCenter) void searchTaxiServices(taxiCenter); else requestTaxiLocation(); });
+  document.querySelector<HTMLButtonElement>('#increase-taxi-radius')?.addEventListener('click', () => { const next = taxiRadii.find((radius) => radius > taxiRadiusKm); if (next) taxiRadiusKm = next; if (taxiCenter) void searchTaxiServices(taxiCenter); });
+  document.querySelector<HTMLButtonElement>('#another-taxi-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#taxi-manual-query')?.focus());
+  document.querySelector<HTMLButtonElement>('#taxi-search-this-area')?.addEventListener('click', () => { const center = taxiMap?.getCenter?.(); if (!center) return; debouncedTaxiSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].taxiSearchThisArea, timezone: taxiCenter?.timezone }); });
+  document.querySelector<HTMLButtonElement>('#taxi-recentre')?.addEventListener('click', requestTaxiLocation);
+  document.querySelector<HTMLButtonElement>('#taxi-fit-results')?.addEventListener('click', () => {
+    const results = filteredTaxiResults();
+    if (!taxiMap?.fitBounds || !results.length) return;
+    const lngs = results.map((item) => item.longitude);
+    const lats = results.map((item) => item.latitude);
+    taxiMap.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 60, maxZoom: 15 });
+  });
+}
+
 function selectedWeatherCity() {
   const match = weatherLocation ? cities.find((city) => city.city === weatherLocation?.label || `${city.city}, ${city.country}` === weatherLocation?.label) : undefined;
   return match ?? selectedCity();
@@ -3483,6 +3767,10 @@ function render() {
     publicTransportPage();
     return;
   }
+  if (view === 'taxi-services') {
+    taxiPage();
+    return;
+  }
   if (view === 'weather') {
     weatherPage();
     return;
@@ -3516,6 +3804,7 @@ function render() {
         <article class="quick-action"><div><h2>${copy.toiletsTitle}</h2><p>${copy.toiletsSubtitle}</p></div><button type="button" id="open-public-toilets">${copy.toiletsOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.carRentalTitle}</h2><p>${copy.carRentalSubtitle}</p></div><button type="button" id="open-car-rental">${copy.carRentalOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.publicTransportTitle}</h2><p>${copy.publicTransportSubtitle}</p></div><button type="button" id="open-public-transport">${copy.publicTransportOpen}</button></article>
+        <article class="quick-action"><div><h2>${copy.taxiTitle}</h2><p>${copy.taxiSubtitle}</p></div><button type="button" id="open-taxi-services">${copy.taxiOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.weatherTitle}</h2><p>${copy.weatherSubtitle}</p></div><button type="button" id="open-weather">${copy.weatherOpen}</button></article>
         <article class="quick-action"><div><h2>${copy.attractionsTitle}</h2><p>${copy.attractionsSubtitle}</p></div><button type="button" id="open-attractions">${copy.attractionsOpen}</button></article>
       </section>
@@ -3595,6 +3884,12 @@ function bind() {
     view = 'public-transport';
     if (window.location.hash !== '#public-transport') window.location.hash = 'public-transport';
     void searchPublicTransport(publicTransportDestinationCenter());
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-taxi-services')?.addEventListener('click', () => {
+    view = 'taxi-services';
+    if (window.location.hash !== '#taxi-services') window.location.hash = 'taxi-services';
+    void searchTaxiServices(taxiDestinationCenter());
     render();
   });
   document.querySelector<HTMLButtonElement>('#open-weather')?.addEventListener('click', () => {
@@ -3698,13 +3993,14 @@ function bind() {
 
 window.addEventListener('hashchange', () => {
   view = viewFromHash();
-  if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; restaurantMap?.remove(); restaurantMap = undefined; publicTransportMap?.remove(); publicTransportMap = undefined; }
+  if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; restaurantMap?.remove(); restaurantMap = undefined; publicTransportMap?.remove(); publicTransportMap = undefined; taxiMap?.remove(); taxiMap = undefined; }
   if (view === 'money') {
     toCurrency = destinationCurrency(selectedCity());
     void loadCurrencies();
     void loadPairRate();
   }
   if (view === 'public-transport' && !publicTransportCenter) void searchPublicTransport(publicTransportDestinationCenter());
+  if (view === 'taxi-services' && !taxiCenter) void searchTaxiServices(taxiDestinationCenter());
   render();
 });
 
@@ -3714,5 +4010,6 @@ if (view === 'money') {
   void loadPairRate();
 }
 if (view === 'public-transport') void searchPublicTransport(publicTransportDestinationCenter());
+if (view === 'taxi-services') void searchTaxiServices(taxiDestinationCenter());
 
 render();
