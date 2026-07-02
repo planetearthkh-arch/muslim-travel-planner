@@ -2388,6 +2388,17 @@ test('iOS app icon asset catalog references generated opaque master-derived file
   }
   const verifyScript = await repoFile('scripts/verify-app-icon.mjs');
   assert.equal(verifyScript.includes('resources/safarone-app-icon-1024.png'), true);
+  assert.equal(verifyScript.includes("execFileSync('file'"), true);
+  assert.equal(verifyScript.includes('PNG image data'), true);
+  assert.equal(verifyScript.includes('1024 x 1024'), true);
+  assert.equal(verifyScript.includes('RGBA|alpha'), true);
+  assert.equal(verifyScript.includes("const isMac = process.platform === 'darwin'"), true);
+  assert.equal(verifyScript.includes('if (isMac)'), true);
+  assert.equal(verifyScript.indexOf("execFileSync('sips'") > verifyScript.indexOf('if (isMac)'), true);
+  assert.equal(verifyScript.includes('Missing committed AppIcon directory'), true);
+  assert.equal(verifyScript.includes('Missing committed AppIcon Contents.json'), true);
+  assert.equal(verifyScript.includes('referencedFilenames.has(filename)'), true);
+  assert.equal(verifyScript.includes('Missing committed 1024x1024 App Store marketing icon'), true);
   assert.equal(verifyScript.includes('pixelWidth:\\s*1024'), true);
   assert.equal(verifyScript.includes('hasAlpha:\\s*no'), true);
 });
