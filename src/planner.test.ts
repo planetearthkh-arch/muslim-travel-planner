@@ -2314,7 +2314,8 @@ test('native build keeps GitHub Pages web build separate from Capacitor assets',
   assert.equal(packageJson.includes('"build": "npm run typecheck && vite build"'), true);
   assert.equal(packageJson.includes('"build:native": "npm run typecheck && npm run icon:verify && vite build --config vite.native.config.ts"'), true);
   assert.equal(packageJson.includes('"ios:sync": "npm run build:native && npx cap sync ios"'), true);
-  assert.equal(packageJson.includes('"android:sync": "npm run build && npx cap sync android"'), true);
+  assert.equal(packageJson.includes('"android:setup": "npm run build:native && node scripts/setup-android.mjs"'), true);
+  assert.equal(packageJson.includes('"android:sync": "npm run build:native && npx cap sync android"'), true);
 });
 
 test('native platform helpers use official Capacitor bridges with web fallbacks', async () => {

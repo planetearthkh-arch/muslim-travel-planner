@@ -15,8 +15,8 @@
     "lint": "npm run typecheck && eslint eslint.config.js \"scripts/**/*.mjs\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node scripts/run-tests.mjs",
-    "android:setup": "npm run build && node scripts/setup-android.mjs",
-    "android:sync": "npm run build && npx cap sync android",
+    "android:setup": "npm run build:native && node scripts/setup-android.mjs",
+    "android:sync": "npm run build:native && npx cap sync android",
     "android:open": "npx cap open android"
   },
   "dependencies": {
