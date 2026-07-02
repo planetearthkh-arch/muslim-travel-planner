@@ -53,7 +53,7 @@ export function createPlaceReport(place: ReportablePlace, reason: ReportReason, 
 
 export function buildReportText(report: PlaceReport) {
   const lines = [
-    'Muslim Travel Planner place report',
+    'SafarOne place report',
     `Feature: ${report.feature}`,
     `Place: ${report.name}`,
     report.city || report.country ? `Destination: ${[report.city, report.country].filter(Boolean).join(', ')}` : '',

@@ -522,6 +522,22 @@ function homeToolGroup(id: string, title: string, cards: string[]) {
   </section>`;
 }
 
+function staticPageUrl(page: 'privacy' | 'support') {
+  const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+  return `${base}${page}.html?lang=${lang}`;
+}
+
+function appFooterMarkup(copy: typeof labels[Language]) {
+  return `<footer class="app-footer">
+    <p>${copy.developerCredit}</p>
+    <nav aria-label="${copy.supportPage}">
+      <a href="${staticPageUrl('privacy')}" target="_blank" rel="noopener noreferrer">${copy.privacyPolicy}</a>
+      <a href="${staticPageUrl('support')}" target="_blank" rel="noopener noreferrer">${copy.supportPage}</a>
+      <a href="mailto:planetearthkh@gmail.com">${copy.supportEmailLabel}</a>
+    </nav>
+  </footer>`;
+}
+
 function field(name: keyof PlannerPreferences, value: string, label: string, type = 'text', placeholder = '') {
   return `<label>${label}<input data-field="${String(name)}" type="${type}" value="${esc(value)}" ${placeholder ? `placeholder="${esc(placeholder)}"` : ''} /></label>`;
 }
@@ -3790,6 +3806,7 @@ function savedTripsPage() {
       <p class="status" id="trip-share-status" role="status" aria-live="polite">${esc(tripShareStatus)}</p>
       ${savedTrips.length ? savedTrips.map((trip) => savedTripCard(trip, copy)).join('') : `<p class="notice">${copy.savedTripsEmpty}</p>`}
     </section>
+    ${appFooterMarkup(copy)}
   </main>`;
   bindSavedTripsPage();
 }
@@ -3933,6 +3950,7 @@ function travelDetailsSectionMarkup(copy: typeof labels[Language], destinationTi
     <div class="card travel-details-shell">
       <div class="card-top"><div><p class="eyebrow">${copy.travelOptional}</p><h3>${copy.travelDetails}</h3></div><button type="button" id="add-travel-detail">${copy.travelAddDetail}</button></div>
       <p class="muted">${copy.travelEmptyDescription}</p>
+      <p class="muted"><a href="${staticPageUrl('privacy')}" target="_blank" rel="noopener noreferrer">${copy.privacyPolicy}</a> · <a href="${staticPageUrl('support')}" target="_blank" rel="noopener noreferrer">${copy.supportPage}</a></p>
       <ul class="travel-privacy-list">
         <li>${copy.travelStoredOnly}</li>
         <li>${copy.travelStorageNotEncrypted}</li>
@@ -4585,7 +4603,8 @@ function render() {
       <section class="hero">
         ${languageSelector()}
         <h1>${copy.title}</h1>
-        <p>${copy.subtitle}</p>
+        <p class="hero-subtitle">${copy.subtitle}</p>
+        <p>${copy.tagline}</p>
         ${connectionStatusMarkup(copy)}
       </section>
       <section class="quick-actions" aria-label="${copy.homeTravelToolsGroup}">
@@ -4637,6 +4656,7 @@ function render() {
           ${items.length ? itineraryGroupsMarkup(items, generatedCity, copy) : `<p>${copy.emptyState}</p>`}
         ` : `<p class="${plannerValidation ? 'error' : 'notice'}">${esc(plannerValidation || (visibleCities.length ? copy.generatePrompt : copy.noCities))}</p>`}
       </section>
+      ${appFooterMarkup(copy)}
     </main>`;
   bind();
   initializeMap(copy);

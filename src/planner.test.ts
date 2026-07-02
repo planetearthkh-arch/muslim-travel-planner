@@ -585,11 +585,60 @@ test('offline app shell uses local MapLibre bundle, manifest, and conservative s
   assert.equal(main.includes("import 'maplibre-gl/dist/maplibre-gl.css'"), true);
   assert.equal(serviceWorkerUrl('/muslim-travel-planner/'), '/muslim-travel-planner/sw.js');
   assert.equal(sw.includes('CACHE_VERSION'), true);
+  assert.equal(sw.includes("new URL('./privacy.html', APP_SCOPE)"), true);
+  assert.equal(sw.includes("new URL('./support.html', APP_SCOPE)"), true);
   assert.equal(sw.includes("request.mode === 'navigate'"), true);
   assert.equal(sw.includes("['script', 'style', 'image', 'font']"), true);
   assert.equal(sw.includes('isLiveApi'), true);
   assert.equal(sw.includes('localStorage'), false);
   assert.equal(JSON.parse(manifest).start_url, '/muslim-travel-planner/');
+});
+
+test('SafarOne branding, metadata, manifest, and launch pages are truthful', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const fs = await load('node:fs/promises');
+  const index = await fs.readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const manifest = JSON.parse(await fs.readFile(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8')) as { name: string; short_name: string; start_url: string; scope: string; description: string };
+  const icon = await fs.readFile(new URL('../public/icons/icon.svg', import.meta.url), 'utf8');
+  const main = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const savedTrips = await fs.readFile(new URL('../src/saved-trips.ts', import.meta.url), 'utf8');
+  const privacy = await fs.readFile(new URL('../public/privacy.html', import.meta.url), 'utf8');
+  const support = await fs.readFile(new URL('../public/support.html', import.meta.url), 'utf8');
+  const checklist = await fs.readFile(new URL('../LAUNCH_CHECKLIST.md', import.meta.url), 'utf8');
+  assert.equal(labels.en.title, 'SafarOne');
+  assert.equal(labels.en.subtitle, 'Muslim Travel Planner');
+  assert.equal(labels.en.tagline, 'Plan with faith. Travel with peace.');
+  assert.equal(labels.ar.title, 'SafarOne');
+  assert.equal(labels.ar.subtitle, 'مخطط سفر للمسلمين');
+  assert.equal(labels.ar.tagline, 'خطّط بإيمان. وسافر بطمأنينة.');
+  assert.equal(labels.id.title, 'SafarOne');
+  assert.equal(labels.id.subtitle, 'Perencana Perjalanan Muslim');
+  assert.equal(labels.id.tagline, 'Rencanakan dengan iman. Bepergian dengan tenang.');
+  assert.equal(index.includes('<title>SafarOne — Muslim Travel Planner</title>'), true);
+  assert.equal(index.includes('Prayer-aware trip planning with local saved itineraries, travel tools, and optional offline access to saved trip information.'), true);
+  assert.equal(manifest.name, 'SafarOne — Muslim Travel Planner');
+  assert.equal(manifest.short_name, 'SafarOne');
+  assert.equal(manifest.start_url, '/muslim-travel-planner/');
+  assert.equal(manifest.scope, '/muslim-travel-planner/');
+  assert.equal(icon.includes('aria-label="SafarOne"'), true);
+  assert.equal(savedTrips.includes("SAVED_TRIPS_STORAGE_KEY = 'mtp-saved-trips-v1'"), true);
+  assert.equal(main.includes('function staticPageUrl'), true);
+  assert.equal(main.includes('${base}${page}.html?lang=${lang}'), true);
+  assert.equal(checklist.includes('Final full-resolution App Store icon asset is still required'), true);
+  assert.equal(privacy.includes('Last updated: July 2, 2026'), true);
+  assert.equal(privacy.includes('Firas Badran'), true);
+  assert.equal(support.includes('Firas Badran'), true);
+  assert.equal((privacy.match(/planetearthkh@gmail\.com/g) ?? []).length >= 3, true);
+  assert.equal(support.includes('mailto:planetearthkh@gmail.com'), true);
+  assert.equal(privacy.includes('OpenStreetMap') && privacy.includes('Overpass') && privacy.includes('OpenFreeMap'), true);
+  assert.equal(privacy.includes('Open-Meteo') && privacy.includes('Frankfurter'), true);
+  assert.equal(privacy.includes('Wikimedia Commons') && privacy.includes('Wikipedia') && privacy.includes('Wikidata'), true);
+  assert.equal(privacy.includes('GitHub/GitHub Pages') && privacy.includes('Apple Maps'), true);
+  assert.equal(privacy.includes('precise location never leaves the device'), false);
+  assert.equal(privacy.includes('data-lang="ar"') && privacy.includes('dir="rtl"'), true);
+  assert.equal(support.includes('data-lang="ar"') && support.includes('dir="rtl"'), true);
+  assert.equal(/google-analytics|gtag|facebook pixel|doubleclick|fonts\.googleapis|fonts\.gstatic/i.test(index + privacy + support), false);
+  assert.equal(/trusted worldwide|100% accurate|fully offline|verified halal|guaranteed halal|official prayer times/i.test(index + privacy + support + main), false);
 });
 
 test('saved trips and offline labels are translated in English, Arabic, and Indonesian', () => {
@@ -781,7 +830,8 @@ test('trip sharing UI preserves saved snapshots and print-safe controls', async 
 });
 
 test('provides natural Indonesian interface labels without translating place names', () => {
-  assert.equal(labels.id.title, 'Perencana Perjalanan Muslim');
+  assert.equal(labels.id.title, 'SafarOne');
+  assert.equal(labels.id.subtitle, 'Perencana Perjalanan Muslim');
   assert.equal(labels.id.plan, 'Buat Rencana Perjalanan');
   assert.equal(labels.id.replan, 'Rencanakan Ulang dari Sini');
   assert.equal(regionLabels.id['Middle East'], 'Timur Tengah');

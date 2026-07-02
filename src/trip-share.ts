@@ -59,6 +59,7 @@ export function buildItineraryText(snapshot: TripExportSnapshot) {
     `${copy.tripGroup}: ${snapshot.preferences.groupSize}`,
     `${copy.localCurrency}: ${currencies}`,
     copy.shareLiveInfoWarning,
+    'SafarOne — Muslim Travel Planner',
     '',
   ];
   groupedItinerary(snapshot.itinerary).forEach(([date, items], dayIndex) => {
@@ -103,7 +104,7 @@ export function buildIcsCalendar(snapshot: TripExportSnapshot) {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Muslim Travel Planner//Trip Export//EN',
+    'PRODID:-//SafarOne//Trip Export//EN',
     'CALSCALE:GREGORIAN',
     `X-WR-CALNAME:${escapeIcs(calendarName)}`,
     `X-WR-TIMEZONE:${escapeIcs(snapshot.city.timezone)}`,

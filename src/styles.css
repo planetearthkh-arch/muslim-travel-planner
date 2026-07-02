@@ -58,6 +58,11 @@ body { margin: 0; }
 }
 
 .hero p { max-width: 700px; }
+.hero-subtitle {
+  color: #e8fff7;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
 
 .eyebrow {
   letter-spacing: .08em;
@@ -1007,6 +1012,22 @@ button:disabled {
 .travel-detail-actions {
   margin-top: 8px;
 }
+.app-footer {
+  padding: 16px 4px 6px;
+  color: var(--color-muted);
+  font-size: 0.95rem;
+  text-align: center;
+}
+.app-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+}
+.app-footer a {
+  color: var(--color-emerald);
+  font-weight: 800;
+}
 
 @media (min-width: 800px) {
   .quick-actions { grid-column: 1 / -1; }
@@ -1042,7 +1063,8 @@ button:disabled {
   .hero,
   .quick-actions,
   .form,
-	  .trip-actions,
+		  .trip-actions,
+		  .app-footer,
 	  .travel-detail-editor,
 	  .travel-detail-type-chooser,
 	  .travel-detail-actions,

@@ -1,7 +1,7 @@
 {
-  "name": "Muslim Travel Planner",
-  "short_name": "Travel Planner",
-  "description": "Prayer-aware travel planning with saved trips stored locally on this device.",
+  "name": "SafarOne — Muslim Travel Planner",
+  "short_name": "SafarOne",
+  "description": "Prayer-aware trip planning with local saved itineraries, travel tools, and optional offline access to saved trip information.",
   "start_url": "/muslim-travel-planner/",
   "scope": "/muslim-travel-planner/",
   "display": "standalone",

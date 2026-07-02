@@ -1,7 +1,9 @@
-const CACHE_VERSION = 'mtp-app-shell-v1';
+const CACHE_VERSION = 'mtp-app-shell-v2';
 const APP_SCOPE = new URL(self.registration.scope);
 const APP_SHELL = [
   new URL('./', APP_SCOPE).toString(),
+  new URL('./privacy.html', APP_SCOPE).toString(),
+  new URL('./support.html', APP_SCOPE).toString(),
   new URL('./manifest.webmanifest', APP_SCOPE).toString(),
   new URL('./icons/icon.svg', APP_SCOPE).toString()
 ];
