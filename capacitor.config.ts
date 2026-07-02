@@ -2,10 +2,14 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.planetearthkids.muslimtravelplanner',
-  appName: 'Muslim Travel Planner',
-  webDir: 'dist',
+  appName: 'SafarOne',
+  webDir: 'dist-native',
   android: {
     allowMixedContent: false,
+  },
+  ios: {
+    scheme: 'SafarOne',
+    contentInset: 'automatic',
   },
 };
 

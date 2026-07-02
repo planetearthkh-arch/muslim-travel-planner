@@ -6,6 +6,12 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "npm run typecheck && vite build",
+    "build:native": "npm run typecheck && npm run icon:verify && vite build --config vite.native.config.ts",
+    "icon:verify": "node scripts/verify-app-icon.mjs",
+    "ios:sync": "npm run build:native && npx cap sync ios",
+    "ios:open": "npx cap open ios",
+    "ios:run": "npm run ios:sync && npx cap run ios",
+    "ios:verify": "npm run ios:sync && xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
     "lint": "npm run typecheck && eslint eslint.config.js \"scripts/**/*.mjs\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node scripts/run-tests.mjs",
@@ -15,7 +21,15 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/browser": "^8.0.0",
+    "@capacitor/clipboard": "^8.0.0",
     "@capacitor/core": "^8.4.1",
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/geolocation": "^8.0.0",
+    "@capacitor/ios": "^8.4.1",
+    "@capacitor/local-notifications": "^8.0.0",
+    "@capacitor/share": "^8.0.0",
     "adhan": "^4.4.4",
     "maplibre-gl": "^5.24.0",
     "transliteration": "^2.6.1"

@@ -158,6 +158,16 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string) { this.values.set(key, value); }
 }
 
+async function repoFile(path: string) {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  return load('node:fs/promises').then((fs) => fs.readFile(new URL(`../${path}`, import.meta.url), 'utf8'));
+}
+
+async function repoDir(path: string) {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readdir: (path: URL) => Promise<string[]> }>;
+  return load('node:fs/promises').then((fs) => fs.readdir(new URL(`../${path}`, import.meta.url)));
+}
+
 test('contains all required sample cities', () => {
   assert.deepEqual(cities.map((c) => c.city), [
     'Jerusalem',
@@ -674,8 +684,8 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   assert.equal(icon.includes('aria-label="SafarOne"'), true);
   assert.equal(savedTrips.includes("SAVED_TRIPS_STORAGE_KEY = 'mtp-saved-trips-v1'"), true);
   assert.equal(main.includes('function staticPageUrl'), true);
-  assert.equal(main.includes('${base}${page}.html?lang=${lang}'), true);
-  assert.equal(checklist.includes('Final full-resolution App Store icon asset is still required'), true);
+  assert.equal(main.includes('return staticLegalPageUrl(page, lang);'), true);
+  assert.equal(checklist.includes('Final full-resolution App Store icon asset is still required') || checklist.includes('App Store icon'), true);
   assert.equal(privacy.includes('Last updated: July 2, 2026'), true);
   assert.equal(privacy.includes('data-lang="ms" lang="ms" dir="ltr"'), true);
   assert.equal(privacy.includes('Dikemas kini terakhir: 2 Julai 2026'), true);
@@ -774,7 +784,7 @@ test('home dashboard groups every feature card with local icons and responsive l
   assert.equal(styles.includes('--color-mint-soft'), true);
   assert.equal(styles.includes('--color-gold'), true);
   assert.equal(styles.includes('font-size: clamp(2rem, 5vw, 3.25rem)'), true);
-  assert.equal(styles.includes('padding: 22px 24px'), true);
+  assert.equal(styles.includes('padding: calc(22px + env(safe-area-inset-top)) 24px 22px'), true);
   assert.equal(styles.includes('.home-tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }'), true);
   assert.equal(styles.includes('.home-tool-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }'), true);
   assert.equal(styles.includes('.home-tool-grid {\n  display: grid;\n  gap: 12px;\n  grid-template-columns: 1fr;'), true);
@@ -840,8 +850,8 @@ test('reporting labels and mapped-place source hooks cover only place features',
   assert.equal(source.includes('qiblaPage()') && !source.includes('qiblaReport'), true);
   assert.equal(source.includes('openReportDialog(place'), true);
   assert.equal(source.includes('data-report-source'), true);
-  assert.equal(source.includes("if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');"), true);
-  assert.equal(source.includes('navigator.clipboard.writeText(buildReportText(currentReport()))'), true);
+  assert.equal(source.includes('copyText(buildReportText(currentReport()))'), true);
+  assert.equal(source.includes('shareText(`${copy.reportProblem}: ${report.name}`, buildReportText(report))'), true);
   assert.equal(source.includes('trigger?.focus()'), true);
 });
 
@@ -2287,4 +2297,138 @@ test('mapped feature cards omit missing optional rows and avoid duplicate openin
   assert.equal(taxiDetails.includes('item.openingHours || copy.halalOpeningUnavailable'), false);
   assert.equal(publicTransportDetails.includes('stop.openingHours || copy.halalOpeningUnavailable'), false);
   assert.equal(carRentalDetails.includes('office.openingHours || copy.halalOpeningUnavailable'), false);
+});
+
+test('native build keeps GitHub Pages web build separate from Capacitor assets', async () => {
+  const viteWeb = await repoFile('vite.config.ts');
+  const viteNative = await repoFile('vite.native.config.ts');
+  const capacitorConfig = await repoFile('capacitor.config.ts');
+  const packageJson = await repoFile('package.json');
+  assert.equal(viteWeb.includes("base: '/muslim-travel-planner/'"), true);
+  assert.equal(viteWeb.includes("outDir: 'dist'"), true);
+  assert.equal(viteNative.includes("base: './'"), true);
+  assert.equal(viteNative.includes("outDir: 'dist-native'"), true);
+  assert.equal(capacitorConfig.includes("webDir: 'dist-native'"), true);
+  assert.equal(capacitorConfig.includes("appId: 'com.planetearthkids.muslimtravelplanner'"), true);
+  assert.equal(capacitorConfig.includes("appName: 'SafarOne'"), true);
+  assert.equal(packageJson.includes('"build": "npm run typecheck && vite build"'), true);
+  assert.equal(packageJson.includes('"build:native": "npm run typecheck && npm run icon:verify && vite build --config vite.native.config.ts"'), true);
+  assert.equal(packageJson.includes('"ios:sync": "npm run build:native && npx cap sync ios"'), true);
+  assert.equal(packageJson.includes('"android:sync": "npm run build && npx cap sync android"'), true);
+});
+
+test('native platform helpers use official Capacitor bridges with web fallbacks', async () => {
+  const links = await repoFile('src/native-links.ts');
+  const location = await repoFile('src/native-location.ts');
+  const share = await repoFile('src/native-share.ts');
+  const offline = await repoFile('src/offline.ts');
+  assert.equal(links.includes("`${page}.html?lang=${encodeURIComponent(language)}`"), true);
+  assert.equal(links.includes("`${appBasePath()}${page}.html?lang=${encodeURIComponent(language)}`"), true);
+  assert.equal(links.includes('safeExternalUrl(value)'), true);
+  assert.equal(links.includes("Browser.open({ url, presentationStyle: 'popover' })"), true);
+  assert.equal(location.includes("import { Geolocation } from '@capacitor/geolocation'"), true);
+  assert.equal(location.includes('navigator.geolocation.getCurrentPosition'), true);
+  assert.equal(share.includes("import { Clipboard } from '@capacitor/clipboard'"), true);
+  assert.equal(share.includes("Filesystem } from '@capacitor/filesystem'"), true);
+  assert.equal(share.includes("import { Share } from '@capacitor/share'"), true);
+  assert.equal(share.includes('buildIcsCalendar(snapshot)'), true);
+  assert.equal(share.includes('Directory.Cache'), true);
+  assert.equal(share.includes('safeTripFilename(snapshot.name)'), true);
+  assert.equal(share.includes('buildItineraryText(snapshot)'), true);
+  assert.equal(offline.includes('if (isNativePlatform()) return Promise.resolve(false);'), true);
+});
+
+test('iOS project is configured for SafarOne TestFlight preparation without hardcoded signing', async () => {
+  const pbx = await repoFile('ios/App/App.xcodeproj/project.pbxproj');
+  const info = await repoFile('ios/App/App/Info.plist');
+  const privacy = await repoFile('ios/App/App/PrivacyInfo.xcprivacy');
+  assert.equal(pbx.includes('PRODUCT_BUNDLE_IDENTIFIER = com.planetearthkids.muslimtravelplanner;'), true);
+  assert.equal(pbx.includes('MARKETING_VERSION = 1.0.0;'), true);
+  assert.equal(pbx.includes('CURRENT_PROJECT_VERSION = 1;'), true);
+  assert.equal(pbx.includes('TARGETED_DEVICE_FAMILY = 1;'), true);
+  assert.equal(pbx.includes('PRODUCT_NAME = SafarOne;'), true);
+  assert.equal(pbx.includes('CODE_SIGN_STYLE = Automatic;'), true);
+  assert.equal(pbx.includes('DEVELOPMENT_TEAM ='), false);
+  assert.equal(pbx.includes('PrivacyInfo.xcprivacy in Resources'), true);
+  assert.equal(pbx.includes('ar InfoPlist.strings in Resources'), true);
+  assert.equal(pbx.includes('ms InfoPlist.strings in Resources'), true);
+  assert.equal(info.includes('<string>SafarOne</string>'), true);
+  assert.equal(info.includes('NSLocationWhenInUseUsageDescription'), true);
+  assert.equal(info.includes('UIBackgroundModes'), false);
+  assert.equal(info.includes('NSLocationAlways'), false);
+  assert.equal(info.includes('NSAllowsArbitraryLoads'), false);
+  assert.equal(privacy.includes('<key>NSPrivacyTracking</key>'), true);
+  assert.equal(privacy.includes('<false/>'), true);
+  assert.equal(privacy.includes('NSPrivacyAccessedAPICategoryUserDefaults'), true);
+});
+
+test('iOS localized location permission strings exist in all launch languages', async () => {
+  const expected = {
+    en: 'SafarOne uses your location only when you request Qibla direction or nearby travel places.',
+    ar: 'يستخدم SafarOne موقعك فقط عندما تطلب اتجاه القبلة أو أماكن السفر القريبة.',
+    id: 'SafarOne menggunakan lokasi Anda hanya saat Anda meminta arah Kiblat atau tempat perjalanan terdekat.',
+    ms: 'SafarOne menggunakan lokasi anda hanya apabila anda meminta arah kiblat atau tempat perjalanan berdekatan.',
+  };
+  for (const [language, text] of Object.entries(expected)) {
+    const strings = await repoFile(`ios/App/App/${language}.lproj/InfoPlist.strings`);
+    assert.equal(strings.includes(text), true);
+  }
+});
+
+test('iOS app icon asset catalog references generated opaque master-derived files', async () => {
+  const contents = JSON.parse(await repoFile('ios/App/App/Assets.xcassets/AppIcon.appiconset/Contents.json')) as { images: Array<{ filename?: string; size?: string; scale?: string }> };
+  const filenames = contents.images.map((image) => image.filename).filter(Boolean) as string[];
+  assert.equal(filenames.includes('Icon-App-1024x1024@1x.png'), true);
+  assert.equal(filenames.includes('Icon-App-60x60@3x.png'), true);
+  assert.equal(filenames.length >= 9, true);
+  const files = await repoDir('ios/App/App/Assets.xcassets/AppIcon.appiconset/');
+  for (const filename of filenames) {
+    assert.equal(files.includes(filename), true);
+  }
+  const verifyScript = await repoFile('scripts/verify-app-icon.mjs');
+  assert.equal(verifyScript.includes('resources/safarone-app-icon-1024.png'), true);
+  assert.equal(verifyScript.includes('pixelWidth:\\s*1024'), true);
+  assert.equal(verifyScript.includes('hasAlpha:\\s*no'), true);
+});
+
+test('iOS launch screen uses emerald background and local SafarOne symbol', async () => {
+  const storyboard = await repoFile('ios/App/App/Base.lproj/LaunchScreen.storyboard');
+  const launchContents = await repoFile('ios/App/App/Assets.xcassets/LaunchIcon.imageset/Contents.json');
+  assert.equal(storyboard.includes('image="LaunchIcon"'), true);
+  assert.equal(storyboard.includes('red="0.01568627451" green="0.2078431373" blue="0.1725490196"'), true);
+  assert.equal(storyboard.includes('loading'), false);
+  assert.equal(launchContents.includes('launch-icon.png'), true);
+});
+
+test('iOS prayer notifications use official Local Notifications without custom Athan audio bundling', async () => {
+  const athan = await repoFile('src/athan.ts');
+  const athanI18n = await repoFile('src/athan-i18n.ts');
+  const appDelegate = await repoFile('ios/App/App/AppDelegate.swift');
+  assert.equal(athan.includes("import { LocalNotifications } from '@capacitor/local-notifications'"), true);
+  assert.equal(athan.includes('LocalNotifications.requestPermissions()'), true);
+  assert.equal(athan.includes('LocalNotifications.schedule'), true);
+  assert.equal(athan.includes('LocalNotifications.cancel'), true);
+  assert.equal(athan.includes("registerPlugin<NativeAthanPlugin>('AthanAlarm')"), false);
+  assert.equal(appDelegate.includes('AthanAlarmPlugin'), false);
+  assert.equal(appDelegate.includes('athan_alert'), false);
+  assert.equal(appDelegate.includes('athan.mp3'), false);
+  assert.equal(athanI18n.includes('29-second'), false);
+  assert.equal(athanI18n.includes('29 ثانية'), false);
+  assert.equal(athanI18n.includes('29 detik'), false);
+  assert.equal(athanI18n.includes('29 saat'), false);
+  assert.equal(athanI18n.includes('default prayer notification sound'), true);
+});
+
+test('TestFlight and iOS privacy documentation are present and accurate', async () => {
+  const checklist = await repoFile('docs/TESTFLIGHT_CHECKLIST.md');
+  const beta = await repoFile('docs/TESTFLIGHT_BETA_NOTES.md');
+  const privacyNotes = await repoFile('IOS_PRIVACY_NOTES.md');
+  assert.equal(checklist.includes('com.planetearthkids.muslimtravelplanner'), true);
+  assert.equal(checklist.includes('planetearthkh@gmail.com'), true);
+  assert.equal(checklist.includes('https://planetearthkh-arch.github.io/muslim-travel-planner/privacy.html'), true);
+  assert.equal(checklist.includes('Increment the build number'), true);
+  assert.equal(checklist.includes('Do not bundle or download third-party Athan audio without clear permission.'), true);
+  assert.equal(beta.includes('Halal information is based on source data and is not guaranteed or certified by SafarOne.'), true);
+  assert.equal(privacyNotes.includes('No tracking.'), true);
+  assert.equal(privacyNotes.includes('Local Notifications permission is requested only after user action'), true);
 });

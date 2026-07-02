@@ -158,8 +158,11 @@ import {
 import type { ItineraryItem, PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
 import { createSavedTrip, defaultTripName, duplicateSavedTrip, sanitizeTripName, SavedTripRepository, type SavedTrip } from './saved-trips.js';
 import { currentConnectionState, registerAppServiceWorker, type ConnectionState } from './offline.js';
-import { buildReportText, canShareReport, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sanitizeReportNote, type ReportReason, type ReportablePlace } from './place-report.js';
-import { buildIcsCalendar, buildItineraryText, canWebShare, safeTripFilename, type TripExportSnapshot } from './trip-share.js';
+import { buildReportText, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sanitizeReportNote, type ReportReason, type ReportablePlace } from './place-report.js';
+import { buildItineraryText, type TripExportSnapshot } from './trip-share.js';
+import { isAppGeolocationAvailable, requestCurrentAppPosition } from './native-location.js';
+import { copyText, exportTripCalendarFile, shareText } from './native-share.js';
+import { bindNativeExternalLinks, staticLegalPageUrl } from './native-links.js';
 import { deleteTravelDetail, emptyTravelDetails, sortTravelDetails, upsertTravelDetail, validateTravelDetailInput, validateTravelDetailsSnapshot, type TravelDetailEntry, type TravelDetailInput, type TravelDetailsSnapshot, type TravelDetailType } from './travel-details.js';
 
 (window as unknown as { maplibregl?: typeof maplibregl }).maplibregl = maplibregl;
@@ -385,8 +388,7 @@ function openReportDialog(place: ReportablePlace, includeHalal = false, trigger?
   backdrop.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
   backdrop.querySelector<HTMLButtonElement>('[data-report-copy]')?.addEventListener('click', async () => {
     try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
-      await navigator.clipboard.writeText(buildReportText(currentReport()));
+      await copyText(buildReportText(currentReport()));
       reportStatus = copy.reportCopied;
     } catch {
       reportStatus = copy.reportCopyFailed;
@@ -394,15 +396,13 @@ function openReportDialog(place: ReportablePlace, includeHalal = false, trigger?
     if (status) status.textContent = reportStatus;
   });
   backdrop.querySelector<HTMLButtonElement>('[data-report-share]')?.addEventListener('click', async () => {
-    if (!canShareReport(navigator)) {
-      if (status) status.textContent = copy.sharingUnavailable;
-      return;
-    }
     try {
       const report = currentReport();
-      await navigator.share({ title: `${copy.reportProblem}: ${report.name}`, text: buildReportText(report) });
-    } catch (error) {
-      if ((error as Error).name !== 'AbortError' && status) status.textContent = copy.unableToShare;
+      const outcome = await shareText(`${copy.reportProblem}: ${report.name}`, buildReportText(report));
+      if (outcome === 'unavailable' && status) status.textContent = copy.sharingUnavailable;
+      if (outcome === 'cancelled' && status) status.textContent = copy.shareCancelled;
+    } catch {
+      if (status) status.textContent = copy.unableToShare;
     }
   });
   backdrop.querySelector<HTMLElement>('#report-reason')?.focus();
@@ -523,8 +523,7 @@ function homeToolGroup(id: string, title: string, cards: string[]) {
 }
 
 function staticPageUrl(page: 'privacy' | 'support') {
-  const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
-  return `${base}${page}.html?lang=${lang}`;
+  return staticLegalPageUrl(page, lang);
 }
 
 function appFooterMarkup(copy: typeof labels[Language]) {
@@ -816,7 +815,7 @@ async function requestQiblaMotion() {
 
 function requestQiblaLocation() {
   const sequence = ++qiblaLocationSequence;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== qiblaLocationSequence) return;
     qiblaLocationStatus = 'unavailable';
     qiblaPage();
@@ -824,7 +823,7 @@ function requestQiblaLocation() {
   }
   qiblaLocationStatus = 'loading';
   qiblaPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== qiblaLocationSequence) return;
       qiblaLocation = {
@@ -1152,7 +1151,7 @@ async function searchPrayerPlaces(center: PrayerCenter, sequence = ++prayerSearc
 
 function requestPrayerLocation() {
   const sequence = ++prayerSearchSequence;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== prayerSearchSequence) return;
     prayerStatus = 'unavailable';
     prayerPage();
@@ -1160,7 +1159,7 @@ function requestPrayerLocation() {
   }
   prayerStatus = 'requesting';
   prayerPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== prayerSearchSequence) return;
       void searchPrayerPlaces({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }, sequence);
@@ -1450,7 +1449,7 @@ async function searchHalalRestaurants(center: PrayerCenter) {
 
 function requestRestaurantLocation() {
   const sequence = ++restaurantSearchSequence;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== restaurantSearchSequence) return;
     restaurantStatus = 'unavailable';
     halalRestaurantsPage();
@@ -1458,7 +1457,7 @@ function requestRestaurantLocation() {
   }
   restaurantStatus = 'requesting';
   halalRestaurantsPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== restaurantSearchSequence) return;
       void searchHalalRestaurants({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
@@ -1675,7 +1674,7 @@ function bindHalalRestaurantsPage() {
   document.querySelectorAll<HTMLButtonElement>('[data-copy-restaurant]').forEach((button) => button.addEventListener('click', async () => {
     const place = restaurantResults.find((candidate) => candidate.id === button.dataset.copyRestaurant);
     if (!place) return;
-    await navigator.clipboard?.writeText(`${place.name}\n${place.sourceUrl}\n${place.latitude},${place.longitude}`);
+    await copyText(`${place.name}\n${place.sourceUrl}\n${place.latitude},${place.longitude}`);
     restaurantStatus = 'ready';
     button.textContent = labels[lang].halalCopiedDetails;
   }));
@@ -1765,7 +1764,7 @@ async function searchPublicToilets(center: PrayerCenter) {
 
 function requestToiletLocation() {
   const sequence = ++toiletSearchSequence;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== toiletSearchSequence) return;
     toiletStatus = 'unavailable';
     publicToiletsPage();
@@ -1773,7 +1772,7 @@ function requestToiletLocation() {
   }
   toiletStatus = 'requesting';
   publicToiletsPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== toiletSearchSequence) return;
       void searchPublicToilets({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
@@ -2072,7 +2071,7 @@ async function searchCarRentalOffices(center: PrayerCenter) {
 
 function requestCarRentalLocation() {
   const sequence = ++carRentalSearchSequence;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== carRentalSearchSequence) return;
     carRentalStatus = 'unavailable';
     carRentalPage();
@@ -2080,7 +2079,7 @@ function requestCarRentalLocation() {
   }
   carRentalStatus = 'requesting';
   carRentalPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== carRentalSearchSequence) return;
       void searchCarRentalOffices({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
@@ -2385,7 +2384,7 @@ async function searchPublicTransport(center: PrayerCenter) {
 
 function requestPublicTransportLocation() {
   const sequence = ++publicTransportSearchSequence;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== publicTransportSearchSequence) return;
     publicTransportStatus = 'unavailable';
     publicTransportPage();
@@ -2393,7 +2392,7 @@ function requestPublicTransportLocation() {
   }
   publicTransportStatus = 'requesting';
   publicTransportPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== publicTransportSearchSequence) return;
       void searchPublicTransport({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
@@ -2696,7 +2695,7 @@ async function searchTaxiServices(center: PrayerCenter) {
 
 function requestTaxiLocation() {
   const sequence = ++taxiSearchSequence;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== taxiSearchSequence) return;
     taxiStatus = 'unavailable';
     taxiPage();
@@ -2704,7 +2703,7 @@ function requestTaxiLocation() {
   }
   taxiStatus = 'requesting';
   taxiPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== taxiSearchSequence) return;
       void searchTaxiServices({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
@@ -2953,7 +2952,7 @@ function destinationWeatherLocation(city = selectedCity()): WeatherLocation {
 
 function requestWeatherLocation() {
   const sequence = ++weatherRequestSequence;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== weatherRequestSequence) return;
     weatherStatus = 'unavailable';
     weatherPage();
@@ -2961,7 +2960,7 @@ function requestWeatherLocation() {
   }
   weatherStatus = 'requesting';
   weatherPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== weatherRequestSequence) return;
       void loadWeather({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
@@ -3483,7 +3482,7 @@ async function searchAttractions(center: PrayerCenter) {
 function requestAttractionLocation() {
   const sequence = ++attractionSearchSequence;
   attractionEnrichmentSequence += 1;
-  if (!navigator.geolocation) {
+  if (!isAppGeolocationAvailable()) {
     if (sequence !== attractionSearchSequence) return;
     attractionStatus = 'unavailable';
     attractionsPage();
@@ -3491,7 +3490,7 @@ function requestAttractionLocation() {
   }
   attractionStatus = 'requesting';
   attractionsPage();
-  navigator.geolocation.getCurrentPosition(
+  requestCurrentAppPosition(
     (position) => {
       if (sequence !== attractionSearchSequence) return;
       void searchAttractions({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation });
@@ -4034,8 +4033,7 @@ function setTripShareStatus(message: string) {
 
 async function copyTripItinerary(snapshot: TripExportSnapshot) {
   try {
-    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
-    await navigator.clipboard.writeText(buildItineraryText(snapshot));
+    await copyText(buildItineraryText(snapshot));
     setTripShareStatus(labels[lang].itineraryCopied);
   } catch {
     setTripShareStatus(labels[lang].reportCopyFailed);
@@ -4043,34 +4041,28 @@ async function copyTripItinerary(snapshot: TripExportSnapshot) {
 }
 
 async function shareTrip(snapshot: TripExportSnapshot) {
-  if (!canWebShare(navigator)) {
-    setTripShareStatus(labels[lang].sharingUnavailable);
-    return;
-  }
   try {
-    await navigator.share({ title: snapshot.name, text: buildItineraryText(snapshot) });
-  } catch (error) {
-    setTripShareStatus((error as Error).name === 'AbortError' ? labels[lang].shareCancelled : labels[lang].unableToShare);
+    const outcome = await shareText(snapshot.name, buildItineraryText(snapshot));
+    if (outcome === 'unavailable') setTripShareStatus(labels[lang].sharingUnavailable);
+    if (outcome === 'cancelled') setTripShareStatus(labels[lang].shareCancelled);
+  } catch {
+    setTripShareStatus(labels[lang].unableToShare);
   }
 }
 
-function exportTripCalendar(snapshot: TripExportSnapshot) {
-  const blob = new Blob([buildIcsCalendar(snapshot)], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = safeTripFilename(snapshot.name);
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  setTripShareStatus(labels[lang].calendarDownloaded);
+async function exportTripCalendar(snapshot: TripExportSnapshot) {
+  try {
+    await exportTripCalendarFile(snapshot);
+    setTripShareStatus(labels[lang].calendarDownloaded);
+  } catch {
+    setTripShareStatus(labels[lang].unableToShare);
+  }
 }
 
 function bindTripExportButtons() {
   document.querySelector<HTMLButtonElement>('#share-trip')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) void shareTrip(snapshot); });
   document.querySelector<HTMLButtonElement>('#copy-itinerary')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) void copyTripItinerary(snapshot); });
-  document.querySelector<HTMLButtonElement>('#export-calendar')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) exportTripCalendar(snapshot); });
+  document.querySelector<HTMLButtonElement>('#export-calendar')?.addEventListener('click', () => { const snapshot = currentTripSnapshot(); if (snapshot) void exportTripCalendar(snapshot); });
 }
 
 function renderTravelDetailsOnly(focusSelector?: string) {
@@ -4463,7 +4455,7 @@ function bindMoneyPage() {
     const parsed = parseAmountInput(amountInput);
     if (parsed.value === null || !rate) return;
     const result = convertAmount(parsed.value, rate.rate);
-    await navigator.clipboard?.writeText(`${parsed.value} ${fromCurrency} = ${result.converted} ${toCurrency}`);
+    await copyText(`${parsed.value} ${fromCurrency} = ${result.converted} ${toCurrency}`);
     moneyStatus = 'copied';
     moneyPage();
   });
@@ -4494,7 +4486,7 @@ function bindSavedTripsPage() {
   }));
   document.querySelectorAll<HTMLButtonElement>('[data-export-trip]').forEach((button) => button.addEventListener('click', () => {
     const trip = savedTrips.find((candidate) => candidate.id === button.dataset.exportTrip);
-    if (trip) exportTripCalendar(snapshotFromSavedTrip(trip));
+    if (trip) void exportTripCalendar(snapshotFromSavedTrip(trip));
   }));
   document.querySelectorAll<HTMLButtonElement>('[data-rename-trip]').forEach((button) => button.addEventListener('click', () => {
     const trip = savedTrips.find((candidate) => candidate.id === button.dataset.renameTrip);
@@ -4834,6 +4826,7 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#save-trip')?.addEventListener('click', () => saveCurrentTrip(labels[lang]));
   document.querySelector<HTMLButtonElement>('#edit-plan')?.addEventListener('click', () => document.querySelector<HTMLElement>('.form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   document.querySelector<HTMLButtonElement>('#print-itinerary')?.addEventListener('click', () => window.print());
+  bindNativeExternalLinks(document);
 }
 
 window.addEventListener('hashchange', () => {

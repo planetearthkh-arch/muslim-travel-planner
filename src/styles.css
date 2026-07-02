@@ -20,12 +20,20 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; }
+body {
+  margin: 0;
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
 
 .app {
   max-width: 1120px;
   margin: auto;
   padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
   display: grid;
   gap: 16px;
 }
@@ -34,7 +42,7 @@ body { margin: 0; }
   background: linear-gradient(135deg, var(--color-emerald), var(--color-emerald-deep));
   color: white;
   border-radius: var(--radius-lg);
-  padding: 22px 24px;
+  padding: calc(22px + env(safe-area-inset-top)) 24px 22px;
   position: relative;
   overflow: hidden;
   box-shadow: var(--shadow-subtle);
@@ -225,7 +233,11 @@ button {
   z-index: 1000;
   display: grid;
   place-items: center;
-  padding: 18px;
+  padding:
+    max(18px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-left));
   background: #062f2a80;
 }
 .report-dialog {
@@ -1041,7 +1053,7 @@ button:disabled {
 
 @media (max-width: 680px) {
   .hero {
-    padding: 18px;
+    padding: calc(18px + env(safe-area-inset-top)) 18px 18px;
   }
   .hero h1 {
     font-size: clamp(1.85rem, 10vw, 2.7rem);

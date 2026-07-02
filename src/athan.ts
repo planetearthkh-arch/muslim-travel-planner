@@ -1,4 +1,5 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import {
   CalculationMethod,
   Coordinates,
@@ -15,18 +16,11 @@ export interface PrayerAlarm {
   formattedTime: string;
 }
 
-interface NativeAthanPlugin {
-  prepare(options: { audioUrl: string }): Promise<{ ready: boolean }>;
-  requestPermissions(): Promise<{ exactAlarmAllowed: boolean; notificationsAllowed: boolean }>;
-  schedule(options: { alarms: Array<Omit<PrayerAlarm, 'formattedTime'>> }): Promise<{ scheduled: number }>;
-  cancelAll(): Promise<void>;
-  stop(): Promise<void>;
-  test(): Promise<void>;
-}
-
-const NativeAthan = registerPlugin<NativeAthanPlugin>('AthanAlarm');
 const ATHAN_AUDIO_URL = 'https://media.assabile.com/assabile/adhan_3435370/8c052a5edec1.mp3';
 const prayerOrder: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+const NATIVE_PRAYER_NOTIFICATION_MIN = 200_000_000;
+const NATIVE_PRAYER_NOTIFICATION_MAX = 299_999_999;
+const NATIVE_TEST_NOTIFICATION_ID = 199_900_001;
 let browserTimers: number[] = [];
 let browserAudio: HTMLAudioElement | undefined;
 
@@ -146,14 +140,50 @@ function scheduleBrowserFallback(alarms: PrayerAlarm[]) {
   });
 }
 
+function nativeNotificationId(alarm: PrayerAlarm) {
+  return NATIVE_PRAYER_NOTIFICATION_MIN + (alarm.id % (NATIVE_PRAYER_NOTIFICATION_MAX - NATIVE_PRAYER_NOTIFICATION_MIN));
+}
+
+function isSafarOneNotificationId(id: number) {
+  return id === NATIVE_TEST_NOTIFICATION_ID || (id >= NATIVE_PRAYER_NOTIFICATION_MIN && id <= NATIVE_PRAYER_NOTIFICATION_MAX);
+}
+
+async function cancelNativePrayerNotifications() {
+  const pending = await LocalNotifications.getPending();
+  const notifications = pending.notifications
+    .filter((notification) => isSafarOneNotificationId(notification.id))
+    .map((notification) => ({ id: notification.id }));
+  if (notifications.length) await LocalNotifications.cancel({ notifications });
+}
+
 export async function enableAthanAlarms(alarms: PrayerAlarm[]) {
   if (Capacitor.isNativePlatform()) {
-    await NativeAthan.prepare({ audioUrl: ATHAN_AUDIO_URL });
-    const permissions = await NativeAthan.requestPermissions();
-    const result = await NativeAthan.schedule({
-      alarms: alarms.map(({ id, prayer, city, timestamp }) => ({ id, prayer, city, timestamp })),
-    });
-    return { mode: 'native' as const, scheduled: result.scheduled, permissions };
+    const permissions = await LocalNotifications.requestPermissions();
+    if (permissions.display !== 'granted') {
+      return {
+        mode: 'native' as const,
+        scheduled: 0,
+        permissions: { exactAlarmAllowed: false, notificationsAllowed: false },
+      };
+    }
+    await cancelNativePrayerNotifications();
+    const now = Date.now();
+    const notifications = alarms
+      .filter((alarm) => alarm.timestamp > now + 1000)
+      .slice(0, 60)
+      .map((alarm) => ({
+        id: nativeNotificationId(alarm),
+        title: `${alarm.prayer} prayer`,
+        body: `${alarm.city} · ${alarm.formattedTime}`,
+        schedule: { at: new Date(alarm.timestamp), allowWhileIdle: true },
+        extra: { safarOne: true, prayer: alarm.prayer, city: alarm.city },
+      }));
+    if (notifications.length) await LocalNotifications.schedule({ notifications });
+    return {
+      mode: 'native' as const,
+      scheduled: notifications.length,
+      permissions: { exactAlarmAllowed: true, notificationsAllowed: true },
+    };
   }
 
   if ('Notification' in window && Notification.permission === 'default') {
@@ -173,13 +203,22 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[]) {
 export async function disableAthanAlarms() {
   browserTimers.forEach((timer) => window.clearTimeout(timer));
   browserTimers = [];
-  if (Capacitor.isNativePlatform()) await NativeAthan.cancelAll();
+  if (Capacitor.isNativePlatform()) await cancelNativePrayerNotifications();
 }
 
 export async function playTestAthan() {
   if (Capacitor.isNativePlatform()) {
-    await NativeAthan.prepare({ audioUrl: ATHAN_AUDIO_URL });
-    await NativeAthan.test();
+    const permissions = await LocalNotifications.requestPermissions();
+    if (permissions.display !== 'granted') return;
+    await LocalNotifications.schedule({
+      notifications: [{
+        id: NATIVE_TEST_NOTIFICATION_ID,
+        title: 'SafarOne prayer notification',
+        body: 'Prayer notification sound',
+        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
+        extra: { safarOne: true, test: true },
+      }],
+    });
     return;
   }
   browserAudio?.pause();
@@ -191,7 +230,7 @@ export async function playTestAthan() {
 export async function stopAthan() {
   browserAudio?.pause();
   browserAudio = undefined;
-  if (Capacitor.isNativePlatform()) await NativeAthan.stop();
+  if (Capacitor.isNativePlatform()) await LocalNotifications.cancel({ notifications: [{ id: NATIVE_TEST_NOTIFICATION_ID }] });
 }
 
 export const isNativeAthanAvailable = () => Capacitor.isNativePlatform();

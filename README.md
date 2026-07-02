@@ -1,27 +1,23 @@
-# Muslim Travel Planner
+# SafarOne
 
-A first working prototype of a privacy-first, worldwide Muslim travel-planning web application. It creates sample timed itineraries with attractions, travel estimates, prayer windows, mosque/prayer-space notes, wudu and women’s facility labels, halal-conscious meal stops, interactive city street maps, and a **Replan From Here** action.
+SafarOne is a Muslim travel planner for prayer-aware itineraries, saved trips, travel tools, nearby open-map place search, optional offline access to saved trip information, and native mobile packaging.
 
-## Prototype scope
+## Scope
 
 - Mobile-first TypeScript web app with no framework lock-in and no paid services.
-- English, Arabic, and Bahasa Indonesia interface support with correct RTL layout for Arabic.
+- English, Arabic, Bahasa Indonesia, and Bahasa Melayu interface support with correct RTL layout for Arabic.
 - Includes mock data for 30 supported cities across Europe, the Middle East, Asia, North America, Africa, and Oceania.
-- Uses sample/mock data only; no paid APIs and no API keys.
-- Labels information as **Sample**, **Unverified**, or **Verified**. Restaurants are not described as verified halal unless supporting information is available.
-- Does not collect precise location, registration, payment, or sensitive personal data.
+- Uses open-data and public non-commercial APIs where configured; no API keys are committed.
+- Restaurants are not described as certified halal unless source information supports that wording.
+- Does not add accounts, analytics, ads, payments, or cloud sync. Location permission is optional and requested only when the user asks for Qibla direction or nearby travel places.
 
-## Map feature
+## Map and nearby-place features
 
-- Each supported city includes a responsive Leaflet street map centered on the city latitude and longitude already stored in the sample city data.
-- Map tiles come from the official OpenStreetMap tile endpoint: `https://tile.openstreetmap.org/{z}/{x}/{y}.png`.
+- Maps use bundled MapLibre code and configured open map tile/style services.
 - OpenStreetMap attribution is displayed visibly on the map.
-- The city-center marker identifies the selected city and country only.
-- The **Open full map** button opens the selected city on OpenStreetMap.
-- Itinerary **Find on map** links open OpenStreetMap search results for the place name and city.
-- Exact place coordinates are not included in this prototype, so the app deliberately does not display mosque, attraction, restaurant, or prayer-place markers as precise locations.
-- The app does not bulk-download, prefetch, or manually cache map tiles, does not use paid map APIs, Google Maps, Mapbox, API keys, or location tracking, and does not request the user’s precise location.
-- If Leaflet or map tiles fail to load, the page shows graceful fallback text instead of blocking itinerary planning.
+- Nearby-place searches use bounded OpenStreetMap/Overpass requests and display exact mapped coordinates where the source provides them.
+- The app does not bulk-download, prefetch, or manually cache map tiles, does not use paid map APIs, Google Maps, Mapbox, API keys, or background location tracking.
+- If map data or map services fail to load, the page shows graceful fallback text instead of blocking itinerary planning.
 
 ## Weather provider
 
