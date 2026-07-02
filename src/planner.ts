@@ -85,6 +85,21 @@ const plannerCopy = {
     fallbackMeal: 'Kecocokan anggaran atau preferensi halal yang sempurna tidak tersedia dalam data perencana.',
     fallbackPrayer: 'Kecocokan fasilitas yang sempurna tidak tersedia dalam data perencana; konfirmasi fasilitas di lokasi.',
   },
+  ms: {
+    travelTo: (name: string) => `Perjalanan ke ${name}`,
+    travelDetails: (transportation: string) => `${transportation}; anggaran laluan, bukan trafik langsung.`,
+    attractionDetails: (groupSize: number, hasChildren: boolean, note: string) => `Rancangan lawatan yang dicadangkan. Sesuai untuk kumpulan seramai ${groupSize}${hasChildren ? ' dengan kanak-kanak' : ''}.${note ? ` ${note}` : ''}`,
+    prayerTitle: (prayer: string, name: string) => `Waktu solat ${prayer} berhampiran ${name}`,
+    prayerDetails: (method: string, women: string, wudu: string, notes: string, fallback: string) => `${method}. Ruang wanita: ${women}. Wuduk: ${wudu}.${fallback ? ` ${fallback}` : ''}${notes ? ` ${notes}` : ''}`,
+    mealTitle: (name: string) => `Hentian makan yang mengambil kira halal: ${name}`,
+    mealDetails: (support: string, budget: string, preference: string, fallback: string) => `${support} Anggaran: ${budget}. Pilihan: ${preference}.${fallback ? ` ${fallback}` : ''}`,
+    freeTimeTitle: 'Teroka kawasan berhampiran',
+    freeTimeDetails: 'Masa lapang untuk berehat, melihat jalan sekitar, atau memilih hentian lain yang sesuai.',
+    freeTimeAlternativeDetails: 'Masa lapang alternatif untuk berehat atau memilih hentian berhampiran yang berbeza.',
+    fallbackAttraction: 'Padanan sempurna tidak tersedia, jadi hentian paling sesuai dipilih.',
+    fallbackMeal: 'Padanan anggaran atau pilihan halal yang sempurna tidak tersedia dalam data perancang.',
+    fallbackPrayer: 'Padanan kemudahan yang sempurna tidak tersedia dalam data perancang; sahkan kemudahan di lokasi.',
+  },
 };
 
 const facilityNotes: Record<Language, Record<string, string>> = {
@@ -100,18 +115,24 @@ const facilityNotes: Record<Language, Record<string, string>> = {
     'Sample facility details; confirm locally before travel.': 'Informasi fasilitas mungkin belum lengkap; konfirmasi di lokasi sebelum bepergian.',
     'Verified in this mock dataset for prototype status-label testing only; reconfirm before travel.': 'Informasi fasilitas mungkin belum lengkap; periksa kembali sebelum bepergian.',
   },
+  ms: {
+    'Sample facility details; confirm locally before travel.': 'Maklumat kemudahan mungkin tidak lengkap; sahkan di lokasi sebelum mengembara.',
+    'Verified in this mock dataset for prototype status-label testing only; reconfirm before travel.': 'Maklumat kemudahan mungkin tidak lengkap; semak semula sebelum mengembara.',
+  },
 };
 
 const halalSupport = (language: Language) => ({
   en: 'Halal status has not been independently confirmed; confirm halal certification, ingredients, and cross-contact before ordering.',
   ar: 'لم يتم تأكيد حالة الحلال بشكل مستقل؛ تحقق من شهادة الحلال والمكونات واحتمال التلامس قبل الطلب.',
   id: 'Status halal belum dikonfirmasi secara independen; pastikan sertifikasi halal, bahan, dan potensi kontaminasi silang sebelum memesan.',
+  ms: 'Status halal belum disahkan secara bebas; pastikan pensijilan halal, bahan, dan potensi pencemaran silang sebelum membuat pesanan.',
 })[language];
 
 const facilityUncertainty = (language: Language) => ({
   en: 'Facility information may be incomplete',
   ar: 'قد تكون معلومات المرافق غير مكتملة',
   id: 'Informasi fasilitas mungkin belum lengkap',
+  ms: 'Maklumat kemudahan mungkin tidak lengkap',
 })[language];
 
 const makeItem = (date: string, item: Omit<ItineraryItem, 'date'>): ItineraryItem => ({ ...item, date, id: `${date}-${item.id}` });
@@ -184,6 +205,7 @@ const prayerDisplayNames: Record<Language, Record<PrayerName, string>> = {
   en: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' },
   ar: { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' },
   id: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' },
+  ms: { Fajr: 'Subuh', Dhuhr: 'Zohor', Asr: 'Asar', Maghrib: 'Maghrib', Isha: 'Isyak' },
 };
 
 interface ScheduleContext {

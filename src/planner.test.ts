@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cities } from './data.js';
 import { labels, languageDirection, languages, nextLanguage, regionLabels } from './i18n.js';
+import { athanLabels } from './athan-i18n.js';
 import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
 import { createSavedTrip, defaultTripName, duplicateSavedTrip, parseSavedTrips, sanitizeTripName, SavedTripRepository } from './saved-trips.js';
@@ -253,10 +254,13 @@ test('saved-trip repository saves, reopens, updates, renames, duplicates, delete
   const second = createSavedTrip({ language: 'id', preferences: { ...prefs, city: 'London' }, city: cities.find((candidate) => candidate.city === 'London') ?? city, itinerary, now: '2026-07-03T10:00:00.000Z' });
   repository.upsert(second);
   assert.deepEqual(repository.read().trips.map((trip) => trip.id), [second.id, first.id]);
+  const malayTrip = createSavedTrip({ language: 'ms', preferences: { ...prefs, city: 'Kuala Lumpur' }, city: cities.find((candidate) => candidate.city === 'Kuala Lumpur') ?? city, itinerary, now: '2026-07-03T12:00:00.000Z' });
+  repository.upsert(malayTrip);
+  assert.equal(repository.read().trips[0]?.language, 'ms');
   const duplicated = duplicateSavedTrip(updated, '2026-07-04T10:00:00.000Z');
   assert.equal(duplicated.id === updated.id, false);
   repository.upsert(duplicated);
-  assert.equal(repository.read().trips.length, 3);
+  assert.equal(repository.read().trips.length, 4);
   repository.delete(second.id);
   assert.equal(repository.read().trips.some((trip) => trip.id === second.id), false);
   assert.equal(repository.read().trips.some((trip) => trip.id === first.id), true);
@@ -267,6 +271,11 @@ test('saved-trip validation handles unsafe names, corrupted storage, unsupported
   assert.equal(sanitizeTripName(' <b>Summer\u0000Trip</b> '.repeat(4)).length <= 80, true);
   assert.equal(parseSavedTrips('{').corrupted, true);
   assert.equal(parseSavedTrips(JSON.stringify({ schemaVersion: 999, trips: [] })).corrupted, true);
+  const cityForUnknownLanguage = cities[0];
+  const unknownLanguageTrip = createSavedTrip({ language: 'en', preferences: { ...prefs, city: cityForUnknownLanguage.city }, city: cityForUnknownLanguage, itinerary: generateItinerary({ ...prefs, city: cityForUnknownLanguage.city }) });
+  const rawUnknownLanguage = JSON.parse(JSON.stringify(unknownLanguageTrip));
+  rawUnknownLanguage.language = 'xx';
+  assert.equal(parseSavedTrips(JSON.stringify({ schemaVersion: 1, trips: [rawUnknownLanguage] })).trips[0]?.language, 'en');
   const failingStorage = new MemoryStorage();
   failingStorage.setItem = () => { throw new Error('quota'); };
   const repository = new SavedTripRepository(failingStorage);
@@ -458,13 +467,14 @@ test('multi-day itinerary respects daily end time and distributes attractions', 
   assert.equal(attractionNames.some((name, index) => index > 0 && name === attractionNames[index - 1]), false);
 });
 
-test('day headings are rendered for English, Arabic, and Indonesian', async () => {
+test('day headings are rendered for English, Arabic, Indonesian, and Malay', async () => {
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
   const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
   assert.equal(source.includes('formatItineraryDayHeading(date, dayIndex, copy)'), true);
   assert.equal(labels.en.dayHeading, 'Day');
   assert.equal(labels.ar.dayHeading, 'اليوم');
   assert.equal(labels.id.dayHeading, 'Hari');
+  assert.equal(labels.ms.dayHeading, 'Hari');
 });
 
 test('Generate Itinerary button controls planner generation workflow', async () => {
@@ -546,14 +556,52 @@ test('planner validation and pre-generation messages are translated', () => {
   assert.equal(labels.id.itineraryReady.length > 0, true);
 });
 
-test('supports switching among English, Arabic, and Bahasa Indonesia', () => {
-  assert.deepEqual(languages.map((language) => language.code), ['en', 'ar', 'id']);
+test('supports switching among English, Arabic, Bahasa Indonesia, and Bahasa Melayu', () => {
+  assert.deepEqual(languages.map((language) => language.code), ['en', 'ar', 'id', 'ms']);
+  assert.equal(languages.find((language) => language.code === 'ms')?.label, 'Bahasa Melayu');
   assert.equal(nextLanguage('en'), 'ar');
   assert.equal(nextLanguage('ar'), 'id');
-  assert.equal(nextLanguage('id'), 'en');
+  assert.equal(nextLanguage('id'), 'ms');
+  assert.equal(nextLanguage('ms'), 'en');
   assert.equal(languageDirection('en'), 'ltr');
   assert.equal(languageDirection('id'), 'ltr');
+  assert.equal(languageDirection('ms'), 'ltr');
   assert.equal(languageDirection('ar'), 'rtl');
+});
+
+test('Malay language support is complete and uses Malaysian terminology', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const main = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  const labelKeys = Object.keys(labels.en).sort();
+  assert.deepEqual(Object.keys(labels.ms).sort(), labelKeys);
+  assert.deepEqual(Object.keys(athanLabels.ms).sort(), Object.keys(athanLabels.en).sort());
+  assert.equal(JSON.stringify(labels.ms) === JSON.stringify(labels.id), false);
+  for (const value of Object.values(labels.ms)) assert.equal(value.trim().length > 0, true);
+  const malayText = JSON.stringify(labels.ms);
+  for (const term of ['transportasi', 'taksi', 'informasi', 'situs web', 'unduh', 'Amerika Serikat']) {
+    assert.equal(malayText.includes(term), false);
+  }
+  assert.equal(labels.ms.subtitle, 'Perancang Perjalanan Muslim');
+  assert.equal(labels.ms.tagline, 'Rancang dengan iman. Mengembara dengan tenang.');
+  assert.equal(labels.ms.publicTransport.includes('pengangkutan awam'), true);
+  assert.equal(labels.ms.taxi, 'teksi');
+  assert.equal(labels.ms.wudu, 'Wuduk');
+  assert.equal(labels.ms.privacyPolicy, 'Dasar Privasi');
+  assert.equal(labels.ms.supportPage, 'Sokongan');
+  assert.deepEqual(regionLabels.ms.Asia, 'Asia');
+  assert.equal(athanLabels.ms.title.toLowerCase().includes('waktu solat'), true);
+  assert.equal(athanLabels.ms.enable.includes('azan'), true);
+  assert.equal(main.includes("language === 'ms' ? 'ms-MY'"), true);
+});
+
+test('Malay prayer labels use common Malaysian forms', () => {
+  assert.equal(labels.ms.prayerMethod.includes('solat'), true);
+  assert.equal(labels.ms.prayerSpacesTitle.includes('Ruang Solat'), true);
+  assert.equal(labels.ms.qiblaTitle.includes('Kiblat'), true);
+  assert.equal(labels.ms.publicTransportTitle, 'Pengangkutan Awam');
+  assert.equal(labels.ms.taxiTitle, 'Perkhidmatan Teksi');
+  assert.equal(labels.ms.carRentalTitle, 'Sewaan Kereta');
+  assert.equal(labels.ms.toiletsTitle, 'Tandas Awam');
 });
 
 test('package scripts lint source and discover all compiled test files', async () => {
@@ -614,6 +662,9 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   assert.equal(labels.id.title, 'SafarOne');
   assert.equal(labels.id.subtitle, 'Perencana Perjalanan Muslim');
   assert.equal(labels.id.tagline, 'Rencanakan dengan iman. Bepergian dengan tenang.');
+  assert.equal(labels.ms.title, 'SafarOne');
+  assert.equal(labels.ms.subtitle, 'Perancang Perjalanan Muslim');
+  assert.equal(labels.ms.tagline, 'Rancang dengan iman. Mengembara dengan tenang.');
   assert.equal(index.includes('<title>SafarOne — Muslim Travel Planner</title>'), true);
   assert.equal(index.includes('Prayer-aware trip planning with local saved itineraries, travel tools, and optional offline access to saved trip information.'), true);
   assert.equal(manifest.name, 'SafarOne — Muslim Travel Planner');
@@ -626,7 +677,13 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   assert.equal(main.includes('${base}${page}.html?lang=${lang}'), true);
   assert.equal(checklist.includes('Final full-resolution App Store icon asset is still required'), true);
   assert.equal(privacy.includes('Last updated: July 2, 2026'), true);
+  assert.equal(privacy.includes('data-lang="ms" lang="ms" dir="ltr"'), true);
+  assert.equal(privacy.includes('Dikemas kini terakhir: 2 Julai 2026'), true);
+  assert.equal(privacy.includes('support.html?lang=ms'), true);
   assert.equal(privacy.includes('Firas Badran'), true);
+  assert.equal(support.includes('data-lang="ms" lang="ms" dir="ltr"'), true);
+  assert.equal(support.includes('Bahasa Melayu'), true);
+  assert.equal(support.includes('privacy.html?lang=ms'), true);
   assert.equal(support.includes('Firas Badran'), true);
   assert.equal((privacy.match(/planetearthkh@gmail\.com/g) ?? []).length >= 3, true);
   assert.equal(support.includes('mailto:planetearthkh@gmail.com'), true);
@@ -637,11 +694,13 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   assert.equal(privacy.includes('precise location never leaves the device'), false);
   assert.equal(privacy.includes('data-lang="ar"') && privacy.includes('dir="rtl"'), true);
   assert.equal(support.includes('data-lang="ar"') && support.includes('dir="rtl"'), true);
+  assert.equal(privacy.includes("['en', 'ar', 'id', 'ms']"), true);
+  assert.equal(support.includes("['en', 'ar', 'id', 'ms']"), true);
   assert.equal(/google-analytics|gtag|facebook pixel|doubleclick|fonts\.googleapis|fonts\.gstatic/i.test(index + privacy + support), false);
   assert.equal(/trusted worldwide|100% accurate|fully offline|verified halal|guaranteed halal|official prayer times/i.test(index + privacy + support + main), false);
 });
 
-test('saved trips and offline labels are translated in English, Arabic, and Indonesian', () => {
+test('saved trips and offline labels are translated in English, Arabic, Indonesian, and Malay', () => {
   for (const language of languages.map((item) => item.code)) {
     assert.equal(labels[language].savedTripsTitle.length > 0, true);
     assert.equal(labels[language].saveTrip.length > 0, true);
@@ -725,7 +784,7 @@ test('home dashboard groups every feature card with local icons and responsive l
   assert.equal(styles.includes('.lang {\n    position: static;'), true);
 });
 
-test('home group labels are translated for English, Arabic, and Indonesian', () => {
+test('home group labels are translated for English, Arabic, Indonesian, and Malay', () => {
   assert.equal(labels.en.homeTripsGroup, 'Your Trips');
   assert.equal(labels.en.homeEssentialsGroup, 'Muslim Essentials');
   assert.equal(labels.en.homeTravelToolsGroup, 'Travel Tools');
@@ -736,6 +795,9 @@ test('home group labels are translated for English, Arabic, and Indonesian', () 
   assert.equal(labels.id.homeTripsGroup.length > 0, true);
   assert.equal(labels.id.homeEssentialsGroup.length > 0, true);
   assert.equal(labels.id.homeTravelToolsGroup.length > 0, true);
+  assert.equal(labels.ms.homeTripsGroup.length > 0, true);
+  assert.equal(labels.ms.homeEssentialsGroup.length > 0, true);
+  assert.equal(labels.ms.homeTravelToolsGroup.length > 0, true);
 });
 
 test('place reporting builds safe honest report destinations and text', () => {
@@ -990,11 +1052,14 @@ test('currency rate and history cache keys isolate direction, period, date range
   assert.throws(() => historyStats([{ date: 'bad', base: 'EUR', quote: 'GBP', rate: 0.8 }], 'GBP'), /Missing history data/);
 });
 
-test('searches currencies by code, English, Arabic, Indonesian, and country', () => {
+test('searches currencies by code, English, Arabic, Indonesian, Malay, and country', () => {
   assert.equal(searchCurrencies(fallbackCurrencies, 'USD')[0].code, 'USD');
   assert.equal(searchCurrencies(fallbackCurrencies, 'US Dollar')[0].code, 'USD');
   assert.equal(searchCurrencies(fallbackCurrencies, 'دولار أمريكي')[0].code, 'USD');
   assert.equal(searchCurrencies(fallbackCurrencies, 'Dolar AS')[0].code, 'USD');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'Paun British')[0].code, 'GBP');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'Ringgit Malaysia')[0].code, 'MYR');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'Yen Jepun')[0].code, 'JPY');
   assert.equal(searchCurrencies(fallbackCurrencies, 'United Kingdom')[0].code, 'GBP');
 });
 
@@ -1003,10 +1068,11 @@ test('uses destination default currency from city money data', () => {
   assert.equal(destinationCurrency(cities.find((city) => city.city === 'Jerusalem') ?? cities[0]), 'ILS');
 });
 
-test('formats amounts for English, Arabic, and Indonesian modes', () => {
+test('formats amounts for English, Arabic, Indonesian, and Malay modes', () => {
   assert.match(formatCurrencyAmount(1234.5, 'USD', 'en'), /\$/);
   assert.match(formatCurrencyAmount(1234.5, 'USD', 'ar'), /US\$/);
   assert.match(formatCurrencyAmount(1234.5, 'IDR', 'id'), /Rp/);
+  assert.match(formatCurrencyAmount(1234.5, 'MYR', 'ms'), /RM/);
 });
 
 test('shared HTTP utility classifies statuses, timeouts, aborts, offline, and malformed JSON', async () => {

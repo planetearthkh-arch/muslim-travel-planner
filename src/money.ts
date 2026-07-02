@@ -31,40 +31,40 @@ export const RATE_CACHE_MS = 1000 * 60 * 60 * 12;
 export const CURRENCY_CACHE_MS = 1000 * 60 * 60 * 24 * 7;
 export const popularCurrencyCodes = ['USD', 'EUR', 'GBP', 'ILS', 'JOD', 'SAR', 'AED', 'TRY', 'EGP', 'MAD', 'QAR', 'KWD', 'BHD', 'OMR', 'IDR', 'MYR', 'PKR', 'BDT', 'INR', 'JPY', 'CNY', 'KRW', 'AUD', 'CAD', 'CHF'];
 
-const names: Record<string, { en: string; ar: string; id: string; symbol: string; flag: string; countries: string[]; aliases?: string[] }> = {
-  USD: { en: 'US Dollar', ar: 'دولار أمريكي', id: 'Dolar AS', symbol: '$', flag: '🇺🇸', countries: ['United States'], aliases: ['America'] },
-  EUR: { en: 'Euro', ar: 'يورو', id: 'Euro', symbol: '€', flag: '🇪🇺', countries: ['Euro area', 'France', 'Spain', 'Italy'] },
-  GBP: { en: 'British Pound', ar: 'جنيه إسترليني', id: 'Poundsterling Inggris', symbol: '£', flag: '🇬🇧', countries: ['United Kingdom'] },
-  ILS: { en: 'Israeli New Shekel', ar: 'شيكل إسرائيلي جديد', id: 'Shekel Baru Israel', symbol: '₪', flag: '🇮🇱', countries: ['Israel', 'Palestine'] },
-  JOD: { en: 'Jordanian Dinar', ar: 'دينار أردني', id: 'Dinar Yordania', symbol: 'د.ا', flag: '🇯🇴', countries: ['Jordan', 'Palestine'] },
-  SAR: { en: 'Saudi Riyal', ar: 'ريال سعودي', id: 'Riyal Saudi', symbol: 'ر.س', flag: '🇸🇦', countries: ['Saudi Arabia'] },
-  AED: { en: 'UAE Dirham', ar: 'درهم إماراتي', id: 'Dirham UEA', symbol: 'د.إ', flag: '🇦🇪', countries: ['United Arab Emirates'] },
-  TRY: { en: 'Turkish Lira', ar: 'ليرة تركية', id: 'Lira Turki', symbol: '₺', flag: '🇹🇷', countries: ['Türkiye', 'Turkey'] },
-  EGP: { en: 'Egyptian Pound', ar: 'جنيه مصري', id: 'Pound Mesir', symbol: '£', flag: '🇪🇬', countries: ['Egypt'] },
-  MAD: { en: 'Moroccan Dirham', ar: 'درهم مغربي', id: 'Dirham Maroko', symbol: 'د.م.', flag: '🇲🇦', countries: ['Morocco'] },
-  QAR: { en: 'Qatari Riyal', ar: 'ريال قطري', id: 'Riyal Qatar', symbol: 'ر.ق', flag: '🇶🇦', countries: ['Qatar'] },
-  KWD: { en: 'Kuwaiti Dinar', ar: 'دينار كويتي', id: 'Dinar Kuwait', symbol: 'د.ك', flag: '🇰🇼', countries: ['Kuwait'] },
-  BHD: { en: 'Bahraini Dinar', ar: 'دينار بحريني', id: 'Dinar Bahrain', symbol: 'د.ب', flag: '🇧🇭', countries: ['Bahrain'] },
-  OMR: { en: 'Omani Rial', ar: 'ريال عماني', id: 'Rial Oman', symbol: 'ر.ع.', flag: '🇴🇲', countries: ['Oman'] },
-  IDR: { en: 'Indonesian Rupiah', ar: 'روبية إندونيسية', id: 'Rupiah Indonesia', symbol: 'Rp', flag: '🇮🇩', countries: ['Indonesia'] },
-  MYR: { en: 'Malaysian Ringgit', ar: 'رينغيت ماليزي', id: 'Ringgit Malaysia', symbol: 'RM', flag: '🇲🇾', countries: ['Malaysia'] },
-  PKR: { en: 'Pakistani Rupee', ar: 'روبية باكستانية', id: 'Rupee Pakistan', symbol: '₨', flag: '🇵🇰', countries: ['Pakistan'] },
-  BDT: { en: 'Bangladeshi Taka', ar: 'تاكا بنغلاديشي', id: 'Taka Bangladesh', symbol: '৳', flag: '🇧🇩', countries: ['Bangladesh'] },
-  INR: { en: 'Indian Rupee', ar: 'روبية هندية', id: 'Rupee India', symbol: '₹', flag: '🇮🇳', countries: ['India'] },
-  JPY: { en: 'Japanese Yen', ar: 'ين ياباني', id: 'Yen Jepang', symbol: '¥', flag: '🇯🇵', countries: ['Japan'] },
-  CNY: { en: 'Chinese Yuan', ar: 'يوان صيني', id: 'Yuan Tiongkok', symbol: '¥', flag: '🇨🇳', countries: ['China'] },
-  KRW: { en: 'South Korean Won', ar: 'وون كوري جنوبي', id: 'Won Korea Selatan', symbol: '₩', flag: '🇰🇷', countries: ['South Korea'] },
-  AUD: { en: 'Australian Dollar', ar: 'دولار أسترالي', id: 'Dolar Australia', symbol: 'A$', flag: '🇦🇺', countries: ['Australia'] },
-  CAD: { en: 'Canadian Dollar', ar: 'دولار كندي', id: 'Dolar Kanada', symbol: 'C$', flag: '🇨🇦', countries: ['Canada'] },
-  CHF: { en: 'Swiss Franc', ar: 'فرنك سويسري', id: 'Franc Swiss', symbol: 'CHF', flag: '🇨🇭', countries: ['Switzerland'] },
-  SGD: { en: 'Singapore Dollar', ar: 'دولار سنغافوري', id: 'Dolar Singapura', symbol: 'S$', flag: '🇸🇬', countries: ['Singapore'] },
-  THB: { en: 'Thai Baht', ar: 'بات تايلاندي', id: 'Baht Thailand', symbol: '฿', flag: '🇹🇭', countries: ['Thailand'] },
-  ZAR: { en: 'South African Rand', ar: 'راند جنوب أفريقي', id: 'Rand Afrika Selatan', symbol: 'R', flag: '🇿🇦', countries: ['South Africa'] },
-  BAM: { en: 'Bosnia-Herzegovina Convertible Mark', ar: 'مارك بوسني قابل للتحويل', id: 'Mark Konvertibel Bosnia-Herzegovina', symbol: 'KM', flag: '🇧🇦', countries: ['Bosnia and Herzegovina'] },
-  UZS: { en: 'Uzbekistani Som', ar: 'سوم أوزبكي', id: 'Som Uzbekistan', symbol: "so'm", flag: '🇺🇿', countries: ['Uzbekistan'] },
+const names: Record<string, { en: string; ar: string; id: string; ms: string; symbol: string; flag: string; countries: string[]; aliases?: string[] }> = {
+  USD: { en: 'US Dollar', ar: 'دولار أمريكي', id: 'Dolar AS', ms: 'Dolar AS', symbol: '$', flag: '🇺🇸', countries: ['United States'], aliases: ['America'] },
+  EUR: { en: 'Euro', ar: 'يورو', id: 'Euro', ms: 'Euro', symbol: '€', flag: '🇪🇺', countries: ['Euro area', 'France', 'Spain', 'Italy'] },
+  GBP: { en: 'British Pound', ar: 'جنيه إسترليني', id: 'Poundsterling Inggris', ms: 'Paun British', symbol: '£', flag: '🇬🇧', countries: ['United Kingdom'] },
+  ILS: { en: 'Israeli New Shekel', ar: 'شيكل إسرائيلي جديد', id: 'Shekel Baru Israel', ms: 'Shekel Baharu Israel', symbol: '₪', flag: '🇮🇱', countries: ['Israel', 'Palestine'] },
+  JOD: { en: 'Jordanian Dinar', ar: 'دينار أردني', id: 'Dinar Yordania', ms: 'Dinar Jordan', symbol: 'د.ا', flag: '🇯🇴', countries: ['Jordan', 'Palestine'] },
+  SAR: { en: 'Saudi Riyal', ar: 'ريال سعودي', id: 'Riyal Saudi', ms: 'Riyal Saudi', symbol: 'ر.س', flag: '🇸🇦', countries: ['Saudi Arabia'] },
+  AED: { en: 'UAE Dirham', ar: 'درهم إماراتي', id: 'Dirham UEA', ms: 'Dirham UAE', symbol: 'د.إ', flag: '🇦🇪', countries: ['United Arab Emirates'] },
+  TRY: { en: 'Turkish Lira', ar: 'ليرة تركية', id: 'Lira Turki', ms: 'Lira Turki', symbol: '₺', flag: '🇹🇷', countries: ['Türkiye', 'Turkey'] },
+  EGP: { en: 'Egyptian Pound', ar: 'جنيه مصري', id: 'Pound Mesir', ms: 'Paun Mesir', symbol: '£', flag: '🇪🇬', countries: ['Egypt'] },
+  MAD: { en: 'Moroccan Dirham', ar: 'درهم مغربي', id: 'Dirham Maroko', ms: 'Dirham Maghribi', symbol: 'د.م.', flag: '🇲🇦', countries: ['Morocco'] },
+  QAR: { en: 'Qatari Riyal', ar: 'ريال قطري', id: 'Riyal Qatar', ms: 'Riyal Qatar', symbol: 'ر.ق', flag: '🇶🇦', countries: ['Qatar'] },
+  KWD: { en: 'Kuwaiti Dinar', ar: 'دينار كويتي', id: 'Dinar Kuwait', ms: 'Dinar Kuwait', symbol: 'د.ك', flag: '🇰🇼', countries: ['Kuwait'] },
+  BHD: { en: 'Bahraini Dinar', ar: 'دينار بحريني', id: 'Dinar Bahrain', ms: 'Dinar Bahrain', symbol: 'د.ب', flag: '🇧🇭', countries: ['Bahrain'] },
+  OMR: { en: 'Omani Rial', ar: 'ريال عماني', id: 'Rial Oman', ms: 'Rial Oman', symbol: 'ر.ع.', flag: '🇴🇲', countries: ['Oman'] },
+  IDR: { en: 'Indonesian Rupiah', ar: 'روبية إندونيسية', id: 'Rupiah Indonesia', ms: 'Rupiah Indonesia', symbol: 'Rp', flag: '🇮🇩', countries: ['Indonesia'] },
+  MYR: { en: 'Malaysian Ringgit', ar: 'رينغيت ماليزي', id: 'Ringgit Malaysia', ms: 'Ringgit Malaysia', symbol: 'RM', flag: '🇲🇾', countries: ['Malaysia'] },
+  PKR: { en: 'Pakistani Rupee', ar: 'روبية باكستانية', id: 'Rupee Pakistan', ms: 'Rupee Pakistan', symbol: '₨', flag: '🇵🇰', countries: ['Pakistan'] },
+  BDT: { en: 'Bangladeshi Taka', ar: 'تاكا بنغلاديشي', id: 'Taka Bangladesh', ms: 'Taka Bangladesh', symbol: '৳', flag: '🇧🇩', countries: ['Bangladesh'] },
+  INR: { en: 'Indian Rupee', ar: 'روبية هندية', id: 'Rupee India', ms: 'Rupee India', symbol: '₹', flag: '🇮🇳', countries: ['India'] },
+  JPY: { en: 'Japanese Yen', ar: 'ين ياباني', id: 'Yen Jepang', ms: 'Yen Jepun', symbol: '¥', flag: '🇯🇵', countries: ['Japan'] },
+  CNY: { en: 'Chinese Yuan', ar: 'يوان صيني', id: 'Yuan Tiongkok', ms: 'Yuan China', symbol: '¥', flag: '🇨🇳', countries: ['China'] },
+  KRW: { en: 'South Korean Won', ar: 'وون كوري جنوبي', id: 'Won Korea Selatan', ms: 'Won Korea Selatan', symbol: '₩', flag: '🇰🇷', countries: ['South Korea'] },
+  AUD: { en: 'Australian Dollar', ar: 'دولار أسترالي', id: 'Dolar Australia', ms: 'Dolar Australia', symbol: 'A$', flag: '🇦🇺', countries: ['Australia'] },
+  CAD: { en: 'Canadian Dollar', ar: 'دولار كندي', id: 'Dolar Kanada', ms: 'Dolar Kanada', symbol: 'C$', flag: '🇨🇦', countries: ['Canada'] },
+  CHF: { en: 'Swiss Franc', ar: 'فرنك سويسري', id: 'Franc Swiss', ms: 'Franc Swiss', symbol: 'CHF', flag: '🇨🇭', countries: ['Switzerland'] },
+  SGD: { en: 'Singapore Dollar', ar: 'دولار سنغافوري', id: 'Dolar Singapura', ms: 'Dolar Singapura', symbol: 'S$', flag: '🇸🇬', countries: ['Singapore'] },
+  THB: { en: 'Thai Baht', ar: 'بات تايلاندي', id: 'Baht Thailand', ms: 'Baht Thailand', symbol: '฿', flag: '🇹🇭', countries: ['Thailand'] },
+  ZAR: { en: 'South African Rand', ar: 'راند جنوب أفريقي', id: 'Rand Afrika Selatan', ms: 'Rand Afrika Selatan', symbol: 'R', flag: '🇿🇦', countries: ['South Africa'] },
+  BAM: { en: 'Bosnia-Herzegovina Convertible Mark', ar: 'مارك بوسني قابل للتحويل', id: 'Mark Konvertibel Bosnia-Herzegovina', ms: 'Mark Boleh Tukar Bosnia-Herzegovina', symbol: 'KM', flag: '🇧🇦', countries: ['Bosnia and Herzegovina'] },
+  UZS: { en: 'Uzbekistani Som', ar: 'سوم أوزبكي', id: 'Som Uzbekistan', ms: 'Som Uzbekistan', symbol: "so'm", flag: '🇺🇿', countries: ['Uzbekistan'] },
 };
 
-const localeFor = (language: Language) => ({ en: 'en-US', ar: 'ar', id: 'id-ID' })[language];
+const localeFor = (language: Language) => ({ en: 'en-US', ar: 'ar', id: 'id-ID', ms: 'ms-MY' })[language];
 
 export const makeCurrencyInfo = (code: string, englishName?: string): CurrencyInfo => {
   const upper = code.toUpperCase();
@@ -72,14 +72,15 @@ export const makeCurrencyInfo = (code: string, englishName?: string): CurrencyIn
   const en = known?.en ?? englishName ?? upper;
   const ar = known?.ar ?? en;
   const id = known?.id ?? en;
+  const ms = known?.ms ?? en;
   const countries = known?.countries ?? [];
   return {
     code: upper,
-    name: { en, ar, id },
+    name: { en, ar, id, ms },
     symbol: known?.symbol ?? upper,
     flag: known?.flag ?? '¤',
     countries,
-    search: [upper, en, ar, id, ...countries, ...(known?.aliases ?? [])].map((value) => value.toLowerCase()),
+    search: [upper, en, ar, id, ms, ...countries, ...(known?.aliases ?? [])].map((value) => value.toLowerCase()),
   };
 };
 
