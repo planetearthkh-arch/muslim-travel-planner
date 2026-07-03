@@ -2414,7 +2414,7 @@ test('halal Overpass query filters explicit halal evidence instead of every food
   const query = buildHalalOverpassQuery(0, 0, 5);
   assert.equal(query.includes('["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["diet:halal"]'), true);
   assert.equal(query.includes('["halal:certification"]'), true);
-  assert.equal(query.includes('["description"~"halal",i]'), true);
+  assert.equal(query.includes('["description"~"halal",i]'), false);
   assert.equal(query.includes('node["amenity"="restaurant"]'), false);
 });
 
