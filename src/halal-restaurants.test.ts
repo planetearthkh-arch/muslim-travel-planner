@@ -65,18 +65,24 @@ test('restaurant display names never leak prayer-space fallback text', () => {
   assert.equal(restaurantDisplayName({ name: 'مطعم النور' }, 'restaurant').includes('Prayer Space'), false);
 });
 
-test('halal Overpass query is compact, bounded, and asks only for positive structured tags', () => {
+test('wide-radius halal queries select rare structured keys first', () => {
   const query = buildHalalOverpassQuery(51.5, -0.1, 5);
-  assert.equal(query.includes('nwr["amenity"'), true);
-  assert.equal(query.includes('node["amenity"'), false);
-  assert.equal(query.includes('way["amenity"'), false);
-  assert.equal(query.includes('relation["amenity"'), false);
-  assert.equal(query.includes('["diet:halal"]["diet:halal"~"^(yes|only|designated|available|true|1)$",i]'), true);
-  assert.equal(query.includes('["halal"]["halal"~"^(yes|only|designated|available|true|1)$",i]'), true);
-  assert.equal(query.includes('["halal:certification"]["halal:certification"~".+"]'), true);
+  assert.equal(query.includes('nwr["diet:halal"](around:5000,51.5,-0.1)'), true);
+  assert.equal(query.includes('nwr["halal"](around:5000,51.5,-0.1)'), true);
+  assert.equal(query.includes('nwr["halal:certification"](around:5000,51.5,-0.1)'), true);
+  assert.equal(query.includes('["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["diet:halal"]'), false);
+  assert.equal(query.includes('["description"~"halal",i]'), false);
+  assert.equal(query.includes('[timeout:45]'), true);
+  assert.equal((query.match(/nwr/g) ?? []).length, 3);
+});
+
+test('one-kilometre halal queries include nearby text evidence', () => {
+  const query = buildHalalOverpassQuery(51.5, -0.1, 1);
   assert.equal(query.includes('["description"~"halal",i]'), true);
-  assert.equal(query.includes('(around:5000,51.5,-0.1)'), true);
-  assert.equal((query.match(/nwr/g) ?? []).length, 8);
+  assert.equal(query.includes('["description:en"~"halal",i]'), true);
+  assert.equal(query.includes('["note"~"halal",i]'), true);
+  assert.equal(query.includes('[timeout:25]'), true);
+  assert.equal((query.match(/nwr/g) ?? []).length, 6);
 
   assert.equal(buildHalalOverpassQuery(0, 0, 0).includes('(around:1000,0,0)'), true);
   assert.equal(buildHalalOverpassQuery(0, 0, 500).includes('(around:50000,0,0)'), true);

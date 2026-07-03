@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { generateItinerary } from './planner.js';
 import { RequestError, classifyRequestError, requestJson, retryOnceForTemporary } from './http.js';
+import { requestHalalWithFailover } from './halal-overpass.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
 import {
   airportByIata,
@@ -1773,7 +1774,18 @@ async function searchHalalRestaurants(center: PrayerCenter) {
   halalRestaurantsPage();
   try {
     const body = buildHalalOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
-    const data = await requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 20000);
+    const requestTimeoutMs = searchRadius <= 1 ? 20000 : 30000;
+    const data = await requestHalalWithFailover(
+      overpassUrl(),
+      requestTimeoutMs,
+      async (endpoint, endpointTimeoutMs) => validateOverpassResponse(
+        await requestJson<unknown>(
+          endpoint,
+          { method: 'POST', body, signal: abortSignal },
+          endpointTimeoutMs,
+        ),
+      ),
+    );
     if (!isCurrentRestaurantSearch()) return;
     const normalized = (data.elements ?? [])
       .map((element) => normalizeHalalRestaurant(element, searchCenter, true))
