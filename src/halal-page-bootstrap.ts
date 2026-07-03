@@ -37,7 +37,15 @@ function startInitialHalalSearch() {
   const status = document.querySelector<HTMLElement>('.halal-app .prayer-status');
   const form = document.querySelector<HTMLFormElement>('#manual-halal-search');
   const input = document.querySelector<HTMLInputElement>('#halal-manual-query');
+  const radius = document.querySelector<HTMLSelectElement>('#halal-radius');
   if (!status?.classList.contains('idle') || !form || !input) return;
+
+  // A 1 km first search is fast and dependable even in dense city centres. Users can
+  // expand the radius after seeing nearby results.
+  if (radius && radius.value !== '1') {
+    radius.value = '1';
+    radius.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 
   const destination = readStoredDestination() || 'London';
   input.value = destination;
