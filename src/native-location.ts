@@ -18,11 +18,21 @@ export type AppPositionError = {
   PERMISSION_DENIED: number;
 };
 
-function normalizePositionError(reason: unknown): AppPositionError {
-  const code = typeof reason === 'object' && reason !== null && 'code' in reason && typeof (reason as { code?: unknown }).code === 'number'
-    ? (reason as { code: number }).code
-    : 2;
-  const message = reason instanceof Error ? reason.message : undefined;
+const nativePermissionDeniedCodes = new Set(['OS-PLUG-GLOC-0003', 'OS-PLUG-GLOC-0008']);
+const nativeTimeoutCodes = new Set(['OS-PLUG-GLOC-0010']);
+
+export function normalizePositionError(reason: unknown): AppPositionError {
+  const details = typeof reason === 'object' && reason !== null ? reason as { code?: unknown; message?: unknown } : undefined;
+  const rawCode = details?.code;
+  let code = 2;
+  if (typeof rawCode === 'number') code = rawCode;
+  if (typeof rawCode === 'string' && nativePermissionDeniedCodes.has(rawCode)) code = 1;
+  if (typeof rawCode === 'string' && nativeTimeoutCodes.has(rawCode)) code = 3;
+  const message = reason instanceof Error
+    ? reason.message
+    : typeof details?.message === 'string'
+      ? details.message
+      : undefined;
   return { code, message, PERMISSION_DENIED: 1 };
 }
 
