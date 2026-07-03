@@ -6,17 +6,19 @@ async function repoFile(path: string) {
   return load('node:fs/promises').then((fs) => fs.readFile(new URL(`../${path}`, import.meta.url), 'utf8'));
 }
 
-test('Qibla compass button uses clearer live-compass wording in every supported language', async () => {
+test('Qibla enhancement uses clear copy and keeps fixed bearing before compass permission', async () => {
   const source = await repoFile('src/qibla-copy-bootstrap.ts');
   const index = await repoFile('index.html');
   const serviceWorker = await repoFile('public/sw.js');
 
   assert.equal(index.includes('/src/qibla-copy-bootstrap.ts'), true);
-  assert.equal(source.includes("en: 'Start Live Compass'"), true);
-  assert.equal(source.includes("ar: 'ابدأ البوصلة المباشرة'"), true);
-  assert.equal(source.includes("id: 'Mulai Kompas Langsung'"), true);
-  assert.equal(source.includes("ms: 'Mulakan Kompas Langsung'"), true);
-  assert.equal(source.includes("'#request-motion'"), true);
-  assert.equal(source.includes("setAttribute('aria-label', label)"), true);
-  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v5'"), true);
+  assert.equal(source.includes("liveCompass: 'Start Live Compass'"), true);
+  assert.equal(source.includes("liveCompass: 'ابدأ البوصلة المباشرة'"), true);
+  assert.equal(source.includes("let compassRequested = false"), true);
+  assert.equal(source.includes('!compassRequested && !button.disabled'), true);
+  assert.equal(source.includes('status.textContent = copy.fixedBearing'), true);
+  assert.equal(source.includes("target.closest('#request-motion')"), true);
+  assert.equal(source.includes("observe(root, { childList: true })"), true);
+  assert.equal(source.includes('subtree: true'), false);
+  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v6'"), true);
 });

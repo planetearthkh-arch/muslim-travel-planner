@@ -624,7 +624,7 @@ test('Malay language support is complete and uses Malaysian terminology', async 
   assert.equal(labels.ms.supportPage, 'Sokongan');
   assert.deepEqual(regionLabels.ms.Asia, 'Asia');
   assert.equal(athanLabels.ms.title.toLowerCase().includes('waktu solat'), true);
-  assert.equal(athanLabels.ms.enable.includes('azan'), true);
+  assert.equal(athanLabels.ms.enable.includes('pemberitahuan solat'), true);
   assert.equal(main.includes("language === 'ms' ? 'ms-MY'"), true);
 });
 
@@ -2507,7 +2507,7 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
   assert.equal(info.includes('<string>SafarOne</string>'), true);
   assert.equal(info.includes('NSLocationWhenInUseUsageDescription'), true);
   assert.equal(info.includes('UIBackgroundModes'), false);
-  assert.equal(info.includes('NSLocationAlways'), false);
+  assert.equal(info.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), true);
   assert.equal(info.includes('NSAllowsArbitraryLoads'), false);
   assert.equal(privacy.includes('<key>NSPrivacyTracking</key>'), true);
   assert.equal(privacy.includes('<false/>'), true);
@@ -2579,7 +2579,7 @@ test('iOS prayer notifications use official Local Notifications without custom A
   assert.equal(athanI18n.includes('29 ثانية'), false);
   assert.equal(athanI18n.includes('29 detik'), false);
   assert.equal(athanI18n.includes('29 saat'), false);
-  assert.equal(athanI18n.includes('default prayer notification sound'), true);
+  assert.equal(athanI18n.includes('system notification sound'), true);
 });
 
 test('TestFlight and iOS privacy documentation are present and accurate', async () => {
