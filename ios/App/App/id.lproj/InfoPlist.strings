@@ -1,1 +1,2 @@
 "NSLocationWhenInUseUsageDescription" = "SafarOne menggunakan lokasi Anda hanya saat Anda meminta arah Kiblat atau tempat perjalanan terdekat.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "SafarOne menggunakan lokasi Anda hanya saat Anda meminta arah Kiblat atau tempat perjalanan terdekat.";
