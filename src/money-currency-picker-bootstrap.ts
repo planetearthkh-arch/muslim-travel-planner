@@ -252,7 +252,12 @@ function enhanceCurrencySelect(select: HTMLSelectElement) {
 function enhanceMoneyPage() {
   const moneyApp = document.querySelector<HTMLElement>('.money-app');
   if (!moneyApp) return;
-  const searchLabel = moneyApp.querySelector<HTMLInputElement>('#currency-search')?.closest('label');
+  const searchInput = moneyApp.querySelector<HTMLInputElement>('#currency-search');
+  if (searchInput?.value) {
+    searchInput.value = '';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const searchLabel = searchInput?.closest('label');
   if (searchLabel) searchLabel.hidden = true;
   moneyApp.querySelectorAll<HTMLSelectElement>('#from-currency, #to-currency').forEach(enhanceCurrencySelect);
 }
