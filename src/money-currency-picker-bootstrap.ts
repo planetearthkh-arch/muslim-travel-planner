@@ -4,6 +4,7 @@ type PickerCopy = {
   noResults: string;
 };
 
+const STYLE_ID = 'money-currency-picker-styles';
 const pickerCopy: Record<string, PickerCopy> = {
   en: { search: 'Search currencies', close: 'Close', noResults: 'No currencies found' },
   ar: { search: 'ابحث عن عملة', close: 'إغلاق', noResults: 'لم يتم العثور على عملات' },
@@ -11,6 +12,134 @@ const pickerCopy: Record<string, PickerCopy> = {
   ms: { search: 'Cari mata wang', close: 'Tutup', noResults: 'Tiada mata wang ditemui' },
   tr: { search: 'Para birimi ara', close: 'Kapat', noResults: 'Para birimi bulunamadı' },
 };
+
+function installStyles() {
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `
+    body.currency-picker-open {
+      overflow: hidden;
+    }
+
+    .money-app .currency-picker-trigger {
+      width: 100%;
+      min-height: 48px;
+      text-align: start;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .currency-picker-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: grid;
+      place-items: end center;
+      padding: 16px;
+      background: rgba(15, 23, 42, 0.58);
+    }
+
+    .currency-picker {
+      box-sizing: border-box;
+      width: min(100%, 560px);
+      max-height: min(82vh, 680px);
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 12px;
+      padding: 18px;
+      border-radius: 22px 22px 14px 14px;
+      background: #ffffff;
+      color: #0f172a;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3);
+    }
+
+    .currency-picker-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .currency-picker-header h2 {
+      margin: 0;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .currency-picker-close {
+      width: 44px;
+      min-width: 44px;
+      height: 44px;
+      padding: 0;
+      font-size: 1.6rem;
+      line-height: 1;
+    }
+
+    .currency-picker-search-label {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .currency-picker-search {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .currency-picker-list {
+      min-height: 0;
+      max-height: min(55vh, 430px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      display: grid;
+      gap: 8px;
+      padding-inline-end: 2px;
+    }
+
+    .currency-picker-option {
+      width: 100%;
+      min-width: 0;
+      min-height: 48px;
+      text-align: start;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      background: #f8fafc;
+      color: #0f172a;
+      border: 1px solid #cbd5e1;
+    }
+
+    .currency-picker-option.selected {
+      border-color: #0f766e;
+      background: #ccfbf1;
+      color: #134e4a;
+      font-weight: 700;
+    }
+
+    .currency-picker-empty {
+      margin: 0;
+      text-align: center;
+    }
+
+    @media (min-width: 700px) {
+      .currency-picker-backdrop {
+        place-items: center;
+      }
+
+      .currency-picker {
+        border-radius: 22px;
+      }
+
+      .currency-picker-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  `;
+  document.head.append(style);
+}
 
 function currentCopy() {
   return pickerCopy[document.documentElement.lang] ?? pickerCopy.en;
@@ -32,6 +161,7 @@ function uniqueOptions(select: HTMLSelectElement) {
 
 function closePicker(backdrop: HTMLElement, trigger: HTMLButtonElement) {
   backdrop.remove();
+  document.body.classList.remove('currency-picker-open');
   trigger.focus();
 }
 
@@ -62,9 +192,10 @@ function openPicker(select: HTMLSelectElement, trigger: HTMLButtonElement, title
   heading.textContent = title;
 
   const renderOptions = (query = '') => {
-    const normalized = query.trim().toLocaleLowerCase(document.documentElement.lang || 'en');
+    const locale = document.documentElement.lang || 'en';
+    const normalized = query.trim().toLocaleLowerCase(locale);
     const options = uniqueOptions(select).filter((option) => {
-      const haystack = `${option.value} ${option.textContent ?? ''}`.toLocaleLowerCase(document.documentElement.lang || 'en');
+      const haystack = `${option.value} ${option.textContent ?? ''}`.toLocaleLowerCase(locale);
       return !normalized || haystack.includes(normalized);
     });
     list.replaceChildren();
@@ -97,6 +228,7 @@ function openPicker(select: HTMLSelectElement, trigger: HTMLButtonElement, title
   });
 
   document.body.append(backdrop);
+  document.body.classList.add('currency-picker-open');
   renderOptions();
   search.focus();
 }
@@ -126,6 +258,7 @@ function enhanceMoneyPage() {
 }
 
 if (typeof document !== 'undefined') {
+  installStyles();
   const root = document.querySelector('#root');
   enhanceMoneyPage();
   if (root) new MutationObserver(enhanceMoneyPage).observe(root, { childList: true });
