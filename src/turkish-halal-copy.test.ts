@@ -27,9 +27,9 @@ test('Turkish Halal Restaurants copy is complete and natural', () => {
   ] as const;
 
   for (const key of keys) {
-    assert.equal(typeof copy[key], 'string', key);
-    assert.equal(copy[key].trim().length > 0, true, key);
-    assert.equal(copy[key].includes('Öğe'), false, key);
+    assert.equal(typeof copy[key], 'string');
+    assert.equal(copy[key].trim().length > 0, true);
+    assert.equal(copy[key].includes('Öğe'), false);
   }
 
   assert.equal(copy.halalRestaurantsTitle, 'Helal Restoranlar');
