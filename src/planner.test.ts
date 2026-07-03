@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cities } from './data.js';
-import { labels, languageDirection, languages, nextLanguage, regionLabels } from './i18n.js';
+import { labels, languageDirection, languages, nextLanguage, prayerLabels, regionLabels } from './i18n.js';
 import { athanLabels } from './athan-i18n.js';
 import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
@@ -590,16 +590,19 @@ test('planner validation and pre-generation messages are translated', () => {
   assert.equal(labels.id.itineraryReady.length > 0, true);
 });
 
-test('supports switching among English, Arabic, Bahasa Indonesia, and Bahasa Melayu', () => {
-  assert.deepEqual(languages.map((language) => language.code), ['en', 'ar', 'id', 'ms']);
+test('supports switching among English, Arabic, Bahasa Indonesia, Bahasa Melayu, and Turkish', () => {
+  assert.deepEqual(languages.map((language) => language.code), ['en', 'ar', 'id', 'ms', 'tr']);
   assert.equal(languages.find((language) => language.code === 'ms')?.label, 'Bahasa Melayu');
+  assert.equal(languages.find((language) => language.code === 'tr')?.label, 'Türkçe');
   assert.equal(nextLanguage('en'), 'ar');
   assert.equal(nextLanguage('ar'), 'id');
   assert.equal(nextLanguage('id'), 'ms');
-  assert.equal(nextLanguage('ms'), 'en');
+  assert.equal(nextLanguage('ms'), 'tr');
+  assert.equal(nextLanguage('tr'), 'en');
   assert.equal(languageDirection('en'), 'ltr');
   assert.equal(languageDirection('id'), 'ltr');
   assert.equal(languageDirection('ms'), 'ltr');
+  assert.equal(languageDirection('tr'), 'ltr');
   assert.equal(languageDirection('ar'), 'rtl');
 });
 
@@ -626,6 +629,33 @@ test('Malay language support is complete and uses Malaysian terminology', async 
   assert.equal(athanLabels.ms.title.toLowerCase().includes('waktu solat'), true);
   assert.equal(athanLabels.ms.enable.includes('pemberitahuan solat'), true);
   assert.equal(main.includes("language === 'ms' ? 'ms-MY'"), true);
+});
+
+test('Turkish language support is complete and uses Turkish terminology', async () => {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  const main = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
+  const labelKeys = Object.keys(labels.en).sort();
+  assert.deepEqual(Object.keys(labels.tr).sort(), labelKeys);
+  assert.deepEqual(Object.keys(athanLabels.tr).sort(), Object.keys(athanLabels.en).sort());
+  for (const [key, value] of Object.entries(labels.tr)) {
+    if (key === 'prototype') continue;
+    assert.equal(value.trim().length > 0, true);
+  }
+  assert.equal(labels.tr.subtitle, 'Müslüman Seyahat Planlayıcısı');
+  assert.equal(labels.tr.qiblaTitle.includes('Kıble'), true);
+  assert.equal(labels.tr.prayerMethod.includes('Namaz'), true);
+  assert.equal(labels.tr.wudu, 'Abdest');
+  assert.equal(labels.tr.halalRestaurantsTitle.includes('Helal'), true);
+  assert.equal(labels.tr.prayerSpacesTitle.includes('Cami'), true);
+  assert.equal(labels.tr.prayerTypeRoom, 'Mescit');
+  assert.equal(labels.tr.privacyPolicy, 'Gizlilik Politikası');
+  assert.equal(labels.tr.supportPage, 'Destek');
+  assert.equal(athanLabels.tr.title.includes('Namaz'), true);
+  assert.equal(athanLabels.tr.description.includes('Ezan'), true);
+  assert.equal(prayerLabels.tr.Fajr, 'Sabah');
+  assert.equal(prayerLabels.tr.Dhuhr, 'Öğle');
+  assert.equal(prayerLabels.tr.Isha, 'Yatsı');
+  assert.equal(main.includes("language === 'tr' ? 'tr-TR'"), true);
 });
 
 test('Malay prayer labels use common Malaysian forms', () => {
@@ -714,10 +744,16 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   assert.equal(privacy.includes('data-lang="ms" lang="ms" dir="ltr"'), true);
   assert.equal(privacy.includes('Dikemas kini terakhir: 2 Julai 2026'), true);
   assert.equal(privacy.includes('support.html?lang=ms'), true);
+  assert.equal(privacy.includes('data-lang="tr" lang="tr" dir="ltr"'), true);
+  assert.equal(privacy.includes('Son güncelleme: 2 Temmuz 2026'), true);
+  assert.equal(privacy.includes('support.html?lang=tr'), true);
   assert.equal(privacy.includes('Firas Badran'), true);
   assert.equal(support.includes('data-lang="ms" lang="ms" dir="ltr"'), true);
   assert.equal(support.includes('Bahasa Melayu'), true);
   assert.equal(support.includes('privacy.html?lang=ms'), true);
+  assert.equal(support.includes('data-lang="tr" lang="tr" dir="ltr"'), true);
+  assert.equal(support.includes('Türkçe'), true);
+  assert.equal(support.includes('privacy.html?lang=tr'), true);
   assert.equal(support.includes('Firas Badran'), true);
   assert.equal((privacy.match(/planetearthkh@gmail\.com/g) ?? []).length >= 3, true);
   assert.equal(support.includes('mailto:planetearthkh@gmail.com'), true);
@@ -728,8 +764,8 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   assert.equal(privacy.includes('precise location never leaves the device'), false);
   assert.equal(privacy.includes('data-lang="ar"') && privacy.includes('dir="rtl"'), true);
   assert.equal(support.includes('data-lang="ar"') && support.includes('dir="rtl"'), true);
-  assert.equal(privacy.includes("['en', 'ar', 'id', 'ms']"), true);
-  assert.equal(support.includes("['en', 'ar', 'id', 'ms']"), true);
+  assert.equal(privacy.includes("['en', 'ar', 'id', 'ms', 'tr']"), true);
+  assert.equal(support.includes("['en', 'ar', 'id', 'ms', 'tr']"), true);
   assert.equal(/google-analytics|gtag|facebook pixel|doubleclick|fonts\.googleapis|fonts\.gstatic/i.test(index + privacy + support), false);
   assert.equal(/trusted worldwide|100% accurate|fully offline|verified halal|guaranteed halal|official prayer times/i.test(index + privacy + support + main), false);
 });
@@ -1087,12 +1123,14 @@ test('currency rate and history cache keys isolate direction, period, date range
   assert.throws(() => historyStats([{ date: 'bad', base: 'EUR', quote: 'GBP', rate: 0.8 }], 'GBP'), /Missing history data/);
 });
 
-test('searches currencies by code, English, Arabic, Indonesian, Malay, and country', () => {
+test('searches currencies by code, English, Arabic, Indonesian, Malay, Turkish, and country', () => {
   assert.equal(searchCurrencies(fallbackCurrencies, 'USD')[0].code, 'USD');
   assert.equal(searchCurrencies(fallbackCurrencies, 'US Dollar')[0].code, 'USD');
   assert.equal(searchCurrencies(fallbackCurrencies, 'دولار أمريكي')[0].code, 'USD');
   assert.equal(searchCurrencies(fallbackCurrencies, 'Dolar AS')[0].code, 'USD');
   assert.equal(searchCurrencies(fallbackCurrencies, 'Paun British')[0].code, 'GBP');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'İngiliz Sterlini')[0].code, 'GBP');
+  assert.equal(searchCurrencies(fallbackCurrencies, 'Türk Lirası')[0].code, 'TRY');
   assert.equal(searchCurrencies(fallbackCurrencies, 'Ringgit Malaysia')[0].code, 'MYR');
   assert.equal(searchCurrencies(fallbackCurrencies, 'Yen Jepun')[0].code, 'JPY');
   assert.equal(searchCurrencies(fallbackCurrencies, 'United Kingdom')[0].code, 'GBP');
@@ -1103,11 +1141,12 @@ test('uses destination default currency from city money data', () => {
   assert.equal(destinationCurrency(cities.find((city) => city.city === 'Jerusalem') ?? cities[0]), 'ILS');
 });
 
-test('formats amounts for English, Arabic, Indonesian, and Malay modes', () => {
+test('formats amounts for English, Arabic, Indonesian, Malay, and Turkish modes', () => {
   assert.match(formatCurrencyAmount(1234.5, 'USD', 'en'), /\$/);
   assert.match(formatCurrencyAmount(1234.5, 'USD', 'ar'), /US\$/);
   assert.match(formatCurrencyAmount(1234.5, 'IDR', 'id'), /Rp/);
   assert.match(formatCurrencyAmount(1234.5, 'MYR', 'ms'), /RM/);
+  assert.match(formatCurrencyAmount(1234.5, 'TRY', 'tr'), /₺|TL/);
 });
 
 test('shared HTTP utility classifies statuses, timeouts, aborts, offline, and malformed JSON', async () => {
@@ -2504,6 +2543,7 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
   assert.equal(pbx.includes('PrivacyInfo.xcprivacy in Resources'), true);
   assert.equal(pbx.includes('ar InfoPlist.strings in Resources'), true);
   assert.equal(pbx.includes('ms InfoPlist.strings in Resources'), true);
+  assert.equal(pbx.includes('tr InfoPlist.strings in Resources'), true);
   assert.equal(info.includes('<string>SafarOne</string>'), true);
   assert.equal(info.includes('NSLocationWhenInUseUsageDescription'), true);
   assert.equal(info.includes('UIBackgroundModes'), false);
@@ -2520,6 +2560,7 @@ test('iOS localized location permission strings exist in all launch languages', 
     ar: 'يستخدم SafarOne موقعك فقط عندما تطلب اتجاه القبلة أو أماكن السفر القريبة.',
     id: 'SafarOne menggunakan lokasi Anda hanya saat Anda meminta arah Kiblat atau tempat perjalanan terdekat.',
     ms: 'SafarOne menggunakan lokasi anda hanya apabila anda meminta arah kiblat atau tempat perjalanan berdekatan.',
+    tr: 'SafarOne, Kıble yönünü veya yakındaki seyahat yerlerini istediğinizde konumunuzu yalnızca o anda kullanır.',
   };
   for (const [language, text] of Object.entries(expected)) {
     const strings = await repoFile(`ios/App/App/${language}.lproj/InfoPlist.strings`);

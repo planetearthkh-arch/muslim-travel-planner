@@ -124,7 +124,7 @@ export function createSavedTrip(input: {
 export function validateSavedTrip(value: unknown): SavedTrip | null {
   if (!isRecord(value) || value.schemaVersion !== SAVED_TRIP_SCHEMA_VERSION) return null;
   if (!isString(value.id) || !isString(value.name) || !isString(value.createdAt) || !isString(value.updatedAt) || !isString(value.savedAt)) return null;
-  const language = ['en', 'ar', 'id', 'ms'].includes(String(value.language)) ? value.language as Language : 'en';
+  const language = ['en', 'ar', 'id', 'ms', 'tr'].includes(String(value.language)) ? value.language as Language : 'en';
   if (!isRecord(value.preferences) || !isRecord(value.destination) || !Array.isArray(value.itinerary) || !isRecord(value.dateRange) || !isRecord(value.essentials)) return null;
   const destination = value.destination;
   if (!isString(destination.city) || !isString(destination.country) || !isString(destination.timezone) || !isRecord(destination.coordinates)) return null;
