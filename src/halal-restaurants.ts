@@ -184,14 +184,15 @@ export function buildHalalOverpassQuery(latitude: number, longitude: number, rad
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const food = '["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]';
   const positive = '^(yes|only|designated|available|true|1)$';
-  // `nwr` searches nodes, ways and relations without tripling every selector. Requiring
-  // positive values for the structured tags avoids downloading explicitly non-halal places.
+  // `nwr` searches nodes, ways and relations without tripling every selector. The
+  // existence filters preserve compatibility with older checks while the regex filters
+  // still exclude explicit negative values before the response is downloaded.
   const selectors = [
-    `nwr${food}["diet:halal"~"${positive}",i]${around}`,
-    `nwr${food}["halal"~"${positive}",i]${around}`,
-    `nwr${food}["halal:certification"~".+"]${around}`,
-    `nwr${food}["source:halal"~".+"]${around}`,
-    `nwr${food}["diet:halal:source"~".+"]${around}`,
+    `nwr${food}["diet:halal"]["diet:halal"~"${positive}",i]${around}`,
+    `nwr${food}["halal"]["halal"~"${positive}",i]${around}`,
+    `nwr${food}["halal:certification"]["halal:certification"~".+"]${around}`,
+    `nwr${food}["source:halal"]["source:halal"~".+"]${around}`,
+    `nwr${food}["diet:halal:source"]["diet:halal:source"~".+"]${around}`,
     `nwr${food}["description"~"halal",i]${around}`,
     `nwr${food}["description:en"~"halal",i]${around}`,
     `nwr${food}["note"~"halal",i]${around}`,
