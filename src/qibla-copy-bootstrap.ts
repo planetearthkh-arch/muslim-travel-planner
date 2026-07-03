@@ -1,30 +1,47 @@
-const liveCompassLabels = {
-  en: 'Start Live Compass',
-  ar: 'ابدأ البوصلة المباشرة',
-  id: 'Mulai Kompas Langsung',
-  ms: 'Mulakan Kompas Langsung',
+const qiblaEnhancementLabels = {
+  en: { liveCompass: 'Start Live Compass', fixedBearing: 'Fixed bearing' },
+  ar: { liveCompass: 'ابدأ البوصلة المباشرة', fixedBearing: 'اتجاه ثابت' },
+  id: { liveCompass: 'Mulai Kompas Langsung', fixedBearing: 'Arah tetap' },
+  ms: { liveCompass: 'Mulakan Kompas Langsung', fixedBearing: 'Arah tetap' },
 } as const;
 
-type SupportedLanguage = keyof typeof liveCompassLabels;
+type SupportedLanguage = keyof typeof qiblaEnhancementLabels;
+let compassRequested = false;
 
 function currentLanguage(): SupportedLanguage {
   const language = document.documentElement.lang as SupportedLanguage;
-  return language in liveCompassLabels ? language : 'en';
+  return language in qiblaEnhancementLabels ? language : 'en';
 }
 
-function updateLiveCompassButton() {
+function updateQiblaEnhancements() {
   const button = document.querySelector<HTMLButtonElement>('#request-motion');
   if (!button) return;
-  const label = liveCompassLabels[currentLanguage()];
-  if (button.textContent !== label) button.textContent = label;
-  button.setAttribute('aria-label', label);
+  const copy = qiblaEnhancementLabels[currentLanguage()];
+  if (button.textContent !== copy.liveCompass) button.textContent = copy.liveCompass;
+  button.setAttribute('aria-label', copy.liveCompass);
+
+  // Before the user requests sensor access, the valid state is a fixed Qibla bearing,
+  // not a compass-unavailable error. Do not replace location loading or error states.
+  if (!compassRequested && !button.disabled) {
+    const status = document.querySelector<HTMLElement>('#qibla-status');
+    const readout = document.querySelector<HTMLElement>('#qibla-motion-readout');
+    if (status) status.textContent = copy.fixedBearing;
+    if (readout) readout.textContent = copy.fixedBearing;
+  }
 }
 
-new MutationObserver(updateLiveCompassButton).observe(document.documentElement, {
-  attributes: true,
-  attributeFilter: ['lang'],
-  childList: true,
-  subtree: true,
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest('#request-motion')) compassRequested = true;
+  if (target.closest('#request-location')) compassRequested = false;
 });
 
-window.queueMicrotask(updateLiveCompassButton);
+window.addEventListener('hashchange', () => {
+  if (window.location.hash === '#qibla') compassRequested = false;
+  window.queueMicrotask(updateQiblaEnhancements);
+});
+
+const root = document.querySelector<HTMLElement>('#root');
+if (root) new MutationObserver(updateQiblaEnhancements).observe(root, { childList: true });
+window.queueMicrotask(updateQiblaEnhancements);
