@@ -5,6 +5,7 @@ const qiblaEnhancementLabels = {
   ar: { liveCompass: 'ابدأ البوصلة المباشرة', fixedBearing: 'اتجاه ثابت' },
   id: { liveCompass: 'Mulai Kompas Langsung', fixedBearing: 'Arah tetap' },
   ms: { liveCompass: 'Mulakan Kompas Langsung', fixedBearing: 'Arah tetap' },
+  tr: { liveCompass: 'Canlı pusulayı başlat', fixedBearing: 'Sabit yön' },
 } as const;
 
 type SupportedLanguage = keyof typeof qiblaEnhancementLabels;
