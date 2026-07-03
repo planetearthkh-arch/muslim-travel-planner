@@ -1773,7 +1773,8 @@ async function searchHalalRestaurants(center: PrayerCenter) {
   halalRestaurantsPage();
   try {
     const body = buildHalalOverpassQuery(searchCenter.latitude, searchCenter.longitude, searchRadius);
-    const data = await requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, 20000);
+    const requestTimeoutMs = searchRadius <= 1 ? 20000 : 35000;
+    const data = await requestOverpass(overpassUrl(), { method: 'POST', body, signal: abortSignal }, requestTimeoutMs);
     if (!isCurrentRestaurantSearch()) return;
     const normalized = (data.elements ?? [])
       .map((element) => normalizeHalalRestaurant(element, searchCenter, true))

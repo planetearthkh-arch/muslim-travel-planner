@@ -183,16 +183,17 @@ export function buildHalalOverpassQuery(latitude: number, longitude: number, rad
   const radiusMeters = Math.round(safeRadiusKm * 1000);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const food = '["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]';
-  const positive = '^(yes|only|designated|available|true|1)$';
 
+  // Halal keys are uncommon, so selecting them first is substantially lighter than
+  // scanning every restaurant and applying several regular-expression filters.
   const selectors = [
-    `nwr${food}["diet:halal"]["diet:halal"~"${positive}",i]${around}`,
-    `nwr${food}["halal"]["halal"~"${positive}",i]${around}`,
-    `nwr${food}["halal:certification"]["halal:certification"~".+"]${around}`,
-    `nwr${food}["source:halal"]["source:halal"~".+"]${around}`,
-    `nwr${food}["diet:halal:source"]["diet:halal:source"~".+"]${around}`,
+    `nwr["diet:halal"]${around}`,
+    `nwr["halal"]${around}`,
+    `nwr["halal:certification"]${around}`,
   ];
 
+  // Nearby searches may also include text-only evidence. Keep these expensive scans
+  // restricted to the reliable 1 km search.
   if (safeRadiusKm <= 1) {
     selectors.push(
       `nwr${food}["description"~"halal",i]${around}`,
@@ -201,7 +202,8 @@ export function buildHalalOverpassQuery(latitude: number, longitude: number, rad
     );
   }
 
-  return `[out:json][timeout:25];(${selectors.join(';')};);out center tags;`;
+  const timeoutSeconds = safeRadiusKm <= 1 ? 25 : 45;
+  return `[out:json][timeout:${timeoutSeconds}];(${selectors.join(';')};);out center tags;`;
 }
 
 export function hasReliableHalalStatus(status: HalalStatus) {
