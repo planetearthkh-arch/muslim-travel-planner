@@ -624,7 +624,7 @@ test('Malay language support is complete and uses Malaysian terminology', async 
   assert.equal(labels.ms.supportPage, 'Sokongan');
   assert.deepEqual(regionLabels.ms.Asia, 'Asia');
   assert.equal(athanLabels.ms.title.toLowerCase().includes('waktu solat'), true);
-  assert.equal(athanLabels.ms.enable.includes('azan'), true);
+  assert.equal(athanLabels.ms.enable.includes('pemberitahuan solat'), true);
   assert.equal(main.includes("language === 'ms' ? 'ms-MY'"), true);
 });
 
