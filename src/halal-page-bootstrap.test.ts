@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 async function repoFile(path: string) {
-  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
-  return load('node:fs/promises').then((fs) => fs.readFile(new URL(`../${path}`, import.meta.url), 'utf8'));
+  const fs = await import('node:fs/promises');
+  return fs.readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 }
 
 test('halal page starts a reliable nearby search and exposes interactive legend controls', async () => {
@@ -22,5 +22,5 @@ test('halal page starts a reliable nearby search and exposes interactive legend 
   assert.equal(source.includes('#halal-status-filter'), true);
   assert.equal(source.includes("setAttribute('role', 'button')"), true);
   assert.equal(source.includes("dispatchEvent(new Event('change', { bubbles: true }))"), true);
-  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v4'"), true);
+  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v5'"), true);
 });
