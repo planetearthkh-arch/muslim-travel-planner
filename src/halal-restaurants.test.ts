@@ -71,9 +71,9 @@ test('halal Overpass query is compact, bounded, and asks only for positive struc
   assert.equal(query.includes('node["amenity"'), false);
   assert.equal(query.includes('way["amenity"'), false);
   assert.equal(query.includes('relation["amenity"'), false);
-  assert.equal(query.includes('["diet:halal"~"^(yes|only|designated|available|true|1)$",i]'), true);
-  assert.equal(query.includes('["halal"~"^(yes|only|designated|available|true|1)$",i]'), true);
-  assert.equal(query.includes('["diet:halal"]'), false);
+  assert.equal(query.includes('["diet:halal"]["diet:halal"~"^(yes|only|designated|available|true|1)$",i]'), true);
+  assert.equal(query.includes('["halal"]["halal"~"^(yes|only|designated|available|true|1)$",i]'), true);
+  assert.equal(query.includes('["halal:certification"]["halal:certification"~".+"]'), true);
   assert.equal(query.includes('["description"~"halal",i]'), true);
   assert.equal(query.includes('(around:5000,51.5,-0.1)'), true);
   assert.equal((query.match(/nwr/g) ?? []).length, 8);
