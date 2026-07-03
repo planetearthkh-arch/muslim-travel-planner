@@ -1,6 +1,36 @@
 const HALAL_DESTINATION_KEY = 'safarone-halal-destination';
 let autoSearchStarted = false;
 
+const halalEnhancementCopy = {
+  en: {
+    filterBy: 'Filter by',
+    status: 'halal status',
+    cuisine: 'Cuisine choices appear after restaurant results load.',
+  },
+  ar: {
+    filterBy: 'تصفية حسب',
+    status: 'حالة الحلال',
+    cuisine: 'تظهر خيارات المطبخ بعد تحميل نتائج المطاعم.',
+  },
+  id: {
+    filterBy: 'Saring berdasarkan',
+    status: 'status halal',
+    cuisine: 'Pilihan masakan muncul setelah hasil restoran dimuat.',
+  },
+  ms: {
+    filterBy: 'Tapis mengikut',
+    status: 'status halal',
+    cuisine: 'Pilihan masakan muncul selepas hasil restoran dimuatkan.',
+  },
+} as const;
+
+type SupportedLanguage = keyof typeof halalEnhancementCopy;
+
+function currentLanguage(): SupportedLanguage {
+  const language = document.documentElement.lang as SupportedLanguage;
+  return language in halalEnhancementCopy ? language : 'en';
+}
+
 function readStoredDestination() {
   try {
     return window.sessionStorage.getItem(HALAL_DESTINATION_KEY) ?? '';
@@ -62,25 +92,35 @@ function legendStatus(element: HTMLElement) {
   return '';
 }
 
+function updateLegendPressed(select: HTMLSelectElement) {
+  document.querySelectorAll<HTMLElement>('.halal-legend .badge').forEach((badge) => {
+    const status = legendStatus(badge);
+    if (status) badge.setAttribute('aria-pressed', String(select.value === status));
+  });
+}
+
 function makeLegendInteractive() {
   const select = document.querySelector<HTMLSelectElement>('#halal-status-filter');
   if (!select) return;
+  const copy = halalEnhancementCopy[currentLanguage()];
 
   document.querySelectorAll<HTMLElement>('.halal-legend .badge').forEach((badge) => {
-    if (badge.dataset.halalEnhanced === 'true') return;
     const status = legendStatus(badge);
     if (!status) return;
+
+    badge.setAttribute('aria-pressed', String(select.value === status));
+    badge.setAttribute('title', `${copy.filterBy} ${badge.textContent?.trim() || copy.status}`);
+    if (badge.dataset.halalEnhanced === 'true') return;
 
     const activate = () => {
       select.value = status;
       select.dispatchEvent(new Event('change', { bubbles: true }));
+      updateLegendPressed(select);
     };
 
     badge.dataset.halalEnhanced = 'true';
     badge.setAttribute('role', 'button');
     badge.setAttribute('tabindex', '0');
-    badge.setAttribute('aria-pressed', String(select.value === status));
-    badge.setAttribute('title', `Filter by ${badge.textContent?.trim() ?? 'halal status'}`);
     badge.style.cursor = 'pointer';
     badge.addEventListener('click', activate);
     badge.addEventListener('keydown', (event) => {
@@ -95,7 +135,7 @@ function clarifyCuisineSelector() {
   const select = document.querySelector<HTMLSelectElement>('#halal-cuisine-filter');
   if (!select) return;
   if (select.options.length <= 1) {
-    select.title = 'Cuisine choices appear after restaurant results load.';
+    select.title = halalEnhancementCopy[currentLanguage()].cuisine;
   } else {
     select.removeAttribute('title');
   }
@@ -117,9 +157,9 @@ document.addEventListener('click', (event) => {
 
 document.addEventListener('change', (event) => {
   const target = event.target;
-  if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
-    if (target.matches('[data-field="city"]')) storeDestination(target.value);
-  }
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+  if (target.matches('[data-field="city"]')) storeDestination(target.value);
+  if (target.matches('#halal-status-filter')) updateLegendPressed(target as HTMLSelectElement);
 });
 
 window.addEventListener('hashchange', () => {
@@ -127,5 +167,6 @@ window.addEventListener('hashchange', () => {
   window.queueMicrotask(enhanceHalalPage);
 });
 
-new MutationObserver(enhanceHalalPage).observe(document.documentElement, { childList: true, subtree: true });
+const root = document.querySelector<HTMLElement>('#root');
+if (root) new MutationObserver(enhanceHalalPage).observe(root, { childList: true });
 window.queueMicrotask(enhanceHalalPage);
