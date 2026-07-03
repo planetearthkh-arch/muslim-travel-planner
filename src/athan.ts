@@ -21,6 +21,7 @@ const prayerOrder: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 const NATIVE_PRAYER_NOTIFICATION_MIN = 200_000_000;
 const NATIVE_PRAYER_NOTIFICATION_MAX = 299_999_999;
 const NATIVE_TEST_NOTIFICATION_ID = 199_900_001;
+const NATIVE_DEFAULT_SOUND = 'default';
 let browserTimers: number[] = [];
 let browserAudio: HTMLAudioElement | undefined;
 
@@ -175,6 +176,7 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[]) {
         id: nativeNotificationId(alarm),
         title: `${alarm.prayer} prayer`,
         body: `${alarm.city} · ${alarm.formattedTime}`,
+        sound: NATIVE_DEFAULT_SOUND,
         schedule: { at: new Date(alarm.timestamp), allowWhileIdle: true },
         extra: { safarOne: true, prayer: alarm.prayer, city: alarm.city },
       }));
@@ -215,6 +217,7 @@ export async function playTestAthan() {
         id: NATIVE_TEST_NOTIFICATION_ID,
         title: 'SafarOne prayer notification',
         body: 'Prayer notification sound',
+        sound: NATIVE_DEFAULT_SOUND,
         schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
         extra: { safarOne: true, test: true },
       }],
