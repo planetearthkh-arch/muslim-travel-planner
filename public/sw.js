@@ -1,7 +1,8 @@
-const CACHE_VERSION = 'mtp-app-shell-v5';
+const CACHE_VERSION = 'mtp-app-shell-v6';
 const APP_SCOPE = new URL(self.registration.scope);
+const APP_HOME = new URL('./', APP_SCOPE).toString();
 const APP_SHELL = [
-  new URL('./', APP_SCOPE).toString(),
+  APP_HOME,
   new URL('./privacy.html', APP_SCOPE).toString(),
   new URL('./support.html', APP_SCOPE).toString(),
   new URL('./manifest.webmanifest', APP_SCOPE).toString(),
@@ -19,7 +20,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key)))) .then(() => self.clients.claim()));
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', (event) => {
@@ -30,10 +31,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(request).then((response) => {
       if (response.ok) {
         const copy = response.clone();
-        caches.open(CACHE_VERSION).then((cache) => cache.put(new URL('./', APP_SCOPE).toString(), copy));
+        caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
       }
       return response;
-    }).catch(() => caches.match(request).then((cached) => cached ?? caches.match(new URL('./', APP_SCOPE).toString()))));
+    }).catch(async () => (await caches.match(request)) ?? (await caches.match(APP_HOME)) ?? Response.error()));
     return;
   }
 
