@@ -1,4 +1,4 @@
-import { ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
+import { formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { distanceKm } from './prayer-spaces.js';
 import { openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
@@ -43,6 +43,9 @@ export type RestaurantFilters = {
 };
 
 const reliableStatuses: HalalStatus[] = ['halal-only', 'halal-options', 'certification-listed'];
+// Legacy `halal=yes` is still explicit mapped evidence. Keep its separate badge and
+// warning, but do not hide it from the default results view.
+const defaultVisibleStatuses: HalalStatus[] = [...reliableStatuses, 'legacy-halal'];
 const statusWeight: Record<HalalStatus, number> = {
   'halal-only': 0,
   'certification-listed': 1,
@@ -58,17 +61,22 @@ const fallbackForFoodType = (type: FoodPlaceType | undefined) => {
   return 'Unnamed Halal Restaurant';
 };
 
-const yes = (value: string | undefined) => /^(yes|only|designated|available|true|1)$/i.test(value ?? '');
-const no = (value: string | undefined) => /^(no|none|false|0)$/i.test(value ?? '');
+const normalizedValue = (value: string | undefined) => (value ?? '').trim().toLowerCase();
+const affirmativeHalalValues = new Set(['yes', 'only', 'designated', 'available', 'true', '1']);
+const negativeHalalValues = new Set(['no', 'none', 'false', '0']);
+const yes = (value: string | undefined) => affirmativeHalalValues.has(normalizedValue(value));
+const no = (value: string | undefined) => negativeHalalValues.has(normalizedValue(value));
 const invalidCertification = /^(no|none|false|expired|unknown|unverified|not certified)$/i;
 
 export function classifyHalalStatus(tags: OsmTags, includePossible = false): HalalStatus | undefined {
-  if (no(tags['diet:halal']) || no(tags.halal)) return undefined;
-  if (tags['diet:halal']?.toLowerCase() === 'only') return 'halal-only';
+  const dietHalal = normalizedValue(tags['diet:halal']);
+  const legacyHalal = normalizedValue(tags.halal);
+  if (no(dietHalal) || no(legacyHalal)) return undefined;
+  if (dietHalal === 'only') return 'halal-only';
   const certification = tags['halal:certification']?.trim();
   if (certification && !invalidCertification.test(certification)) return 'certification-listed';
-  if (tags['diet:halal']?.toLowerCase() === 'yes') return 'halal-options';
-  if (tags.halal?.toLowerCase() === 'only' || tags.halal?.toLowerCase() === 'yes') return 'legacy-halal';
+  if (affirmativeHalalValues.has(dietHalal)) return 'halal-options';
+  if (affirmativeHalalValues.has(legacyHalal)) return 'legacy-halal';
   if (!includePossible) return undefined;
   const explicitText = [tags.description, tags['description:en'], tags.note, tags['source:halal'], tags['diet:halal:source']]
     .filter(Boolean)
@@ -78,16 +86,14 @@ export function classifyHalalStatus(tags: OsmTags, includePossible = false): Hal
 }
 
 export function classifyFoodPlace(tags: OsmTags): FoodPlaceType | undefined {
-  const amenity = tags.amenity?.toLowerCase();
+  const amenity = normalizedValue(tags.amenity);
   if (amenity === 'restaurant' || amenity === 'fast_food' || amenity === 'cafe' || amenity === 'food_court') return amenity;
   return undefined;
 }
 
 export function restaurantDisplayName(tags: OsmTags, type: FoodPlaceType | undefined) {
-  const name = getEnglishPlaceName({ tags, type: undefined });
-  const display = ensureLatinDisplayName(name, undefined);
-  if (!display || /^Unnamed Quiet Prayer Space$|^Unnamed Mosque$|^Unnamed Prayer Room$/.test(display)) return fallbackForFoodType(type);
-  return display;
+  const display = optionalLatinDisplayName(getEnglishPlaceName({ tags, type: undefined }));
+  return display || fallbackForFoodType(type);
 }
 
 function parseCuisine(value: string | undefined) {
@@ -114,7 +120,7 @@ export function normalizeHalalRestaurant(element: OverpassElement, origin: { lat
     originalName: getOriginalPlaceName(tags),
     type,
     halalStatus,
-    certification: tags['halal:certification'] ?? '',
+    certification: tags['halal:certification']?.trim() ?? '',
     latitude,
     longitude,
     distanceKm: distanceKm(origin.latitude, origin.longitude, latitude, longitude),
@@ -146,10 +152,10 @@ export function dedupeRestaurants(restaurants: HalalRestaurant[]) {
 
 export function filterRestaurants(restaurants: HalalRestaurant[], filters: RestaurantFilters) {
   return restaurants.filter((restaurant) => {
-    if (filters.status === 'reliable' && !reliableStatuses.includes(restaurant.halalStatus)) return false;
+    if (filters.status === 'reliable' && !defaultVisibleStatuses.includes(restaurant.halalStatus)) return false;
     if (filters.status !== 'reliable' && restaurant.halalStatus !== filters.status) return false;
     if (filters.type !== 'all' && restaurant.type !== filters.type) return false;
-    if (filters.cuisine && !restaurant.cuisine.includes(filters.cuisine)) return false;
+    if (filters.cuisine && !restaurant.cuisine.some((cuisine) => cuisine.toLowerCase() === filters.cuisine.toLowerCase())) return false;
     if (filters.openNow && restaurant.openState !== 'open') return false;
     if (filters.takeaway && !restaurant.takeaway) return false;
     if (filters.delivery && !restaurant.delivery) return false;
@@ -173,25 +179,25 @@ export function cuisineOptions(restaurants: HalalRestaurant[]) {
 }
 
 export function buildHalalOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
-  const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
+  const safeRadiusKm = Number.isFinite(radiusKm) ? Math.max(1, Math.min(radiusKm, 50)) : 5;
+  const radiusMeters = Math.round(safeRadiusKm * 1000);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const food = '["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]';
-  const halalEvidence = [
-    '["diet:halal"]',
-    '["halal"]',
-    '["halal:certification"]',
-    '["source:halal"]',
-    '["diet:halal:source"]',
-    '["description"~"halal",i]',
-    '["description:en"~"halal",i]',
-    '["note"~"halal",i]',
+  const positive = '^(yes|only|designated|available|true|1)$';
+  // `nwr` searches nodes, ways and relations without tripling every selector. The
+  // existence filters preserve compatibility with older checks while the regex filters
+  // still exclude explicit negative values before the response is downloaded.
+  const selectors = [
+    `nwr${food}["diet:halal"]["diet:halal"~"${positive}",i]${around}`,
+    `nwr${food}["halal"]["halal"~"${positive}",i]${around}`,
+    `nwr${food}["halal:certification"]["halal:certification"~".+"]${around}`,
+    `nwr${food}["source:halal"]["source:halal"~".+"]${around}`,
+    `nwr${food}["diet:halal:source"]["diet:halal:source"~".+"]${around}`,
+    `nwr${food}["description"~"halal",i]${around}`,
+    `nwr${food}["description:en"~"halal",i]${around}`,
+    `nwr${food}["note"~"halal",i]${around}`,
   ];
-  const foodSelectors = halalEvidence.flatMap((evidence) => [
-    `node${food}${evidence}${around}`,
-    `way${food}${evidence}${around}`,
-    `relation${food}${evidence}${around}`,
-  ]);
-  return `[out:json][timeout:25];(${foodSelectors.join(';')};);out center tags;`;
+  return `[out:json][timeout:25];(${selectors.join(';')};);out center tags;`;
 }
 
 export function hasReliableHalalStatus(status: HalalStatus) {
