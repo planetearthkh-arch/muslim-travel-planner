@@ -1,3 +1,5 @@
+export {};
+
 type PickerCopy = {
   search: string;
   close: string;
