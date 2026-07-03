@@ -24,6 +24,11 @@ const halalEnhancementCopy = {
     status: 'status halal',
     cuisine: 'Pilihan masakan muncul selepas hasil restoran dimuatkan.',
   },
+  tr: {
+    filterBy: 'Şuna göre filtrele:',
+    status: 'helal durumu',
+    cuisine: 'Mutfak seçenekleri restoran sonuçları yüklendikten sonra görünür.',
+  },
 } as const;
 
 type SupportedLanguage = keyof typeof halalEnhancementCopy;
