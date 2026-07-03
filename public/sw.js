@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'mtp-app-shell-v3';
+const CACHE_VERSION = 'mtp-app-shell-v4';
 const APP_SCOPE = new URL(self.registration.scope);
 const APP_SHELL = [
   new URL('./', APP_SCOPE).toString(),
