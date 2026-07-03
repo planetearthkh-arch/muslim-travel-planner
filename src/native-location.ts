@@ -6,7 +6,10 @@ export type AppPosition = {
     latitude: number;
     longitude: number;
     accuracy: number;
+    altitude?: number | null;
+    heading?: number | null;
   };
+  timestamp?: number;
 };
 
 export type AppPositionError = {
@@ -36,7 +39,10 @@ export function getCurrentAppPosition(options?: PositionOptions): Promise<AppPos
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             accuracy: position.coords.accuracy,
+            altitude: position.coords.altitude,
+            heading: position.coords.heading,
           },
+          timestamp: position.timestamp,
         }),
         reject,
         options,
@@ -53,7 +59,10 @@ export function getCurrentAppPosition(options?: PositionOptions): Promise<AppPos
       latitude: position.coords.latitude,
       longitude: position.coords.longitude,
       accuracy: position.coords.accuracy,
+      altitude: position.coords.altitude,
+      heading: position.coords.heading,
     },
+    timestamp: position.timestamp,
   }));
 }
 
@@ -69,4 +78,59 @@ export function requestCurrentAppPosition(
   void getCurrentAppPosition(options).then(success).catch((reason) => {
     error?.(normalizePositionError(reason));
   });
+}
+
+export type AppPositionWatch = {
+  clear: () => void | Promise<void>;
+};
+
+export async function watchAppPosition(
+  success: (position: AppPosition) => void,
+  error?: (error: AppPositionError) => void,
+  options?: PositionOptions,
+): Promise<AppPositionWatch> {
+  if (!isNativePlatform()) {
+    if (!navigator.geolocation) {
+      error?.({ code: 2, message: 'Geolocation unavailable', PERMISSION_DENIED: 1 });
+      return { clear: () => undefined };
+    }
+    const id = navigator.geolocation.watchPosition(
+      (position) => success({
+        coords: {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          altitude: position.coords.altitude,
+          heading: position.coords.heading,
+        },
+        timestamp: position.timestamp,
+      }),
+      (reason) => error?.(normalizePositionError(reason)),
+      options,
+    );
+    return { clear: () => navigator.geolocation.clearWatch(id) };
+  }
+
+  const id = await Geolocation.watchPosition({
+    enableHighAccuracy: options?.enableHighAccuracy,
+    timeout: options?.timeout,
+    maximumAge: options?.maximumAge,
+  }, (position, reason) => {
+    if (reason) {
+      error?.(normalizePositionError(reason));
+      return;
+    }
+    if (!position) return;
+    success({
+      coords: {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        altitude: position.coords.altitude,
+        heading: position.coords.heading,
+      },
+      timestamp: position.timestamp,
+    });
+  });
+  return { clear: () => Geolocation.clearWatch({ id }) };
 }

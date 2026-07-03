@@ -4,6 +4,23 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { generateItinerary } from './planner.js';
 import { RequestError, classifyRequestError, requestJson, retryOnceForTemporary } from './http.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
+import {
+  airportByIata,
+  airportLabel,
+  airports,
+  chooseFlightProgress,
+  createPreparedFlightPlan,
+  elapsedProgress,
+  flightPlanFromTravelDetails,
+  positionByProgress,
+  searchAirports,
+  signedShortestAngle,
+  validateWaypoint,
+  type FlightPosition,
+  type PreparedFlightPlan,
+} from './flight-mode.js';
+import { FlightPlanRepository } from './flight-storage.js';
+import { calculateInflightPrayerSnapshot, formatInTimeZone, formatUtcTime } from './inflight-prayer.js';
 import { buildOverpassQuery, ensureLatinDisplayName, getEnglishPlaceName, isReliablyOpenNow, normalizePrayerPlace, type PrayerPlace, type PrayerPlaceType } from './prayer-spaces.js';
 import { openingState, type OpeningState } from './opening-hours.js';
 import {
@@ -160,7 +177,7 @@ import { createSavedTrip, defaultTripName, duplicateSavedTrip, sanitizeTripName,
 import { currentConnectionState, registerAppServiceWorker, type ConnectionState } from './offline.js';
 import { buildReportText, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sanitizeReportNote, type ReportReason, type ReportablePlace } from './place-report.js';
 import { buildItineraryText, type TripExportSnapshot } from './trip-share.js';
-import { isAppGeolocationAvailable, requestCurrentAppPosition } from './native-location.js';
+import { isAppGeolocationAvailable, requestCurrentAppPosition, watchAppPosition, type AppPositionWatch } from './native-location.js';
 import { copyText, exportTripCalendarFile, shareText } from './native-share.js';
 import { bindNativeExternalLinks, staticLegalPageUrl } from './native-links.js';
 import { deleteTravelDetail, emptyTravelDetails, sortTravelDetails, upsertTravelDetail, validateTravelDetailInput, validateTravelDetailsSnapshot, type TravelDetailEntry, type TravelDetailInput, type TravelDetailsSnapshot, type TravelDetailType } from './travel-details.js';
@@ -168,14 +185,14 @@ import { deleteTravelDetail, emptyTravelDetails, sortTravelDetails, upsertTravel
 (window as unknown as { maplibregl?: typeof maplibregl }).maplibregl = maplibregl;
 
 let lang: Language = 'en';
-type View = 'planner' | 'saved-trips' | 'qibla' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'taxi-services' | 'weather' | 'attractions';
+type View = 'planner' | 'saved-trips' | 'qibla' | 'flight-mode' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'taxi-services' | 'weather' | 'attractions';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
 type QiblaMotionStatus = 'idle' | 'active' | 'denied' | 'unavailable';
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
 type CompassOrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
-const viewFromHash = (): View => window.location.hash === '#saved-trips' ? 'saved-trips' : window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#public-transport' ? 'public-transport' : window.location.hash === '#taxi-services' ? 'taxi-services' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
+const viewFromHash = (): View => window.location.hash === '#saved-trips' ? 'saved-trips' : window.location.hash === '#qibla' ? 'qibla' : window.location.hash === '#flight-mode' ? 'flight-mode' : window.location.hash === '#prayer-spaces' ? 'prayer-spaces' : window.location.hash === '#money' ? 'money' : window.location.hash === '#halal-restaurants' ? 'halal-restaurants' : window.location.hash === '#public-toilets' ? 'public-toilets' : window.location.hash === '#car-rental' ? 'car-rental' : window.location.hash === '#public-transport' ? 'public-transport' : window.location.hash === '#taxi-services' ? 'taxi-services' : window.location.hash === '#weather' ? 'weather' : window.location.hash === '#attractions' ? 'attractions' : 'planner';
 let view: View = viewFromHash();
 let qiblaLocationStatus: QiblaLocationStatus = 'idle';
 let qiblaMotionStatus: QiblaMotionStatus = 'idle';
@@ -228,6 +245,19 @@ let connectionWasOffline = connectionState === 'offline';
 let plannerValidation = '';
 let plannerAnnouncement = '';
 const savedTripRepository = new SavedTripRepository(localStorage);
+const flightPlanRepository = new FlightPlanRepository(localStorage);
+const loadedFlightPlan = flightPlanRepository.read();
+let preparedFlightPlan: PreparedFlightPlan | null = loadedFlightPlan.plan;
+let flightPlanCorrupted = loadedFlightPlan.corrupted;
+let flightEditing = !preparedFlightPlan;
+let flightStatus = '';
+let flightManualProgress = preparedFlightPlan ? elapsedProgress(preparedFlightPlan) : 0;
+let flightGpsEnabled = false;
+let flightLocationStatus: 'idle' | 'watching' | 'denied' | 'unavailable' = 'idle';
+let flightWatch: AppPositionWatch | undefined;
+let flightWatchSequence = 0;
+let flightLatestGps: FlightPosition | undefined;
+let flightPreviousGps: FlightPosition | undefined;
 
 let currencies: CurrencyInfo[] = fallbackCurrencies;
 let currencySearch = '';
@@ -495,6 +525,7 @@ function homeIcon(name: string) {
   const paths: Record<string, string> = {
     saved: '<path d="M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2z"/><path d="M9 8h6"/>',
     qibla: '<circle cx="12" cy="12" r="8"/><path d="m15.5 8.5-2.2 5.1-4.8 1.9 2.2-5.1 4.8-1.9z"/>',
+    flight: '<path d="M3 16l18-8-8 18-2-8-8-2z"/><path d="M11 18l4-4"/><path d="M6 6h4M8 4v4"/>',
     prayer: '<path d="M4 19h16"/><path d="M6 19V10l6-5 6 5v9"/><path d="M9 19v-5a3 3 0 0 1 6 0v5"/><path d="M12 5V3"/>',
     halal: '<circle cx="12" cy="12" r="7"/><path d="M8 13c1.5 2 5.5 2 7-2"/><path d="M8 8v4"/><path d="M16 8v4"/>',
     money: '<circle cx="8" cy="9" r="4"/><circle cx="15" cy="14" r="4"/><path d="M8 7v4M6.5 9h3M15 12v4M13.5 14h3"/>',
@@ -860,6 +891,327 @@ function bindQibla() {
   });
   document.querySelector<HTMLButtonElement>('#request-location')?.addEventListener('click', requestQiblaLocation);
   document.querySelector<HTMLButtonElement>('#request-motion')?.addEventListener('click', () => void requestQiblaMotion());
+}
+
+function stopFlightGpsWatch() {
+  flightWatchSequence += 1;
+  if (flightWatch) {
+    void flightWatch.clear();
+    flightWatch = undefined;
+  }
+  flightGpsEnabled = false;
+  flightLocationStatus = 'idle';
+}
+
+function formatFlightMinutes(minutes: number, copy: typeof labels[Language]) {
+  const safe = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(safe / 60);
+  const mins = safe % 60;
+  return `${hours ? `${hours} ${copy.flightHours}` : ''}${hours && mins ? ' ' : ''}${mins || !hours ? `${mins} ${copy.flightMinutes}` : ''}`;
+}
+
+function flightSourceLabel(source: string, copy: typeof labels[Language]) {
+  if (source === 'gps') return copy.flightGpsSource;
+  if (source === 'derived-gps') return copy.flightDerivedGpsSource;
+  if (source === 'route-estimate') return copy.flightRouteSource;
+  return copy.flightUnavailableSource;
+}
+
+function flightRelativeAngleText(angle: number, copy: typeof labels[Language]) {
+  if (!Number.isFinite(angle)) return copy.flightUnavailableSource;
+  const absolute = Math.abs(angle);
+  if (absolute <= 10) return copy.flightStraightAhead;
+  if (absolute >= 170) return copy.flightBehind;
+  return `${Math.round(absolute)}° ${angle < 0 ? copy.flightLeft : copy.flightRight}`;
+}
+
+function waypointText(plan: PreparedFlightPlan | null) {
+  return plan?.waypoints.map((waypoint) => `${waypoint.label}, ${waypoint.latitude.toFixed(4)}, ${waypoint.longitude.toFixed(4)}`).join('\n') ?? '';
+}
+
+function flightAirportOptions() {
+  return airports.map((airport) => `<option value="${airport.iata}">${esc(airportLabel(airport))}</option>`).join('');
+}
+
+function parseWaypointInput(value: string) {
+  const waypoints = value.split(/\n+/).map((line, index) => {
+    const [label, latitude, longitude] = line.split(',').map((part) => part.trim());
+    if (!label && !latitude && !longitude) return null;
+    return validateWaypoint({ label, latitude: Number(latitude), longitude: Number(longitude) }, index);
+  }).filter((waypoint): waypoint is NonNullable<ReturnType<typeof validateWaypoint>> => Boolean(waypoint));
+  const nonEmptyLines = value.split(/\n+/).filter((line) => line.trim());
+  return waypoints.length === nonEmptyLines.length ? waypoints : null;
+}
+
+function flightPlanFormMarkup(copy: typeof labels[Language]) {
+  const plan = preparedFlightPlan;
+  const departure = plan?.departure.iata ?? 'LHR';
+  const arrival = plan?.arrival.iata ?? 'JFK';
+  const scheduled = plan ? plan.scheduledDepartureUtc.slice(0, 16) : new Date(Date.now() + 86_400_000).toISOString().slice(0, 16);
+  const hours = plan ? Math.floor(plan.durationMinutes / 60) : 7;
+  const minutes = plan ? plan.durationMinutes % 60 : 30;
+  const altitudeFeet = plan?.cruiseAltitudeMeters ? Math.round(plan.cruiseAltitudeMeters * 3.28084) : '';
+  return `<section class="panel flight-panel" aria-labelledby="flight-prepare-heading">
+    <div class="card-top"><div><p class="eyebrow">${copy.flightPrepareStage}</p><h2 id="flight-prepare-heading">${copy.flightModeTitle}</h2></div></div>
+    <p class="muted">${copy.flightBestEstimate}</p>
+    <form id="flight-plan-form" class="flight-form">
+      <datalist id="flight-airports">${flightAirportOptions()}</datalist>
+      <label>${copy.flightDepartureAirport}<input id="flight-departure" list="flight-airports" value="${esc(departure)}" placeholder="${esc(copy.flightAirportSearchHint)}" autocomplete="off" /></label>
+      <label>${copy.flightArrivalAirport}<input id="flight-arrival" list="flight-airports" value="${esc(arrival)}" placeholder="${esc(copy.flightAirportSearchHint)}" autocomplete="off" /></label>
+      <div class="grid">
+        <label>${copy.flightScheduledDepartureUtc}<input id="flight-departure-time" type="datetime-local" value="${esc(scheduled)}" /></label>
+        <label>${copy.flightDuration}<span class="inline-fields"><input id="flight-duration-hours" type="number" min="0" max="24" value="${hours}" aria-label="${copy.flightHours}" /><input id="flight-duration-minutes" type="number" min="0" max="59" value="${minutes}" aria-label="${copy.flightMinutes}" /></span></label>
+      </div>
+      <div class="grid">
+        <label>${copy.flightDepartureTimeZone}<input id="flight-departure-zone" value="${esc(plan?.departureTimeZone ?? '')}" placeholder="Europe/London" /></label>
+        <label>${copy.flightArrivalTimeZone}<input id="flight-arrival-zone" value="${esc(plan?.arrivalTimeZone ?? '')}" placeholder="America/New_York" /></label>
+      </div>
+      <div class="grid">
+        <label>${copy.flightCruiseAltitude}<input id="flight-altitude" type="number" min="0" max="60000" value="${altitudeFeet}" /></label>
+        <label>${copy.flightAltitudeUnit}<select id="flight-altitude-unit"><option value="ft">${copy.flightFeet}</option><option value="m">${copy.flightMeters}</option></select></label>
+      </div>
+      ${choiceSelect('prayerMethod', copy.flightMethod, prayerMethods, Object.fromEntries(prayerMethods.map((method) => [method, method])) as Record<(typeof prayerMethods)[number], string>)}
+      <label>${copy.flightWaypoints}<textarea id="flight-waypoints" rows="3" placeholder="${esc(copy.flightWaypointHelp)}">${esc(waypointText(plan))}</textarea></label>
+      <div class="flight-actions">
+        <button type="submit">${copy.flightPrepareButton}</button>
+        <button type="button" class="ghost" id="flight-use-travel-details">${copy.flightUseTravelDetails}</button>
+      </div>
+    </form>
+    <p class="muted">${copy.flightRouteDisclaimer}</p>
+    <p class="muted">${copy.flightAirportSource}</p>
+  </section>`;
+}
+
+function flightDiagramMarkup(qiblaBearing: number, track: number | undefined, copy: typeof labels[Language]) {
+  const relative = typeof track === 'number' ? signedShortestAngle(track, qiblaBearing) : 0;
+  return `<svg class="flight-diagram" viewBox="0 0 220 180" role="img" aria-label="${esc(copy.flightDiagramLabel)}">
+    <circle cx="110" cy="90" r="70" class="flight-diagram-ring" />
+    <g class="flight-aircraft" transform="rotate(${typeof track === 'number' ? track : 0} 110 90)">
+      <path d="M110 28l16 82h-32l16-82z" />
+      <path d="M72 102h76l-14 18H86l-14-18z" />
+    </g>
+    <g class="flight-qibla-vector" transform="rotate(${qiblaBearing} 110 90)">
+      <path d="M110 88V18" />
+      <path d="M110 18l-9 16h18l-9-16z" />
+    </g>
+    <text x="110" y="165" text-anchor="middle">${esc(flightRelativeAngleText(relative, copy))}</text>
+  </svg>`;
+}
+
+function flightDashboardMarkup(copy: typeof labels[Language], plan: PreparedFlightPlan) {
+  const now = Date.now();
+  const progress = chooseFlightProgress(plan, { gps: flightLatestGps, previousGps: flightPreviousGps, manualProgress: flightManualProgress, nowMs: now });
+  const activePosition = progress.position ?? positionByProgress(plan, flightManualProgress, now).position;
+  const prayer = activePosition ? calculateInflightPrayerSnapshot(activePosition.latitude, activePosition.longitude, now, plan.prayerMethod) : null;
+  const qiblaBearing = activePosition ? calculateQiblaBearing(activePosition.latitude, activePosition.longitude) : Number.NaN;
+  const relative = typeof progress.trackDegrees === 'number' ? signedShortestAngle(progress.trackDegrees, qiblaBearing) : Number.NaN;
+  const prayerRows = prayer ? prayerOrder.map((name) => `<div><span>${prayerLabels[lang][name]}</span><strong>${formatUtcTime(prayer.prayers[name])} UTC</strong>${plan.departureTimeZone || plan.arrivalTimeZone ? `<small>${formatInTimeZone(prayer.prayers[name], plan.departureTimeZone, localeForLanguage(lang))}${plan.arrivalTimeZone ? ` · ${formatInTimeZone(prayer.prayers[name], plan.arrivalTimeZone, localeForLanguage(lang))}` : ''}</small>` : ''}</div>`).join('') : '';
+  return `<section class="panel flight-panel" aria-labelledby="flight-dashboard-heading">
+    <div class="card-top"><div><p class="eyebrow">${copy.flightDashboardStage}</p><h2 id="flight-dashboard-heading">${plan.departure.iata} → ${plan.arrival.iata}</h2><p>${esc(plan.departure.name)} → ${esc(plan.arrival.name)}</p></div></div>
+    <p class="notice">${copy.flightBestEstimate}</p>
+    <div class="flight-actions">
+      <button type="button" id="flight-toggle-gps">${flightGpsEnabled ? copy.flightDisableGps : copy.flightEnableGps}</button>
+      <button type="button" class="ghost" id="flight-elapsed">${copy.flightUseElapsed}</button>
+      <button type="button" class="ghost" id="flight-edit">${copy.flightEdit}</button>
+      <button type="button" class="ghost" id="flight-clear">${copy.flightClear}</button>
+    </div>
+    <label>${copy.flightProgress}<input id="flight-progress" type="range" min="0" max="100" value="${Math.round(progress.progress * 100)}" aria-label="${copy.flightProgressSlider}" /></label>
+    <div class="flight-grid">
+      <div><span>${copy.flightSource}</span><strong>${flightSourceLabel(progress.source, copy)}</strong></div>
+      <div><span>${copy.flightRouteDistance}</span><strong>${Math.round(progress.routeDistanceKm).toLocaleString(localeForLanguage(lang))} km</strong></div>
+      <div><span>${copy.flightRemainingDistance}</span><strong>${Math.round(progress.remainingDistanceKm).toLocaleString(localeForLanguage(lang))} km</strong></div>
+      <div><span>${copy.flightRemainingTime}</span><strong>${formatFlightMinutes(progress.remainingMinutes, copy)}</strong></div>
+      <div><span>${copy.flightCoordinates}</span><strong>${activePosition ? `${activePosition.latitude.toFixed(4)}, ${activePosition.longitude.toFixed(4)}` : copy.flightUnavailableSource}</strong></div>
+      <div><span>${copy.flightLastUpdate}</span><strong>${activePosition ? new Intl.DateTimeFormat(localeForLanguage(lang), { timeStyle: 'medium', timeZone: 'UTC' }).format(new Date(activePosition.timestamp)) : copy.flightUnavailableSource}</strong></div>
+      <div><span>${copy.flightAccuracy}</span><strong>${activePosition?.accuracyMeters ? `±${Math.round(activePosition.accuracyMeters)} m` : copy.flightRouteSource}</strong></div>
+      <div><span>${copy.flightAltitude}</span><strong>${activePosition?.altitudeMeters ? `${Math.round(activePosition.altitudeMeters)} m` : plan.cruiseAltitudeMeters ? `${Math.round(plan.cruiseAltitudeMeters)} m` : copy.flightUnavailableSource}</strong></div>
+    </div>
+    ${progress.lowAccuracy ? `<p class="warning">${copy.flightLowAccuracy}</p>` : ''}
+    ${progress.stale ? `<p class="warning">${copy.flightGpsStale}</p>` : ''}
+    <div class="flight-qibla-layout">
+      ${flightDiagramMarkup(qiblaBearing, progress.trackDegrees, copy)}
+      <div class="flight-grid">
+        <div><span>${copy.flightQiblaTrue}</span><strong>${Number.isFinite(qiblaBearing) ? `${qiblaBearing.toFixed(1)}° true` : copy.flightUnavailableSource}</strong></div>
+        <div><span>${copy.flightTrack}</span><strong>${typeof progress.trackDegrees === 'number' ? `${progress.trackDegrees.toFixed(1)}° true` : copy.flightUnavailableSource}</strong></div>
+        <div><span>${copy.flightRelativeAngle}</span><strong>${flightRelativeAngleText(relative, copy)}</strong></div>
+        <div><span>${copy.flightConfidence}</span><strong>${flightSourceLabel(progress.source, copy)}</strong></div>
+      </div>
+    </div>
+    <section class="flight-prayers">
+      <h3>${copy.flightUtcPrayerTimes}</h3>
+      <div class="flight-grid">${prayerRows}</div>
+      <p><strong>${copy.flightCurrentPrayer}:</strong> ${prayer?.currentWindow ? prayerLabels[lang][prayer.currentWindow.name] : copy.flightUnavailableSource}</p>
+      <p><strong>${copy.flightPreviousPrayer}:</strong> ${prayer?.previousPrayer ? prayerLabels[lang][prayer.previousPrayer.name] : copy.flightUnavailableSource} · <strong>${copy.flightNextPrayer}:</strong> ${prayer?.nextPrayer ? `${prayerLabels[lang][prayer.nextPrayer.name]} (${formatFlightMinutes(Math.ceil(prayer.countdownMs / 60_000), copy)})` : copy.flightUnavailableSource}</p>
+      <p><strong>${copy.flightMethod}:</strong> ${plan.prayerMethod}</p>
+    </section>
+    <p class="muted">${copy.flightOfflineNotice}</p>
+    <p class="muted">${copy.flightSafetyNotice}</p>
+    <p class="muted">${copy.flightAltitudeDisclaimer}</p>
+  </section>`;
+}
+
+function flightModePage() {
+  if (!root) return;
+  const copy = labels[lang];
+  const dir = languageDirection(lang);
+  document.documentElement.lang = lang;
+  document.documentElement.dir = dir;
+  const status = flightPlanCorrupted ? copy.flightStorageRecovered : flightStatus;
+  root.innerHTML = `<main dir="${dir}" class="app flight-mode-app">
+    <section class="hero qibla-hero">
+      ${languageSelector()}
+      <p class="eyebrow">${copy.qibla}</p>
+      <h1>${copy.flightModeTitle}</h1>
+      <p>${copy.flightModeSubtitle}</p>
+      <button type="button" class="ghost hero-action" id="flight-back">${copy.flightModeBack}</button>
+    </section>
+    <p class="sr-only" role="status" aria-live="polite">${esc(status)}</p>
+    ${status ? `<p class="notice">${esc(status)}</p>` : ''}
+    ${flightEditing || !preparedFlightPlan ? flightPlanFormMarkup(copy) : flightDashboardMarkup(copy, preparedFlightPlan)}
+    ${appFooterMarkup(copy)}
+  </main>`;
+  bindFlightMode();
+}
+
+function readFlightFormPlan(copy: typeof labels[Language]): { plan: PreparedFlightPlan } | { error: string } {
+  const departure = airportByIata((document.querySelector<HTMLInputElement>('#flight-departure')?.value ?? '').trim());
+  const arrival = airportByIata((document.querySelector<HTMLInputElement>('#flight-arrival')?.value ?? '').trim());
+  if (!departure || !arrival) return { error: copy.flightPlanInvalid };
+  if (departure.iata === arrival.iata) return { error: copy.flightDifferentAirports };
+  const hours = Number(document.querySelector<HTMLInputElement>('#flight-duration-hours')?.value ?? 0);
+  const minutes = Number(document.querySelector<HTMLInputElement>('#flight-duration-minutes')?.value ?? 0);
+  const durationMinutes = Math.round(hours * 60 + minutes);
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 15 || durationMinutes > 1440) return { error: copy.flightInvalidDuration };
+  const waypointInput = document.querySelector<HTMLTextAreaElement>('#flight-waypoints')?.value ?? '';
+  const waypoints = parseWaypointInput(waypointInput);
+  if (!waypoints) return { error: copy.flightInvalidWaypoint };
+  const departureTime = document.querySelector<HTMLInputElement>('#flight-departure-time')?.value ?? '';
+  const departureDate = new Date(`${departureTime}:00Z`);
+  const scheduledDepartureUtc = departureTime && Number.isFinite(departureDate.getTime()) ? departureDate.toISOString() : '';
+  const altitude = Number(document.querySelector<HTMLInputElement>('#flight-altitude')?.value ?? '');
+  const unit = document.querySelector<HTMLSelectElement>('#flight-altitude-unit')?.value ?? 'ft';
+  const altitudeMeters = Number.isFinite(altitude) && altitude > 0 ? unit === 'ft' ? altitude / 3.28084 : altitude : undefined;
+  const plan = createPreparedFlightPlan({
+    departure,
+    arrival,
+    waypoints,
+    scheduledDepartureUtc,
+    durationMinutes,
+    prayerMethod: prefs.prayerMethod,
+    cruiseAltitudeMeters: altitudeMeters,
+    departureTimeZone: document.querySelector<HTMLInputElement>('#flight-departure-zone')?.value.trim() || undefined,
+    arrivalTimeZone: document.querySelector<HTMLInputElement>('#flight-arrival-zone')?.value.trim() || undefined,
+  });
+  return plan ? { plan } : { error: copy.flightPlanInvalid };
+}
+
+async function startFlightGpsWatch() {
+  const sequence = ++flightWatchSequence;
+  flightGpsEnabled = true;
+  flightLocationStatus = 'watching';
+  flightStatus = '';
+  await flightWatch?.clear();
+  flightWatch = await watchAppPosition(
+    (position) => {
+      if (sequence !== flightWatchSequence || view !== 'flight-mode') return;
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+      flightPreviousGps = flightLatestGps;
+      flightLatestGps = {
+        latitude,
+        longitude,
+        accuracyMeters: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : undefined,
+        altitudeMeters: typeof position.coords.altitude === 'number' && Number.isFinite(position.coords.altitude) ? position.coords.altitude : undefined,
+        trackDegrees: typeof position.coords.heading === 'number' && Number.isFinite(position.coords.heading) && position.coords.heading >= 0 ? position.coords.heading : undefined,
+        timestamp: position.timestamp ?? Date.now(),
+        source: 'gps',
+      };
+      if (preparedFlightPlan) flightManualProgress = chooseFlightProgress(preparedFlightPlan, { gps: flightLatestGps, previousGps: flightPreviousGps, manualProgress: flightManualProgress }).progress;
+      flightModePage();
+    },
+    (error) => {
+      if (sequence !== flightWatchSequence || view !== 'flight-mode') return;
+      flightGpsEnabled = false;
+      flightLocationStatus = error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable';
+      flightStatus = flightLocationStatus === 'denied' ? labels[lang].flightGpsDenied : labels[lang].flightGpsUnavailable;
+      flightModePage();
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 },
+  );
+}
+
+function bindFlightMode() {
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
+    lang = (event.target as HTMLSelectElement).value as Language;
+    flightModePage();
+  });
+  document.querySelector<HTMLButtonElement>('#flight-back')?.addEventListener('click', () => {
+    stopFlightGpsWatch();
+    view = 'planner';
+    if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search);
+    render();
+  });
+  document.querySelector<HTMLFormElement>('#flight-plan-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const result = readFlightFormPlan(labels[lang]);
+    if ('error' in result) {
+      flightStatus = result.error;
+      flightModePage();
+      return;
+    }
+    preparedFlightPlan = flightPlanRepository.save(result.plan);
+    flightPlanCorrupted = false;
+    flightEditing = false;
+    flightManualProgress = elapsedProgress(preparedFlightPlan);
+    flightStatus = labels[lang].flightPlanSaved;
+    flightModePage();
+  });
+  document.querySelector<HTMLButtonElement>('#flight-use-travel-details')?.addEventListener('click', () => {
+    const plan = flightPlanFromTravelDetails(currentTravelDetails, prefs.prayerMethod);
+    if (!plan) {
+      flightStatus = labels[lang].flightPlanInvalid;
+      flightModePage();
+      return;
+    }
+    preparedFlightPlan = flightPlanRepository.save(plan);
+    flightEditing = false;
+    flightManualProgress = elapsedProgress(preparedFlightPlan);
+    flightStatus = labels[lang].flightPlanSaved;
+    flightModePage();
+  });
+  document.querySelector<HTMLButtonElement>('#flight-toggle-gps')?.addEventListener('click', () => {
+    if (flightGpsEnabled) {
+      stopFlightGpsWatch();
+      flightModePage();
+    } else {
+      void startFlightGpsWatch();
+    }
+  });
+  document.querySelector<HTMLInputElement>('#flight-progress')?.addEventListener('input', (event) => {
+    flightManualProgress = Number((event.target as HTMLInputElement).value) / 100;
+    flightModePage();
+  });
+  document.querySelector<HTMLButtonElement>('#flight-elapsed')?.addEventListener('click', () => {
+    if (preparedFlightPlan) flightManualProgress = elapsedProgress(preparedFlightPlan);
+    flightModePage();
+  });
+  document.querySelector<HTMLButtonElement>('#flight-edit')?.addEventListener('click', () => {
+    flightEditing = true;
+    flightModePage();
+  });
+  document.querySelector<HTMLButtonElement>('#flight-clear')?.addEventListener('click', () => {
+    stopFlightGpsWatch();
+    flightPlanRepository.clear();
+    preparedFlightPlan = null;
+    flightEditing = true;
+    flightStatus = labels[lang].flightPlanCleared;
+    flightModePage();
+  });
+  document.querySelectorAll<HTMLInputElement>('#flight-departure, #flight-arrival').forEach((input) => input.addEventListener('input', () => {
+    const matches = searchAirports(input.value, 6);
+    input.setAttribute('aria-description', matches.map((airport) => airportLabel(airport)).join('; '));
+  }));
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -4540,6 +4892,11 @@ function render() {
     return;
   }
   stopQiblaOrientation();
+  if (view !== 'flight-mode') stopFlightGpsWatch();
+  if (view === 'flight-mode') {
+    flightModePage();
+    return;
+  }
   if (view === 'saved-trips') {
     savedTripsPage();
     return;
@@ -4605,6 +4962,7 @@ function render() {
         ])}
         ${homeToolGroup('home-essentials-heading', copy.homeEssentialsGroup, [
           homeActionCard('qibla', copy.qiblaTitle, copy.qiblaSubtitle, copy.qiblaOpen, 'open-qibla'),
+          homeActionCard('flight', copy.flightModeTitle, copy.flightModeSubtitle, copy.flightModeOpen, 'open-flight-mode'),
           homeActionCard('prayer', copy.prayerSpacesTitle, copy.prayerSpacesSubtitle, copy.prayerSpacesOpen, 'open-prayer-spaces'),
           homeActionCard('halal', copy.halalRestaurantsTitle, copy.halalRestaurantsSubtitle, copy.halalRestaurantsOpen, 'open-halal-restaurants'),
         ])}
@@ -4668,6 +5026,11 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#open-qibla')?.addEventListener('click', () => {
     view = 'qibla';
     if (window.location.hash !== '#qibla') window.location.hash = 'qibla';
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#open-flight-mode')?.addEventListener('click', () => {
+    view = 'flight-mode';
+    if (window.location.hash !== '#flight-mode') window.location.hash = 'flight-mode';
     render();
   });
   document.querySelector<HTMLButtonElement>('#open-prayer-spaces')?.addEventListener('click', () => {

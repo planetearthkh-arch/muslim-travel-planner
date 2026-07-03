@@ -5,6 +5,30 @@ import { labels, languageDirection, languages, nextLanguage, regionLabels } from
 import { athanLabels } from './athan-i18n.js';
 import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
+import {
+  airportByIata,
+  airportDataSource,
+  airports,
+  chooseFlightProgress,
+  createPreparedFlightPlan,
+  deriveTrackFromFixes,
+  elapsedProgress,
+  flightPlanFromTravelDetails,
+  greatCircleInterpolate,
+  haversineDistanceKm,
+  initialTrueBearing,
+  normalizeDegrees as normalizeFlightDegrees,
+  normalizeLongitude,
+  positionByDistance,
+  positionByProgress,
+  searchAirports,
+  signedShortestAngle,
+  totalRouteDistanceKm,
+  validateFlightPlan,
+  validateWaypoint,
+} from './flight-mode.js';
+import { FlightPlanRepository, parseStoredFlightPlan } from './flight-storage.js';
+import { calculateInflightPrayerSnapshot, formatInTimeZone, formatUtcTime } from './inflight-prayer.js';
 import { createSavedTrip, defaultTripName, duplicateSavedTrip, parseSavedTrips, sanitizeTripName, SavedTripRepository } from './saved-trips.js';
 import { serviceWorkerUrl } from './offline.js';
 import { buildReportText, canShareReport, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sourcePartsFromOsmUrl } from './place-report.js';
@@ -757,6 +781,7 @@ test('home dashboard groups every feature card with local icons and responsive l
   const featureIds = [
     'open-saved-trips',
     'open-qibla',
+    'open-flight-mode',
     'open-prayer-spaces',
     'open-halal-restaurants',
     'open-money',
@@ -767,7 +792,7 @@ test('home dashboard groups every feature card with local icons and responsive l
     'open-weather',
     'open-attractions',
   ];
-  assert.equal((main.match(/homeActionCard\('/g) ?? []).length, 11);
+  assert.equal((main.match(/homeActionCard\('/g) ?? []).length, 12);
   assert.equal(main.includes("copy.homeTripsGroup"), true);
   assert.equal(main.includes("copy.homeEssentialsGroup"), true);
   assert.equal(main.includes("copy.homeTravelToolsGroup"), true);
@@ -1163,6 +1188,132 @@ test('Qibla compass updates are throttled without rebuilding the page for headin
   assert.equal(source.includes("view !== 'qibla' || document.hidden"), true);
   assert.equal(handler.includes('qiblaPage()'), false);
   assert.equal(handler.includes("event.absolute === true"), true);
+});
+
+test('in-flight route geometry handles bearings, midpoint, Date Line, polar paths, and waypoints', () => {
+  const london = airportByIata('LHR');
+  const newYork = airportByIata('JFK');
+  assert.equal(Boolean(london && newYork), true);
+  if (!london || !newYork) return;
+  const distance = haversineDistanceKm(london, newYork);
+  assert.equal(distance > 5500 && distance < 5700, true);
+  const bearing = initialTrueBearing(london, newYork);
+  assert.equal(bearing > 280 && bearing < 300, true);
+  const midpoint = greatCircleInterpolate(london, newYork, 0.5);
+  assert.equal(Number.isFinite(midpoint.latitude) && Number.isFinite(midpoint.longitude), true);
+  const dateline = greatCircleInterpolate({ latitude: 55, longitude: 170 }, { latitude: 55, longitude: -170 }, 0.5);
+  assert.equal(Math.abs(Math.abs(dateline.longitude) - 180) < 5, true);
+  const polar = initialTrueBearing({ latitude: 78, longitude: -40 }, { latitude: 78, longitude: 140 });
+  assert.equal(Number.isFinite(polar), true);
+  assert.equal(normalizeLongitude(190), -170);
+  assert.equal(normalizeFlightDegrees(-1), 359);
+  assert.equal(signedShortestAngle(350, 10), 20);
+  const waypoint = validateWaypoint({ label: 'North Atlantic', latitude: 55, longitude: -30 });
+  assert.equal(Boolean(waypoint), true);
+  const route = [london, waypoint!, newYork];
+  assert.equal(totalRouteDistanceKm(route) > distance, true);
+  const progress = positionByDistance(route, totalRouteDistanceKm(route) * 0.4);
+  assert.equal(progress.progress > 0.39 && progress.progress < 0.41, true);
+  const zero = positionByDistance([london, london], 10);
+  assert.equal(zero.totalDistanceKm, 0);
+});
+
+test('in-flight position source chooses fresh GPS, stale fallback, low accuracy, progress clamp, and derived track', () => {
+  const plan = createPreparedFlightPlan({
+    departure: airportByIata('LHR')!,
+    arrival: airportByIata('JFK')!,
+    scheduledDepartureUtc: '2026-07-03T10:00:00.000Z',
+    durationMinutes: 420,
+    prayerMethod: 'Muslim World League',
+    now: '2026-07-02T10:00:00.000Z',
+  });
+  assert.equal(Boolean(plan), true);
+  if (!plan) return;
+  assert.equal(elapsedProgress(plan, Date.parse('2026-07-03T13:30:00.000Z')), 0.5);
+  const routeOnly = positionByProgress(plan, 1.8, Date.parse('2026-07-03T13:30:00.000Z'));
+  assert.equal(routeOnly.progress, 1);
+  const previous = { latitude: 51, longitude: -1, timestamp: Date.parse('2026-07-03T13:29:00.000Z'), source: 'gps' as const };
+  const current = { latitude: 52, longitude: -2, accuracyMeters: 8000, timestamp: Date.parse('2026-07-03T13:30:00.000Z'), source: 'gps' as const };
+  assert.equal(Number.isFinite(deriveTrackFromFixes(previous, current)), true);
+  const live = chooseFlightProgress(plan, { gps: current, previousGps: previous, manualProgress: 0.5, nowMs: Date.parse('2026-07-03T13:30:30.000Z') });
+  assert.equal(live.source, 'derived-gps');
+  assert.equal(live.lowAccuracy, true);
+  const stale = chooseFlightProgress(plan, { gps: current, previousGps: previous, manualProgress: 0.5, nowMs: Date.parse('2026-07-03T13:40:00.000Z') });
+  assert.equal(stale.source, 'route-estimate');
+  assert.equal(stale.stale, true);
+});
+
+test('in-flight prayer snapshots are finite, ordered, UTC-based, and cover supported methods', () => {
+  for (const method of ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const) {
+    const snapshot = calculateInflightPrayerSnapshot(45, -30, Date.parse('2026-07-03T23:50:00.000Z'), method);
+    assert.equal(Boolean(snapshot), true);
+    if (!snapshot) return;
+    const values = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map((name) => snapshot.prayers[name as keyof typeof snapshot.prayers]);
+    assert.equal(values.every(Number.isFinite), true);
+    assert.equal(snapshot.countdownMs >= 0, true);
+    assert.equal(Boolean(snapshot.previousPrayer || snapshot.nextPrayer), true);
+    assert.match(formatUtcTime(values[0]), /^\d{2}:\d{2}$/);
+    assert.match(formatInTimeZone(values[0], 'Europe/London', 'en-GB'), /^\d{2}:\d{2}$/);
+  }
+  assert.equal(calculateInflightPrayerSnapshot(100, 0, Date.now(), 'Muslim World League'), null);
+});
+
+test('in-flight flight-plan storage validates, recovers, migrates, and clears safely', () => {
+  const storage = new MemoryStorage();
+  const repository = new FlightPlanRepository(storage);
+  const plan = createPreparedFlightPlan({
+    departure: airportByIata('KUL')!,
+    arrival: airportByIata('JED')!,
+    scheduledDepartureUtc: '2026-07-03T01:00:00.000Z',
+    durationMinutes: 540,
+    prayerMethod: 'Umm al-Qura',
+    now: '2026-07-02T01:00:00.000Z',
+  });
+  assert.equal(Boolean(plan), true);
+  if (!plan) return;
+  repository.save(plan);
+  assert.equal(repository.read().plan?.departure.iata, 'KUL');
+  assert.equal(parseStoredFlightPlan('{bad json').corrupted, true);
+  assert.equal(validateFlightPlan({ ...plan, durationMinutes: 10 }), null);
+  repository.clear();
+  assert.equal(repository.read().plan, null);
+  const fromDetails = flightPlanFromTravelDetails({
+    version: 1,
+    entries: [{
+      id: 'detail-flight',
+      type: 'flight',
+      createdAt: '2026-07-02T00:00:00.000Z',
+      updatedAt: '2026-07-02T00:00:00.000Z',
+      departureAirport: 'LHR',
+      arrivalAirport: 'JFK',
+      departureDateTime: '2026-07-03T10:00',
+      arrivalDateTime: '2026-07-03T17:00',
+    }],
+  }, 'Muslim World League', '2026-07-02T00:00:00.000Z');
+  assert.equal(fromDetails?.departure.iata, 'LHR');
+});
+
+test('in-flight mode is bundled, localized, route-discoverable, and avoids magnetic compass dependency', async () => {
+  const main = await repoFile('src/main.ts');
+  const flight = await repoFile('src/flight-mode.ts');
+  const docs = await repoFile('docs/IN_FLIGHT_PRAYER_QIBLA.md');
+  assert.equal(airports.length >= 25, true);
+  assert.equal(airportDataSource.includes('OurAirports'), true);
+  assert.equal(searchAirports('Kuala Lumpur')[0].iata, 'KUL');
+  assert.equal(main.includes("'flight-mode'"), true);
+  assert.equal(main.includes("window.location.hash === '#flight-mode'"), true);
+  assert.equal(main.includes("homeActionCard('flight'"), true);
+  assert.equal(main.includes('watchAppPosition('), true);
+  assert.equal(flight.includes('DeviceOrientationEvent'), false);
+  assert.equal(flight.includes('magnetic'), false);
+  assert.equal(labels.en.flightBestEstimate, 'Best available estimate based on live GPS or the stored flight route.');
+  for (const language of languages.map((item) => item.code)) {
+    assert.equal(Boolean(labels[language].flightModeTitle), true);
+    assert.equal(Boolean(labels[language].flightOfflineNotice), true);
+    assert.equal(Boolean(labels[language].flightAltitudeDisclaimer), true);
+  }
+  assert.equal(docs.includes('no magnetic compass'), true);
+  assert.equal(docs.includes('OurAirports'), true);
 });
 
 test('shared external URL sanitizer accepts only HTTP and HTTPS links', () => {
@@ -2345,7 +2496,7 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
   const privacy = await repoFile('ios/App/App/PrivacyInfo.xcprivacy');
   assert.equal(pbx.includes('PRODUCT_BUNDLE_IDENTIFIER = com.planetearthkids.muslimtravelplanner;'), true);
   assert.equal(pbx.includes('MARKETING_VERSION = 1.0.0;'), true);
-  assert.equal(pbx.includes('CURRENT_PROJECT_VERSION = 1;'), true);
+  assert.equal(pbx.includes('CURRENT_PROJECT_VERSION = 2;'), true);
   assert.equal(pbx.includes('TARGETED_DEVICE_FAMILY = 1;'), true);
   assert.equal(pbx.includes('PRODUCT_NAME = SafarOne;'), true);
   assert.equal(pbx.includes('CODE_SIGN_STYLE = Automatic;'), true);
