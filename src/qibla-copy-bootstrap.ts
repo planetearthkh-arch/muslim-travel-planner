@@ -1,3 +1,5 @@
+export {};
+
 const qiblaEnhancementLabels = {
   en: { liveCompass: 'Start Live Compass', fixedBearing: 'Fixed bearing' },
   ar: { liveCompass: 'ابدأ البوصلة المباشرة', fixedBearing: 'اتجاه ثابت' },
