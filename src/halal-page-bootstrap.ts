@@ -1,3 +1,5 @@
+export {};
+
 const HALAL_DESTINATION_KEY = 'safarone-halal-destination';
 let autoSearchStarted = false;
 
