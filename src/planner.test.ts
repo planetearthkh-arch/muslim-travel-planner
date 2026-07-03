@@ -2507,7 +2507,7 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
   assert.equal(info.includes('<string>SafarOne</string>'), true);
   assert.equal(info.includes('NSLocationWhenInUseUsageDescription'), true);
   assert.equal(info.includes('UIBackgroundModes'), false);
-  assert.equal(info.includes('NSLocationAlways'), false);
+  assert.equal(info.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), true);
   assert.equal(info.includes('NSAllowsArbitraryLoads'), false);
   assert.equal(privacy.includes('<key>NSPrivacyTracking</key>'), true);
   assert.equal(privacy.includes('<false/>'), true);
@@ -2579,7 +2579,7 @@ test('iOS prayer notifications use official Local Notifications without custom A
   assert.equal(athanI18n.includes('29 ثانية'), false);
   assert.equal(athanI18n.includes('29 detik'), false);
   assert.equal(athanI18n.includes('29 saat'), false);
-  assert.equal(athanI18n.includes('default prayer notification sound'), true);
+  assert.equal(athanI18n.includes('system notification sound'), true);
 });
 
 test('TestFlight and iOS privacy documentation are present and accurate', async () => {
