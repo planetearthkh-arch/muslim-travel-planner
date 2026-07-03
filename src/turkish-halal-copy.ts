@@ -1,4 +1,5 @@
 import { labels } from './i18n.js';
+import './turkish-car-rental-copy.js';
 
 Object.assign(labels.tr, {
   halalRestaurantsTitle: 'Helal Restoranlar',
