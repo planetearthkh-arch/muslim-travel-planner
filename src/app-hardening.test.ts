@@ -27,10 +27,16 @@ test('offline navigation caches each page separately', async () => {
   assert.equal(source.includes('caches.match(request)'), true);
 });
 
-test('native prayer alert wording does not promise bundled Athan audio', async () => {
+test('native prayer notifications are audible and accurately described', async () => {
   const labels = await repoFile('src/athan-i18n.ts');
+  const implementation = await repoFile('src/athan.ts');
+  const config = await repoFile('capacitor.config.ts');
+
   assert.equal(labels.includes("enable: 'Enable prayer notifications'"), true);
   assert.equal(labels.includes("test: 'Test notification'"), true);
   assert.equal(labels.includes("enable: 'Enable Athan alarms'"), false);
   assert.equal(labels.includes('iPhone uses the system notification sound'), true);
+  assert.equal(implementation.includes("const NATIVE_DEFAULT_SOUND = 'default'"), true);
+  assert.equal((implementation.match(/sound: NATIVE_DEFAULT_SOUND/g) ?? []).length, 2);
+  assert.equal(config.includes("presentationOptions: ['sound', 'banner', 'list']"), true);
 });
