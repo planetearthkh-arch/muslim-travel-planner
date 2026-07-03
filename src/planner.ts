@@ -100,6 +100,21 @@ const plannerCopy = {
     fallbackMeal: 'Padanan anggaran atau pilihan halal yang sempurna tidak tersedia dalam data perancang.',
     fallbackPrayer: 'Padanan kemudahan yang sempurna tidak tersedia dalam data perancang; sahkan kemudahan di lokasi.',
   },
+  tr: {
+    travelTo: (name: string) => `${name} noktasına seyahat`,
+    travelDetails: (transportation: string) => `${transportation}; canlı trafik değil, rota tahminidir.`,
+    attractionDetails: (groupSize: number, hasChildren: boolean, note: string) => `Önerilen ziyaret planı. ${groupSize} kişilik grup için uygundur${hasChildren ? ', çocuklarla birlikte' : ''}.${note ? ` ${note}` : ''}`,
+    prayerTitle: (prayer: string, name: string) => `${name} yakınında ${prayer} namazı`,
+    prayerDetails: (method: string, women: string, wudu: string, notes: string, fallback: string) => `${method}. Kadın alanı: ${women}. Abdest: ${wudu}.${fallback ? ` ${fallback}` : ''}${notes ? ` ${notes}` : ''}`,
+    mealTitle: (name: string) => `Helal hassasiyetli yemek molası: ${name}`,
+    mealDetails: (support: string, budget: string, preference: string, fallback: string) => `${support} Bütçe: ${budget}. Tercih: ${preference}.${fallback ? ` ${fallback}` : ''}`,
+    freeTimeTitle: 'Yakını keşfet',
+    freeTimeDetails: 'Dinlenmek, yakındaki sokakları gezmek veya başka uygun bir durak seçmek için serbest zaman.',
+    freeTimeAlternativeDetails: 'Dinlenmek veya yakındaki farklı bir durağı seçmek için alternatif serbest zaman.',
+    fallbackAttraction: 'Tam eşleşme bulunamadığı için en güvenli uygun durak seçildi.',
+    fallbackMeal: 'Planlayıcı verilerinde bütçe veya helal tercihi için tam eşleşme bulunamadı.',
+    fallbackPrayer: 'Planlayıcı verilerinde tesisler için tam eşleşme bulunamadı; imkânları yerinde doğrulayın.',
+  },
 };
 
 const facilityNotes: Record<Language, Record<string, string>> = {
@@ -119,6 +134,10 @@ const facilityNotes: Record<Language, Record<string, string>> = {
     'Sample facility details; confirm locally before travel.': 'Maklumat kemudahan mungkin tidak lengkap; sahkan di lokasi sebelum mengembara.',
     'Verified in this mock dataset for prototype status-label testing only; reconfirm before travel.': 'Maklumat kemudahan mungkin tidak lengkap; semak semula sebelum mengembara.',
   },
+  tr: {
+    'Sample facility details; confirm locally before travel.': 'Tesis bilgileri eksik olabilir; seyahatten önce yerinde doğrulayın.',
+    'Verified in this mock dataset for prototype status-label testing only; reconfirm before travel.': 'Tesis bilgileri eksik olabilir; seyahatten önce yeniden kontrol edin.',
+  },
 };
 
 const halalSupport = (language: Language) => ({
@@ -126,6 +145,7 @@ const halalSupport = (language: Language) => ({
   ar: 'لم يتم تأكيد حالة الحلال بشكل مستقل؛ تحقق من شهادة الحلال والمكونات واحتمال التلامس قبل الطلب.',
   id: 'Status halal belum dikonfirmasi secara independen; pastikan sertifikasi halal, bahan, dan potensi kontaminasi silang sebelum memesan.',
   ms: 'Status halal belum disahkan secara bebas; pastikan pensijilan halal, bahan, dan potensi pencemaran silang sebelum membuat pesanan.',
+  tr: 'Helal durumu bağımsız olarak doğrulanmamıştır; sipariş vermeden önce helal sertifikasını, içerikleri ve çapraz temas riskini doğrulayın.',
 })[language];
 
 const facilityUncertainty = (language: Language) => ({
@@ -133,6 +153,7 @@ const facilityUncertainty = (language: Language) => ({
   ar: 'قد تكون معلومات المرافق غير مكتملة',
   id: 'Informasi fasilitas mungkin belum lengkap',
   ms: 'Maklumat kemudahan mungkin tidak lengkap',
+  tr: 'Tesis bilgileri eksik olabilir',
 })[language];
 
 const makeItem = (date: string, item: Omit<ItineraryItem, 'date'>): ItineraryItem => ({ ...item, date, id: `${date}-${item.id}` });
@@ -206,6 +227,7 @@ const prayerDisplayNames: Record<Language, Record<PrayerName, string>> = {
   ar: { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' },
   id: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' },
   ms: { Fajr: 'Subuh', Dhuhr: 'Zohor', Asr: 'Asar', Maghrib: 'Maghrib', Isha: 'Isyak' },
+  tr: { Fajr: 'Sabah', Dhuhr: 'Öğle', Asr: 'İkindi', Maghrib: 'Akşam', Isha: 'Yatsı' },
 };
 
 interface ScheduleContext {

@@ -14,6 +14,7 @@ test('Qibla enhancement uses clear copy and keeps fixed bearing before compass p
   assert.equal(index.includes('/src/qibla-copy-bootstrap.ts'), true);
   assert.equal(source.includes("liveCompass: 'Start Live Compass'"), true);
   assert.equal(source.includes("liveCompass: 'ابدأ البوصلة المباشرة'"), true);
+  assert.equal(source.includes("tr: { liveCompass: 'Canlı pusulayı başlat', fixedBearing: 'Sabit yön' }"), true);
   assert.equal(source.includes("let compassRequested = false"), true);
   assert.equal(source.includes('!compassRequested && !button.disabled'), true);
   assert.equal(source.includes('status.textContent = copy.fixedBearing'), true);

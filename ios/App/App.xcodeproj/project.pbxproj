@@ -20,6 +20,7 @@
 		B00100032D2D000000000001 /* ar InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = B00100112D2D000000000001 /* ar InfoPlist.strings */; };
 		B00100042D2D000000000001 /* id InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = B00100122D2D000000000001 /* id InfoPlist.strings */; };
 		B00100052D2D000000000001 /* ms InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = B00100132D2D000000000001 /* ms InfoPlist.strings */; };
+		B00100062D2D000000000001 /* tr InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = B00100142D2D000000000001 /* tr InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,7 @@
 		B00100112D2D000000000001 /* ar InfoPlist.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "ar InfoPlist.strings"; path = ar.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		B00100122D2D000000000001 /* id InfoPlist.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "id InfoPlist.strings"; path = id.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		B00100132D2D000000000001 /* ms InfoPlist.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "ms InfoPlist.strings"; path = ms.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		B00100142D2D000000000001 /* tr InfoPlist.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "tr InfoPlist.strings"; path = tr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +85,7 @@
 				B00100112D2D000000000001 /* ar InfoPlist.strings */,
 				B00100122D2D000000000001 /* id InfoPlist.strings */,
 				B00100132D2D000000000001 /* ms InfoPlist.strings */,
+				B00100142D2D000000000001 /* tr InfoPlist.strings */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
@@ -164,6 +167,7 @@
 				B00100032D2D000000000001 /* ar InfoPlist.strings in Resources */,
 				B00100042D2D000000000001 /* id InfoPlist.strings in Resources */,
 				B00100052D2D000000000001 /* ms InfoPlist.strings in Resources */,
+				B00100062D2D000000000001 /* tr InfoPlist.strings in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,

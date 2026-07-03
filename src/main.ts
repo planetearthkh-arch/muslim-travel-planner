@@ -277,7 +277,7 @@ const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America
 const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const;
 const prayerOrder: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 
-const localeForLanguage = (language: Language) => language === 'ar' ? 'ar' : language === 'id' ? 'id-ID' : language === 'ms' ? 'ms-MY' : 'en-US';
+const localeForLanguage = (language: Language) => language === 'ar' ? 'ar' : language === 'id' ? 'id-ID' : language === 'ms' ? 'ms-MY' : language === 'tr' ? 'tr-TR' : 'en-US';
 
 type MapLibreStyleLayer = { id: string; type?: string };
 type MapLibreMap = {
