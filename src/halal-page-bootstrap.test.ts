@@ -29,5 +29,5 @@ test('halal page starts nearby search and keeps legend controls accessible', asy
   assert.equal(source.includes("status: 'helal durumu'"), true);
   assert.equal(source.includes("observe(root, { childList: true })"), true);
   assert.equal(source.includes('subtree: true'), false);
-  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v7'"), true);
+  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v9'"), true);
 });
