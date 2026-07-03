@@ -22,5 +22,5 @@ test('halal page starts a reliable nearby search and exposes interactive legend 
   assert.equal(source.includes('#halal-status-filter'), true);
   assert.equal(source.includes("setAttribute('role', 'button')"), true);
   assert.equal(source.includes("dispatchEvent(new Event('change', { bubbles: true }))"), true);
-  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v4'"), true);
+  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v5'"), true);
 });
