@@ -12,6 +12,7 @@ test('halal page starts nearby search and keeps legend controls accessible', asy
   const serviceWorker = await repoFile('public/sw.js');
 
   assert.equal(index.includes('/src/halal-page-bootstrap.ts'), true);
+  assert.equal(index.includes('/src/turkish-halal-copy.ts'), true);
   assert.equal(source.includes('#manual-halal-search'), true);
   assert.equal(source.includes('#halal-manual-query'), true);
   assert.equal(source.includes('#halal-radius'), true);
@@ -24,7 +25,9 @@ test('halal page starts nearby search and keeps legend controls accessible', asy
   assert.equal(source.includes("setAttribute('aria-pressed'"), true);
   assert.equal(source.includes('updateLegendPressed(select)'), true);
   assert.equal(source.includes("filterBy: 'تصفية حسب'"), true);
+  assert.equal(source.includes("filterBy: 'Şuna göre filtrele:'"), true);
+  assert.equal(source.includes("status: 'helal durumu'"), true);
   assert.equal(source.includes("observe(root, { childList: true })"), true);
   assert.equal(source.includes('subtree: true'), false);
-  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v6'"), true);
+  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v7'"), true);
 });
