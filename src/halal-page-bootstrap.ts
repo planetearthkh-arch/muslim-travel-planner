@@ -24,6 +24,14 @@ function rememberPlannerDestination() {
   if (field?.value) storeDestination(field.value);
 }
 
+function submitForm(form: HTMLFormElement) {
+  if (typeof form.requestSubmit === 'function') {
+    form.requestSubmit();
+    return;
+  }
+  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+}
+
 function startInitialHalalSearch() {
   if (window.location.hash !== '#halal-restaurants' || autoSearchStarted) return;
   const status = document.querySelector<HTMLElement>('.halal-app .prayer-status');
@@ -34,7 +42,7 @@ function startInitialHalalSearch() {
   const destination = readStoredDestination() || 'London';
   input.value = destination;
   autoSearchStarted = true;
-  form.requestSubmit();
+  submitForm(form);
 }
 
 function legendStatus(element: HTMLElement) {
