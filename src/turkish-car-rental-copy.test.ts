@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 import { labels } from './i18n.js';
 import './turkish-car-rental-copy.js';
 
-test('Turkish Car Rental copy is complete and natural', async () => {
+async function repoFile(path: string) {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  return load('node:fs/promises').then((fs) => fs.readFile(new URL(`../${path}`, import.meta.url), 'utf8'));
+}
+
+test('Turkish Car Rental copy is complete, natural, and loaded by the app', async () => {
+  const loader = await repoFile('src/turkish-halal-copy.ts');
+  assert.equal(loader.includes("import './turkish-car-rental-copy.js';"), true);
+
   const copy = labels.tr;
   const keys = [
     'carRentalTitle', 'carRentalSubtitle', 'carRentalOpen', 'carRentalBack',
