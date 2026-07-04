@@ -1,6 +1,6 @@
 not ok 5 - fresh GPS position determines flight progress instead of the manual slider
   ---
-  duration_ms: 1.864075
+  duration_ms: 1.920874
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/deep-audit-fixes.test.js:23:1'
   failureType: 'testCodeFailure'
@@ -28,7 +28,7 @@ not ok 5 - fresh GPS position determines flight progress instead of the manual s
 
 not ok 8 - native and UI safeguards remain wired
   ---
-  duration_ms: 15.324991
+  duration_ms: 15.850706
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/deep-audit-fixes.test.js:80:1'
   failureType: 'testCodeFailure'
@@ -5587,7 +5587,7 @@ not ok 8 - native and UI safeguards remain wired
 
 not ok 40 - generates one-day, two-day, and seven-day itineraries without overlaps
   ---
-  duration_ms: 6.016273
+  duration_ms: 6.898652
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:273:1'
   failureType: 'testCodeFailure'
@@ -5618,7 +5618,7 @@ not ok 40 - generates one-day, two-day, and seven-day itineraries without overla
 
 not ok 41 - includes all prayers that fall inside selected daily hours
   ---
-  duration_ms: 1.022679
+  duration_ms: 1.048738
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:282:1'
   failureType: 'testCodeFailure'
@@ -5649,7 +5649,7 @@ not ok 41 - includes all prayers that fall inside selected daily hours
 
 not ok 42 - early morning and evening schedules include only prayers inside available hours
   ---
-  duration_ms: 1.354844
+  duration_ms: 1.406158
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:289:1'
   failureType: 'testCodeFailure'
@@ -5680,7 +5680,7 @@ not ok 42 - early morning and evening schedules include only prayers inside avai
 
 not ok 43 - every itinerary item stays inside the selected daily hours
   ---
-  duration_ms: 3.92978
+  duration_ms: 5.778431
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:299:1'
   failureType: 'testCodeFailure'
@@ -5708,7 +5708,7 @@ not ok 43 - every itinerary item stays inside the selected daily hours
 
 not ok 44 - multi-day replan changes only the intended day
   ---
-  duration_ms: 5.031352
+  duration_ms: 7.969362
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:305:1'
   failureType: 'testCodeFailure'
@@ -5739,7 +5739,7 @@ not ok 44 - multi-day replan changes only the intended day
 
 not ok 54 - Malay language support is complete and uses Malaysian terminology
   ---
-  duration_ms: 5.190877
+  duration_ms: 7.318179
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:443:1'
   failureType: 'testCodeFailure'
@@ -5763,7 +5763,7 @@ not ok 54 - Malay language support is complete and uses Malaysian terminology
 
 not ok 55 - Turkish language support is complete and uses Turkish terminology
   ---
-  duration_ms: 5.01988
+  duration_ms: 4.832917
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:468:1'
   failureType: 'testCodeFailure'
@@ -5787,7 +5787,7 @@ not ok 55 - Turkish language support is complete and uses Turkish terminology
 
 not ok 68 - provides natural Indonesian interface labels without translating place names
   ---
-  duration_ms: 6.249571
+  duration_ms: 2.345009
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:787:1'
   failureType: 'testCodeFailure'
@@ -5815,7 +5815,7 @@ not ok 68 - provides natural Indonesian interface labels without translating pla
 
 not ok 175 - native build keeps GitHub Pages web build separate from Capacitor assets
   ---
-  duration_ms: 2.374358
+  duration_ms: 2.291119
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:2202:1'
   failureType: 'testCodeFailure'
@@ -5839,7 +5839,7 @@ not ok 175 - native build keeps GitHub Pages web build separate from Capacitor a
 
 not ok 177 - iOS project is configured for SafarOne TestFlight preparation without hardcoded signing
   ---
-  duration_ms: 1.461796
+  duration_ms: 1.621042
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:2240:1'
   failureType: 'testCodeFailure'
@@ -5863,7 +5863,7 @@ not ok 177 - iOS project is configured for SafarOne TestFlight preparation witho
 
 not ok 194 - prayer notification fallbacks use bundled assets and exact-alarm state
   ---
-  duration_ms: 3.275806
+  duration_ms: 7.082378
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/release-hardening.test.js:65:1'
   failureType: 'testCodeFailure'
