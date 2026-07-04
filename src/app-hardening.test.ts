@@ -6,16 +6,26 @@ async function repoFile(path: string) {
   return load('node:fs/promises').then((fs) => fs.readFile(new URL(`../${path}`, import.meta.url), 'utf8'));
 }
 
-test('iOS location permission text and portrait-only phone orientation are committed', async () => {
+test('iOS foreground location permission and portrait-only phone orientation are committed', async () => {
   const plist = await repoFile('ios/App/App/Info.plist');
   assert.equal(plist.includes('<key>NSLocationWhenInUseUsageDescription</key>'), true);
-  assert.equal(plist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>'), true);
+  assert.equal(plist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>'), false);
   assert.match(plist, /<key>UISupportedInterfaceOrientations<\/key>\s*<array>\s*<string>UIInterfaceOrientationPortrait<\/string>\s*<\/array>/);
 
-  for (const language of ['en', 'ar', 'id', 'ms', 'tr', 'fr']) {
+  for (const language of ['en', 'ar', 'id', 'ms', 'tr', 'fr', 'ur']) {
     const localized = await repoFile(`ios/App/App/${language}.lproj/InfoPlist.strings`);
     assert.equal(localized.includes('NSLocationWhenInUseUsageDescription'), true);
-    assert.equal(localized.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), true);
+    assert.equal(localized.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), false);
+  }
+});
+
+test('iOS launch screen uses the committed transparent multi-scale logo', async () => {
+  const storyboard = await repoFile('ios/App/App/Base.lproj/LaunchScreen.storyboard');
+  const contents = await repoFile('ios/App/App/Assets.xcassets/LaunchLogo.imageset/Contents.json');
+  assert.equal(storyboard.includes('image="LaunchLogo"'), true);
+  assert.equal(storyboard.includes('image="LaunchIcon"'), false);
+  for (const filename of ['LaunchLogo_1x.png', 'LaunchLogo_2x.png', 'LaunchLogo_3x.png']) {
+    assert.equal(contents.includes(filename), true);
   }
 });
 

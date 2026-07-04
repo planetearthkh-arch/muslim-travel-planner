@@ -285,11 +285,15 @@ export function positionByProgress(plan: PreparedFlightPlan, progress: number, n
   const route = positionByDistance(points, total * clamped);
   const elapsedMinutes = Math.max(0, Math.round(clamped * plan.durationMinutes));
   const remainingMinutes = Math.max(0, plan.durationMinutes - elapsedMinutes);
+  const scheduledStart = Date.parse(plan.scheduledDepartureUtc);
+  const positionTimestamp = Number.isFinite(scheduledStart)
+    ? scheduledStart + clamped * plan.durationMinutes * 60_000
+    : nowMs;
   return {
     position: {
       latitude: route.point.latitude,
       longitude: route.point.longitude,
-      timestamp: nowMs,
+      timestamp: positionTimestamp,
       trackDegrees: route.trackDegrees,
       source: 'route-estimate',
     },
@@ -324,8 +328,12 @@ export function chooseFlightProgress(plan: PreparedFlightPlan, options: { gps?: 
   const lowAccuracy = typeof gps.accuracyMeters === 'number' && gps.accuracyMeters > LOW_ACCURACY_METERS;
   if (stale) return { ...routeEstimate, source: 'route-estimate' as const, stale: true };
   const projection = projectPositionOntoRoute(routePoints(plan), gps);
-  const progress = projection?.progress ?? routeEstimate.progress;
-  const routeDistance = projection?.totalDistanceKm ?? routeEstimate.routeDistanceKm;
+  const maximumCrossTrackKm = Math.max(100, routeEstimate.routeDistanceKm * 0.15);
+  if (!projection || projection.crossTrackDistanceKm > maximumCrossTrackKm) {
+    return { ...routeEstimate, lowAccuracy: true };
+  }
+  const progress = projection.progress;
+  const routeDistance = projection.totalDistanceKm;
   const track = deriveTrackFromFixes(options.previousGps, gps) ?? projection?.trackDegrees ?? routeEstimate.trackDegrees;
   return {
     position: { ...gps, trackDegrees: track, source: typeof gps.trackDegrees === 'number' ? 'gps' : 'derived-gps' },

@@ -185,7 +185,13 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
         permissions: { exactAlarmAllowed: false, notificationsAllowed: false },
       };
     }
-    await AndroidAthan.prepare({ audioUrl: ATHAN_AUDIO_URL });
+    let audioReady = false;
+    try {
+      audioReady = (await AndroidAthan.prepare({ audioUrl: ATHAN_AUDIO_URL })).ready;
+    } catch {
+      audioReady = false;
+    }
+    const alarmPermissions = await AndroidAthan.requestPermissions();
     const copy = copyFor(language);
     const now = Date.now();
     const payload = alarms
@@ -196,14 +202,10 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
         timestamp: alarm.timestamp,
         prayer: `${copy.prayer[alarm.prayer]} ${copy.title}`,
         city: `${alarm.city} · ${alarm.formattedTime}`,
+        audioReady,
       }));
     const result = payload.length ? await AndroidAthan.schedule({ alarms: payload }) : { scheduled: 0 };
-    let exactAlarmAllowed = false;
-    try {
-      exactAlarmAllowed = (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
-    } catch {
-      exactAlarmAllowed = false;
-    }
+    const exactAlarmAllowed = alarmPermissions.exactAlarmAllowed;
     return {
       mode: 'native' as const,
       scheduled: result.scheduled,
@@ -255,6 +257,21 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
       notificationsAllowed: !('Notification' in window) || Notification.permission === 'granted',
     },
   };
+}
+
+export async function hasScheduledAthanAlarms() {
+  try {
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+      return (await AndroidAthan.pending()).scheduled > 0;
+    }
+    if (Capacitor.isNativePlatform()) {
+      const pending = await LocalNotifications.getPending();
+      return pending.notifications.some((notification) => isSafarOneNotificationId(notification.id));
+    }
+    return browserTimers.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function disableAthanAlarms() {

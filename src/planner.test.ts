@@ -771,8 +771,8 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   assert.equal(privacy.includes('precise location never leaves the device'), false);
   assert.equal(privacy.includes('data-lang="ar"') && privacy.includes('dir="rtl"'), true);
   assert.equal(support.includes('data-lang="ar"') && support.includes('dir="rtl"'), true);
-  assert.equal(privacy.includes("['en', 'ar', 'id', 'ms', 'tr']"), true);
-  assert.equal(support.includes("['en', 'ar', 'id', 'ms', 'tr']"), true);
+  assert.equal(privacy.includes("['en', 'ar', 'id', 'ms', 'tr', 'fr', 'ur']"), true);
+  assert.equal(support.includes("['en', 'ar', 'id', 'ms', 'tr', 'fr', 'ur']"), true);
   assert.equal(/google-analytics|gtag|facebook pixel|doubleclick|fonts\.googleapis|fonts\.gstatic/i.test(index + privacy + support), false);
   assert.equal(/trusted worldwide|100% accurate|fully offline|verified halal|guaranteed halal|official prayer times/i.test(index + privacy + support + main), false);
 });
@@ -2355,7 +2355,7 @@ test('prayer-space searches ignore stale success and error completions', async (
   assert.equal(source.includes('if (!isCurrentPrayerSearch()) return;\n    prayerResults = [...deduped.values()]'), true);
   assert.equal(source.includes("if (!isCurrentPrayerSearch()) return;\n    prayerStatus = 'service-unavailable'"), true);
   assert.equal(source.includes('void searchPrayerPlaces({ latitude: position.coords.latitude, longitude: position.coords.longitude, label: labels[lang].qiblaLocation }, sequence)'), true);
-  assert.equal(source.includes('await searchPrayerPlaces({ latitude: Number(first.lat), longitude: Number(first.lon), label: first.display_name }, sequence)'), true);
+  assert.equal(source.includes('await searchPrayerPlaces(center, sequence)'), true);
 });
 
 test('audited async feature searches isolate stale completions', async () => {
@@ -2557,7 +2557,7 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
   assert.equal(info.includes('<string>SafarOne</string>'), true);
   assert.equal(info.includes('NSLocationWhenInUseUsageDescription'), true);
   assert.equal(info.includes('UIBackgroundModes'), false);
-  assert.equal(info.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), true);
+  assert.equal(info.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), false);
   assert.equal(info.includes('NSAllowsArbitraryLoads'), false);
   assert.equal(privacy.includes('<key>NSPrivacyTracking</key>'), true);
   assert.equal(privacy.includes('<false/>'), true);
@@ -2608,11 +2608,13 @@ test('iOS app icon asset catalog references generated opaque master-derived file
 
 test('iOS launch screen uses emerald background and local SafarOne symbol', async () => {
   const storyboard = await repoFile('ios/App/App/Base.lproj/LaunchScreen.storyboard');
-  const launchContents = await repoFile('ios/App/App/Assets.xcassets/LaunchIcon.imageset/Contents.json');
-  assert.equal(storyboard.includes('image="LaunchIcon"'), true);
+  const launchContents = await repoFile('ios/App/App/Assets.xcassets/LaunchLogo.imageset/Contents.json');
+  assert.equal(storyboard.includes('image="LaunchLogo"'), true);
   assert.equal(storyboard.includes('red="0.01568627451" green="0.2078431373" blue="0.1725490196"'), true);
   assert.equal(storyboard.includes('loading'), false);
-  assert.equal(launchContents.includes('launch-icon.png'), true);
+  assert.equal(launchContents.includes('LaunchLogo_1x.png'), true);
+  assert.equal(launchContents.includes('LaunchLogo_2x.png'), true);
+  assert.equal(launchContents.includes('LaunchLogo_3x.png'), true);
 });
 
 test('iOS prayer notifications use official Local Notifications without custom Athan audio bundling', async () => {

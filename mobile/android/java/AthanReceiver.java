@@ -11,6 +11,7 @@ public class AthanReceiver extends BroadcastReceiver {
         Intent serviceIntent = new Intent(context, AthanPlaybackService.class);
         serviceIntent.putExtra("prayer", intent.getStringExtra("prayer"));
         serviceIntent.putExtra("city", intent.getStringExtra("city"));
+        serviceIntent.putExtra("audioReady", intent.getBooleanExtra("audioReady", false));
         ContextCompat.startForegroundService(context, serviceIntent);
     }
 }

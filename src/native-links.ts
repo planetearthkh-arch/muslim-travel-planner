@@ -27,6 +27,11 @@ export function bindNativeExternalLinks(root: ParentNode = document) {
       if (/^https?:\/\//i.test(href)) {
         event.preventDefault();
         void openSafeExternalUrl(href);
+        return;
+      }
+      if (/^(?:privacy|support)\.html(?:\?|$)/i.test(href)) {
+        event.preventDefault();
+        window.location.assign(href);
       }
     });
   });
