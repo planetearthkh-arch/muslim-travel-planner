@@ -15,6 +15,7 @@ await writeFile(mainPath, mainSource);
 for (const [path, oldText, newText, label] of [
   ['src/app-hardening.test.ts', "const CACHE_VERSION = 'mtp-app-shell-v13'", "const CACHE_VERSION = 'mtp-app-shell-v14'", 'service-worker test version'],
   ['src/deep-audit-fixes.test.ts', 'CURRENT_PROJECT_VERSION = 100;', 'CURRENT_PROJECT_VERSION = 101;', 'iOS test build number'],
+  ['src/release-hardening.test.ts', 'mtp-app-shell-v13', 'mtp-app-shell-v14', 'release hardening cache version'],
 ]) {
   let source = await readFile(path, 'utf8');
   if (!source.includes(oldText)) throw new Error(`Could not find ${label}`);
