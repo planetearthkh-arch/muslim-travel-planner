@@ -19,6 +19,16 @@ test('iOS foreground location permission and portrait-only phone orientation are
   }
 });
 
+test('iOS launch screen uses the committed transparent multi-scale logo', async () => {
+  const storyboard = await repoFile('ios/App/App/Base.lproj/LaunchScreen.storyboard');
+  const contents = await repoFile('ios/App/App/Assets.xcassets/LaunchLogo.imageset/Contents.json');
+  assert.equal(storyboard.includes('image="LaunchLogo"'), true);
+  assert.equal(storyboard.includes('image="LaunchIcon"'), false);
+  for (const filename of ['LaunchLogo_1x.png', 'LaunchLogo_2x.png', 'LaunchLogo_3x.png']) {
+    assert.equal(contents.includes(filename), true);
+  }
+});
+
 test('offline navigation caches each page separately', async () => {
   const source = await repoFile('public/sw.js');
   assert.equal(source.includes("const CACHE_VERSION = 'mtp-app-shell-v13'"), true);
