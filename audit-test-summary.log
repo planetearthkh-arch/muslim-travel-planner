@@ -1,7 +1,4 @@
-not ok 17 - halal page starts nearby search and keeps legend controls accessible
 not ok 60 - SafarOne branding, metadata, manifest, and launch pages are truthful
-not ok 168 - mapped feature opening status is recalculated with captured destination timezone
-not ok 187 - Qibla enhancement uses clear copy and keeps fixed bearing before compass permission
 # tests 207
-# pass 203
-# fail 4
+# pass 206
+# fail 1
