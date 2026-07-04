@@ -102,13 +102,15 @@ const allUrduLabels = {
 };
 
 function syncUrduDirection() {
-  if (document.documentElement.lang === 'ur') {
+  if (document.documentElement.lang === 'ur' && document.documentElement.dir !== 'rtl') {
     document.documentElement.dir = 'rtl';
   }
 }
 
-new MutationObserver(syncUrduDirection).observe(document.documentElement, {
-  attributes: true,
-  attributeFilter: ['lang', 'dir'],
-});
-window.queueMicrotask(syncUrduDirection);
+if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
+  new MutationObserver(syncUrduDirection).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['lang', 'dir'],
+  });
+  window.queueMicrotask(syncUrduDirection);
+}
