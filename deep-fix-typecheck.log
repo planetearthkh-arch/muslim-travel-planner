@@ -2,22 +2,3 @@
 > muslim-travel-planner@0.2.0 typecheck
 > tsc -p tsconfig.json --noEmit
 
-src/deep-audit-fixes.test.ts(3,26): error TS2591: Cannot find name 'node:fs/promises'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
-src/deep-audit-fixes.test.ts(20,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
-src/deep-audit-fixes.test.ts(21,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
-src/deep-audit-fixes.test.ts(27,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
-src/deep-audit-fixes.test.ts(29,5): error TS2322: Type 'FlightAirport | undefined' is not assignable to type 'FlightAirport'.
-  Type 'undefined' is not assignable to type 'FlightAirport'.
-src/deep-audit-fixes.test.ts(30,5): error TS2322: Type 'FlightAirport | undefined' is not assignable to type 'FlightAirport'.
-  Type 'undefined' is not assignable to type 'FlightAirport'.
-src/deep-audit-fixes.test.ts(36,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
-src/deep-audit-fixes.test.ts(37,44): error TS2345: Argument of type 'PreparedFlightPlan | null' is not assignable to parameter of type 'PreparedFlightPlan'.
-  Type 'null' is not assignable to type 'PreparedFlightPlan'.
-src/deep-audit-fixes.test.ts(38,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
-src/deep-audit-fixes.test.ts(39,39): error TS2345: Argument of type 'PreparedFlightPlan | null' is not assignable to parameter of type 'PreparedFlightPlan'.
-  Type 'null' is not assignable to type 'PreparedFlightPlan'.
-src/deep-audit-fixes.test.ts(44,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
-src/deep-audit-fixes.test.ts(69,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
-src/flight-mode.ts(251,19): error TS2698: Spread types may only be created from object types.
-src/money.ts(67,43): error TS2339: Property 'ur' does not exist on type '{ en: string; ar: string; id: string; ms: string; tr: string; fr: string; }'.
-src/money.ts(81,5): error TS2741: Property 'ur' is missing in type '{ en: string; ar: string; id: string; ms: string; tr: string; fr: string; }' but required in type 'Record<Language, string>'.

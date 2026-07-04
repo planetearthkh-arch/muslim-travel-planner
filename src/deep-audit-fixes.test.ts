@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { airportByIata, chooseFlightProgress, createPreparedFlightPlan, positionByDistance, positionByProgress, totalRouteDistanceKm } from './flight-mode.js';
 import { createSavedTrip, validateSavedTrip } from './saved-trips.js';
 import { getSafeStorage } from './safe-storage.js';
 import { cities } from './data.js';
 
-const repoFile = (relative: string) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
+async function repoFile(relative: string) {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  return load('node:fs/promises').then((fs) => fs.readFile(new URL(`../${relative}`, import.meta.url), 'utf8'));
+}
 
 test('route bearings remain valid at exact waypoints and arrival', () => {
   const points = [
@@ -17,14 +19,14 @@ test('route bearings remain valid at exact waypoints and arrival', () => {
   const firstLeg = totalRouteDistanceKm(points.slice(0, 2));
   const atWaypoint = positionByDistance(points, firstLeg);
   const atArrival = positionByDistance(points, totalRouteDistanceKm(points));
-  assert.ok(atWaypoint.trackDegrees > 20 && atWaypoint.trackDegrees < 70);
-  assert.ok(atArrival.trackDegrees > 20 && atArrival.trackDegrees < 70);
+  assert.equal(atWaypoint.trackDegrees > 20 && atWaypoint.trackDegrees < 70, true);
+  assert.equal(atArrival.trackDegrees > 20 && atArrival.trackDegrees < 70, true);
 });
 
 test('fresh GPS position determines flight progress instead of the manual slider', () => {
   const departure = airportByIata('LHR');
   const arrival = airportByIata('JFK');
-  assert.ok(departure && arrival);
+  if (!departure || !arrival) throw new Error('Required airports are missing');
   const plan = createPreparedFlightPlan({
     departure,
     arrival,
@@ -33,15 +35,15 @@ test('fresh GPS position determines flight progress instead of the manual slider
     prayerMethod: 'Muslim World League',
     now: '2026-07-04T09:00:00.000Z',
   });
-  assert.ok(plan);
+  if (!plan) throw new Error('Could not create flight plan');
   const routePosition = positionByProgress(plan, 0.65, Date.parse('2026-07-04T14:00:00.000Z')).position;
-  assert.ok(routePosition);
+  if (!routePosition) throw new Error('Could not create route position');
   const result = chooseFlightProgress(plan, {
     manualProgress: 0.1,
     nowMs: Date.parse('2026-07-04T14:00:00.000Z'),
     gps: { ...routePosition, timestamp: Date.parse('2026-07-04T14:00:00.000Z'), source: 'gps', accuracyMeters: 20 },
   });
-  assert.ok(Math.abs(result.progress - 0.65) < 0.03);
+  assert.equal(Math.abs(result.progress - 0.65) < 0.03, true);
 });
 
 test('saved trips reject malformed nested itinerary data', () => {
@@ -66,7 +68,7 @@ test('saved trips reject malformed nested itinerary data', () => {
     halalPreference: 'strictly labelled' as const,
   };
   const valid = createSavedTrip({ language: 'en', preferences, city, itinerary: [] });
-  assert.ok(validateSavedTrip(valid));
+  assert.equal(Boolean(validateSavedTrip(valid)), true);
   const malformed = structuredClone(valid) as unknown as { itinerary: unknown[] };
   malformed.itinerary = [{ id: 'bad', durationMinutes: 'wrong' }];
   assert.equal(validateSavedTrip(malformed), null);

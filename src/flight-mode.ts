@@ -219,7 +219,8 @@ export function projectPositionOntoRoute(points: RoutePoint[], position: RoutePo
   let traversed = 0;
   let best: { progress: number; distanceKm: number; crossTrackDistanceKm: number; trackDegrees: number } | null = null;
 
-  segments.forEach((segment, index) => {
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
     const meanLatitude = toRadians((segment.from.latitude + segment.to.latitude + position.latitude) / 3);
     const xy = (point: RoutePoint) => ({
       x: toRadians(normalizeLongitude(point.longitude - segment.from.longitude)) * Math.cos(meanLatitude) * EARTH_RADIUS_KM,
@@ -232,7 +233,7 @@ export function projectPositionOntoRoute(points: RoutePoint[], position: RoutePo
     const projected = greatCircleInterpolate(segment.from, segment.to, fraction);
     const crossTrackDistanceKm = haversineDistanceKm(projected, position);
     const distanceKm = traversed + segment.distanceKm * fraction;
-    const trackDegrees = fraction >= 1 - 1e-9
+    const segmentTrack = fraction >= 1 - 1e-9
       ? initialTrueBearing(segment.from, segment.to)
       : initialTrueBearing(projected, segment.to);
     if (!best || crossTrackDistanceKm < best.crossTrackDistanceKm) {
@@ -242,13 +243,20 @@ export function projectPositionOntoRoute(points: RoutePoint[], position: RoutePo
         crossTrackDistanceKm,
         trackDegrees: index < segments.length - 1 && fraction >= 1 - 1e-9
           ? initialTrueBearing(segments[index + 1].from, segments[index + 1].to)
-          : trackDegrees,
+          : segmentTrack,
       };
     }
     traversed += segment.distanceKm;
-  });
+  }
 
-  return best ? { ...best, totalDistanceKm } : null;
+  if (!best) return null;
+  return {
+    progress: best.progress,
+    distanceKm: best.distanceKm,
+    crossTrackDistanceKm: best.crossTrackDistanceKm,
+    trackDegrees: best.trackDegrees,
+    totalDistanceKm,
+  };
 }
 
 export function elapsedProgress(plan: PreparedFlightPlan, nowMs = Date.now()) {
