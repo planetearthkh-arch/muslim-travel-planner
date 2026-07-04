@@ -7,103 +7,103 @@ TAP version 13
 # Subtest: iOS foreground location permission and portrait-only phone orientation are committed
 ok 1 - iOS foreground location permission and portrait-only phone orientation are committed
   ---
-  duration_ms: 13.692183
+  duration_ms: 11.449419
   type: 'test'
   ...
 # Subtest: iOS launch screen uses the committed transparent multi-scale logo
 ok 2 - iOS launch screen uses the committed transparent multi-scale logo
   ---
-  duration_ms: 4.580513
+  duration_ms: 3.93099
   type: 'test'
   ...
 # Subtest: offline navigation caches each page separately
 ok 3 - offline navigation caches each page separately
   ---
-  duration_ms: 1.781479
+  duration_ms: 2.381144
   type: 'test'
   ...
 # Subtest: native mobile networking and prayer notifications are configured
 ok 4 - native mobile networking and prayer notifications are configured
   ---
-  duration_ms: 3.940468
+  duration_ms: 5.102203
   type: 'test'
   ...
 # Subtest: route bearings remain valid at exact waypoints and arrival
 ok 5 - route bearings remain valid at exact waypoints and arrival
   ---
-  duration_ms: 1.51514
+  duration_ms: 1.537536
   type: 'test'
   ...
 # Subtest: fresh GPS position determines flight progress instead of the manual slider
 ok 6 - fresh GPS position determines flight progress instead of the manual slider
   ---
-  duration_ms: 2.31023
+  duration_ms: 1.741729
   type: 'test'
   ...
 # Subtest: saved trips reject malformed nested itinerary data
 ok 7 - saved trips reject malformed nested itinerary data
   ---
-  duration_ms: 1.41403
+  duration_ms: 1.418049
   type: 'test'
   ...
 # Subtest: safe storage falls back outside a browser
 ok 8 - safe storage falls back outside a browser
   ---
-  duration_ms: 0.245851
+  duration_ms: 0.273234
   type: 'test'
   ...
 # Subtest: native and UI safeguards remain wired
 ok 9 - native and UI safeguards remain wired
   ---
-  duration_ms: 13.167279
+  duration_ms: 12.872736
   type: 'test'
   ...
 # Subtest: French is available as a left-to-right app language
 ok 10 - French is available as a left-to-right app language
   ---
-  duration_ms: 1.330183
+  duration_ms: 1.406342
   type: 'test'
   ...
 # Subtest: French core travel and Muslim-essential labels are translated
 ok 11 - French core travel and Muslim-essential labels are translated
   ---
-  duration_ms: 0.236433
+  duration_ms: 0.237992
   type: 'test'
   ...
 # Subtest: French has an explicit translation for every interface label
 ok 12 - French has an explicit translation for every interface label
   ---
-  duration_ms: 15.882295
+  duration_ms: 17.176197
   type: 'test'
   ...
 # Subtest: French structured labels are complete
 ok 13 - French structured labels are complete
   ---
-  duration_ms: 0.163837
+  duration_ms: 0.257011
   type: 'test'
   ...
 # Subtest: halal Overpass endpoints include a global fallback without duplicates
 ok 14 - halal Overpass endpoints include a global fallback without duplicates
   ---
-  duration_ms: 2.186889
+  duration_ms: 2.10768
   type: 'test'
   ...
 # Subtest: halal endpoints receive enough time to return on mobile networks
 ok 15 - halal endpoints receive enough time to return on mobile networks
   ---
-  duration_ms: 0.276268
+  duration_ms: 0.417858
   type: 'test'
   ...
 # Subtest: halal request moves to the next service after a timeout
 ok 16 - halal request moves to the next service after a timeout
   ---
-  duration_ms: 2.035485
+  duration_ms: 4.204494
   type: 'test'
   ...
 # Subtest: halal page starts nearby search and keeps legend controls accessible
 not ok 17 - halal page starts nearby search and keeps legend controls accessible
   ---
-  duration_ms: 10.11622
+  duration_ms: 8.973744
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/halal-page-bootstrap.test.js:7:1'
   failureType: 'testCodeFailure'
@@ -125,259 +125,259 @@ not ok 17 - halal page starts nearby search and keeps legend controls accessible
 # Subtest: halal classification accepts trimmed and common affirmative mapped values
 ok 18 - halal classification accepts trimmed and common affirmative mapped values
   ---
-  duration_ms: 1.347836
+  duration_ms: 1.345191
   type: 'test'
   ...
 # Subtest: halal classification rejects explicit negatives even when padded or mixed case
 ok 19 - halal classification rejects explicit negatives even when padded or mixed case
   ---
-  duration_ms: 0.238747
+  duration_ms: 0.210882
   type: 'test'
   ...
 # Subtest: default restaurant results show explicit legacy halal tags but not text-only possibilities
 ok 20 - default restaurant results show explicit legacy halal tags but not text-only possibilities
   ---
-  duration_ms: 4.178552
+  duration_ms: 3.894305
   type: 'test'
   ...
 # Subtest: restaurant display names never leak prayer-space fallback text
 ok 21 - restaurant display names never leak prayer-space fallback text
   ---
-  duration_ms: 3.570101
+  duration_ms: 3.432201
   type: 'test'
   ...
 # Subtest: wide-radius halal queries restrict every selector to food venues
 ok 22 - wide-radius halal queries restrict every selector to food venues
   ---
-  duration_ms: 0.364503
+  duration_ms: 0.329578
   type: 'test'
   ...
 # Subtest: one-kilometre halal queries avoid expensive text scans
 ok 23 - one-kilometre halal queries avoid expensive text scans
   ---
-  duration_ms: 0.251592
+  duration_ms: 0.225454
   type: 'test'
   ...
 # Subtest: cuisine filters are case-insensitive
 ok 24 - cuisine filters are case-insensitive
   ---
-  duration_ms: 0.49643
+  duration_ms: 0.490677
   type: 'test'
   ...
 # Subtest: Money page uses a searchable, contained currency picker instead of an always-visible long list
 ok 25 - Money page uses a searchable, contained currency picker instead of an always-visible long list
   ---
-  duration_ms: 11.167892
+  duration_ms: 6.027854
   type: 'test'
   ...
 # Subtest: Money page removes the outer long currency chip list
 ok 26 - Money page removes the outer long currency chip list
   ---
-  duration_ms: 7.740799
+  duration_ms: 7.448046
   type: 'test'
   ...
 # Subtest: Capacitor permission errors map to browser-compatible denied code
 ok 27 - Capacitor permission errors map to browser-compatible denied code
   ---
-  duration_ms: 1.279198
+  duration_ms: 1.228369
   type: 'test'
   ...
 # Subtest: Capacitor timeout and browser numeric codes remain distinguishable
 ok 28 - Capacitor timeout and browser numeric codes remain distinguishable
   ---
-  duration_ms: 0.219551
+  duration_ms: 0.200346
   type: 'test'
   ...
 # Subtest: native plugin error messages are preserved
 ok 29 - native plugin error messages are preserved
   ---
-  duration_ms: 0.231264
+  duration_ms: 0.264492
   type: 'test'
   ...
 # Subtest: contains all required sample cities
 ok 30 - contains all required sample cities
   ---
-  duration_ms: 4.640828
+  duration_ms: 2.814317
   type: 'test'
   ...
 # Subtest: each city has the required planner content
 ok 31 - each city has the required planner content
   ---
-  duration_ms: 0.777647
+  duration_ms: 0.498918
   type: 'test'
   ...
 # Subtest: newly added city information is only Sample or Unverified
 ok 32 - newly added city information is only Sample or Unverified
   ---
-  duration_ms: 0.403777
+  duration_ms: 0.299673
   type: 'test'
   ...
 # Subtest: generates prayer, attraction, travel, and halal-conscious meal items
 ok 33 - generates prayer, attraction, travel, and halal-conscious meal items
   ---
-  duration_ms: 29.801326
+  duration_ms: 77.665471
   type: 'test'
   ...
 # Subtest: saved-trip repository saves, reopens, updates, renames, duplicates, deletes, and sorts trips
 ok 34 - saved-trip repository saves, reopens, updates, renames, duplicates, deletes, and sorts trips
   ---
-  duration_ms: 10.540015
+  duration_ms: 10.42987
   type: 'test'
   ...
 # Subtest: saved-trip validation handles unsafe names, corrupted storage, unsupported schema, and write failure
 ok 35 - saved-trip validation handles unsafe names, corrupted storage, unsupported schema, and write failure
   ---
-  duration_ms: 4.064979
+  duration_ms: 6.211815
   type: 'test'
   ...
 # Subtest: travel details validate, sanitize, sort, and protect private booking references
 ok 36 - travel details validate, sanitize, sort, and protect private booking references
   ---
-  duration_ms: 13.720286
+  duration_ms: 12.593883
   type: 'test'
   ...
 # Subtest: saved trips migrate and duplicate travel details without regenerating itineraries
 ok 37 - saved trips migrate and duplicate travel details without regenerating itineraries
   ---
-  duration_ms: 7.99218
+  duration_ms: 5.041503
   type: 'test'
   ...
 # Subtest: travel details are included in sharing and calendar export without private references
 ok 38 - travel details are included in sharing and calendar export without private references
   ---
-  duration_ms: 24.110344
+  duration_ms: 18.532625
   type: 'test'
   ...
 # Subtest: travel details UI labels, print rules, and local handlers are wired
 ok 39 - travel details UI labels, print rules, and local handlers are wired
   ---
-  duration_ms: 74.302042
+  duration_ms: 76.274582
   type: 'test'
   ...
 # Subtest: generates inclusive multi-day itineraries with dated unique items
 ok 40 - generates inclusive multi-day itineraries with dated unique items
   ---
-  duration_ms: 11.757156
+  duration_ms: 7.534032
   type: 'test'
   ...
 # Subtest: generates one-day, two-day, and seven-day itineraries without overlaps
 ok 41 - generates one-day, two-day, and seven-day itineraries without overlaps
   ---
-  duration_ms: 10.298852
+  duration_ms: 5.163283
   type: 'test'
   ...
 # Subtest: includes all prayers that fall inside selected daily hours
 ok 42 - includes all prayers that fall inside selected daily hours
   ---
-  duration_ms: 4.452926
+  duration_ms: 0.889407
   type: 'test'
   ...
 # Subtest: early morning and evening schedules include only prayers inside available hours
 ok 43 - early morning and evening schedules include only prayers inside available hours
   ---
-  duration_ms: 2.340386
+  duration_ms: 1.224854
   type: 'test'
   ...
 # Subtest: every itinerary item stays inside the selected daily hours
 ok 44 - every itinerary item stays inside the selected daily hours
   ---
-  duration_ms: 7.408746
+  duration_ms: 4.676022
   type: 'test'
   ...
 # Subtest: multi-day replan changes only the intended day
 ok 45 - multi-day replan changes only the intended day
   ---
-  duration_ms: 9.754923
+  duration_ms: 6.276691
   type: 'test'
   ...
 # Subtest: planner preferences affect attraction, prayer, restaurant, and travel choices
 ok 46 - planner preferences affect attraction, prayer, restaurant, and travel choices
   ---
-  duration_ms: 2.549138
+  duration_ms: 2.020542
   type: 'test'
   ...
 # Subtest: counts itinerary dates across month and year boundaries
 ok 47 - counts itinerary dates across month and year boundaries
   ---
-  duration_ms: 0.209132
+  duration_ms: 0.181278
   type: 'test'
   ...
 # Subtest: multi-day itinerary respects daily end time and distributes attractions
 ok 48 - multi-day itinerary respects daily end time and distributes attractions
   ---
-  duration_ms: 3.226107
+  duration_ms: 2.804882
   type: 'test'
   ...
 # Subtest: day headings are rendered for English, Arabic, Indonesian, and Malay
 ok 49 - day headings are rendered for English, Arabic, Indonesian, and Malay
   ---
-  duration_ms: 10.752353
+  duration_ms: 6.7824
   type: 'test'
   ...
 # Subtest: Generate Itinerary button controls planner generation workflow
 ok 50 - Generate Itinerary button controls planner generation workflow
   ---
-  duration_ms: 3.512734
+  duration_ms: 3.830551
   type: 'test'
   ...
 # Subtest: main planner render hides internal verification labels from itinerary UI
 ok 51 - main planner render hides internal verification labels from itinerary UI
   ---
-  duration_ms: 6.991524
+  duration_ms: 4.384511
   type: 'test'
   ...
 # Subtest: itinerary screen uses saved snapshots, clear trip actions, print styles, and sanitized planner wording
 ok 52 - itinerary screen uses saved snapshots, clear trip actions, print styles, and sanitized planner wording
   ---
-  duration_ms: 4.244555
+  duration_ms: 2.777963
   type: 'test'
   ...
 # Subtest: planner validation and pre-generation messages are translated
 ok 53 - planner validation and pre-generation messages are translated
   ---
-  duration_ms: 0.217658
+  duration_ms: 0.191754
   type: 'test'
   ...
 # Subtest: supports switching among English, Arabic, Bahasa Indonesia, Bahasa Melayu, Turkish, and French
 ok 54 - supports switching among English, Arabic, Bahasa Indonesia, Bahasa Melayu, Turkish, and French
   ---
-  duration_ms: 0.260148
+  duration_ms: 0.188859
   type: 'test'
   ...
 # Subtest: Malay language support is complete and uses Malaysian terminology
 ok 55 - Malay language support is complete and uses Malaysian terminology
   ---
-  duration_ms: 8.705737
+  duration_ms: 3.973322
   type: 'test'
   ...
 # Subtest: Turkish language support is complete and uses Turkish terminology
 ok 56 - Turkish language support is complete and uses Turkish terminology
   ---
-  duration_ms: 4.776111
+  duration_ms: 7.497138
   type: 'test'
   ...
 # Subtest: Malay prayer labels use common Malaysian forms
 ok 57 - Malay prayer labels use common Malaysian forms
   ---
-  duration_ms: 0.22399
+  duration_ms: 0.185284
   type: 'test'
   ...
 # Subtest: package scripts lint source and discover all compiled test files
 ok 58 - package scripts lint source and discover all compiled test files
   ---
-  duration_ms: 2.571079
+  duration_ms: 1.770141
   type: 'test'
   ...
 # Subtest: offline app shell uses local MapLibre bundle, manifest, and conservative service-worker caching
 ok 59 - offline app shell uses local MapLibre bundle, manifest, and conservative service-worker caching
   ---
-  duration_ms: 3.223071
+  duration_ms: 2.64153
   type: 'test'
   ...
 # Subtest: SafarOne branding, metadata, manifest, and launch pages are truthful
 not ok 60 - SafarOne branding, metadata, manifest, and launch pages are truthful
   ---
-  duration_ms: 5.601447
+  duration_ms: 4.902908
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:543:1'
   failureType: 'testCodeFailure'
@@ -399,649 +399,649 @@ not ok 60 - SafarOne branding, metadata, manifest, and launch pages are truthful
 # Subtest: saved trips and offline labels are translated in English, Arabic, Indonesian, and Malay
 ok 61 - saved trips and offline labels are translated in English, Arabic, Indonesian, and Malay
   ---
-  duration_ms: 0.934982
+  duration_ms: 0.614059
   type: 'test'
   ...
 # Subtest: connection indicator is a noninteractive status with offline and temporary online states
 ok 62 - connection indicator is a noninteractive status with offline and temporary online states
   ---
-  duration_ms: 3.759276
+  duration_ms: 2.981724
   type: 'test'
   ...
 # Subtest: home dashboard groups every feature card with local icons and responsive layout
 ok 63 - home dashboard groups every feature card with local icons and responsive layout
   ---
-  duration_ms: 5.661721
+  duration_ms: 5.298385
   type: 'test'
   ...
 # Subtest: home group labels are translated for English, Arabic, Indonesian, and Malay
 ok 64 - home group labels are translated for English, Arabic, Indonesian, and Malay
   ---
-  duration_ms: 0.354424
+  duration_ms: 0.257501
   type: 'test'
   ...
 # Subtest: place reporting builds safe honest report destinations and text
 ok 65 - place reporting builds safe honest report destinations and text
   ---
-  duration_ms: 1.285519
+  duration_ms: 0.891
   type: 'test'
   ...
 # Subtest: reporting labels and mapped-place source hooks cover only place features
 ok 66 - reporting labels and mapped-place source hooks cover only place features
   ---
-  duration_ms: 5.082345
+  duration_ms: 4.120852
   type: 'test'
   ...
 # Subtest: trip sharing builds clean plain text, safe filenames, and ICS calendar exports
 ok 67 - trip sharing builds clean plain text, safe filenames, and ICS calendar exports
   ---
-  duration_ms: 6.817027
+  duration_ms: 5.865556
   type: 'test'
   ...
 # Subtest: trip sharing UI preserves saved snapshots and print-safe controls
 ok 68 - trip sharing UI preserves saved snapshots and print-safe controls
   ---
-  duration_ms: 11.711851
+  duration_ms: 10.659224
   type: 'test'
   ...
 # Subtest: provides natural Indonesian interface labels without translating place names
 ok 69 - provides natural Indonesian interface labels without translating place names
   ---
-  duration_ms: 2.542706
+  duration_ms: 1.363419
   type: 'test'
   ...
 # Subtest: exposes Sample, Unverified, and Verified labels in prototype data
 ok 70 - exposes Sample, Unverified, and Verified labels in prototype data
   ---
-  duration_ms: 0.236052
+  duration_ms: 0.193627
   type: 'test'
   ...
 # Subtest: performs standard, reverse, and same-currency conversion locally
 ok 71 - performs standard, reverse, and same-currency conversion locally
   ---
-  duration_ms: 0.201537
+  duration_ms: 0.161429
   type: 'test'
   ...
 # Subtest: supports currency swap calculations without sending amounts to the API
 ok 72 - supports currency swap calculations without sending amounts to the API
   ---
-  duration_ms: 0.128601
+  duration_ms: 0.080128
   type: 'test'
   ...
 # Subtest: formats two-decimal, zero-decimal, and three-decimal currencies with Intl
 ok 73 - formats two-decimal, zero-decimal, and three-decimal currencies with Intl
   ---
-  duration_ms: 7.413495
+  duration_ms: 4.641042
   type: 'test'
   ...
 # Subtest: parses English, European, Arabic, Persian, pasted formatting, and zero currency amounts
 ok 74 - parses English, European, Arabic, Persian, pasted formatting, and zero currency amounts
   ---
-  duration_ms: 1.577686
+  duration_ms: 1.032339
   type: 'test'
   ...
 # Subtest: rejects invalid, ambiguous, negative, and extremely large currency input
 ok 75 - rejects invalid, ambiguous, negative, and extremely large currency input
   ---
-  duration_ms: 0.275497
+  duration_ms: 0.13466
   type: 'test'
   ...
 # Subtest: money amount and currency search typing update the page without full rerenders
 ok 76 - money amount and currency search typing update the page without full rerenders
   ---
-  duration_ms: 6.861312
+  duration_ms: 4.933655
   type: 'test'
   ...
 # Subtest: money typing regression inputs remain parseable across desktop, mobile, and languages
 ok 77 - money typing regression inputs remain parseable across desktop, mobile, and languages
   ---
-  duration_ms: 0.989224
+  duration_ms: 0.605697
   type: 'test'
   ...
 # Subtest: validates Frankfurter currency and rate responses
 ok 78 - validates Frankfurter currency and rate responses
   ---
-  duration_ms: 0.699983
+  duration_ms: 0.510325
   type: 'test'
   ...
 # Subtest: derives history stats from Frankfurter v2 EUR-based rows
 ok 79 - derives history stats from Frankfurter v2 EUR-based rows
   ---
-  duration_ms: 0.482314
+  duration_ms: 0.31742
   type: 'test'
   ...
 # Subtest: supports cached-rate fallback helpers and offline cache misses
 ok 80 - supports cached-rate fallback helpers and offline cache misses
   ---
-  duration_ms: 0.355266
+  duration_ms: 0.256951
   type: 'test'
   ...
 # Subtest: currency rate and history cache keys isolate direction, period, date range, and expiry
 ok 81 - currency rate and history cache keys isolate direction, period, date range, and expiry
   ---
-  duration_ms: 0.568436
+  duration_ms: 0.324721
   type: 'test'
   ...
 # Subtest: searches currencies by code, English, Arabic, Indonesian, Malay, Turkish, and country
 ok 82 - searches currencies by code, English, Arabic, Indonesian, Malay, Turkish, and country
   ---
-  duration_ms: 3.420461
+  duration_ms: 0.301977
   type: 'test'
   ...
 # Subtest: uses destination default currency from city money data
 ok 83 - uses destination default currency from city money data
   ---
-  duration_ms: 0.169418
+  duration_ms: 0.092236
   type: 'test'
   ...
 # Subtest: formats amounts for English, Arabic, Indonesian, Malay, and Turkish modes
 ok 84 - formats amounts for English, Arabic, Indonesian, Malay, and Turkish modes
   ---
-  duration_ms: 0.798958
+  duration_ms: 16.748441
   type: 'test'
   ...
 # Subtest: shared HTTP utility classifies statuses, timeouts, aborts, offline, and malformed JSON
 ok 85 - shared HTTP utility classifies statuses, timeouts, aborts, offline, and malformed JSON
   ---
-  duration_ms: 36.606048
+  duration_ms: 35.501729
   type: 'test'
   ...
 # Subtest: calculates Qibla bearings for major cities
 ok 86 - calculates Qibla bearings for major cities
   ---
-  duration_ms: 0.346409
+  duration_ms: 0.346082
   type: 'test'
   ...
 # Subtest: Qibla live compass only accepts reliable absolute headings
 ok 87 - Qibla live compass only accepts reliable absolute headings
   ---
-  duration_ms: 8.042023
+  duration_ms: 8.294372
   type: 'test'
   ...
 # Subtest: Qibla compass updates are throttled without rebuilding the page for heading movement
 ok 88 - Qibla compass updates are throttled without rebuilding the page for heading movement
   ---
-  duration_ms: 10.673184
+  duration_ms: 10.393439
   type: 'test'
   ...
 # Subtest: in-flight route geometry handles bearings, midpoint, Date Line, polar paths, and waypoints
 ok 89 - in-flight route geometry handles bearings, midpoint, Date Line, polar paths, and waypoints
   ---
-  duration_ms: 1.568289
+  duration_ms: 4.4504
   type: 'test'
   ...
 # Subtest: in-flight position source chooses fresh GPS, stale fallback, low accuracy, progress clamp, and derived track
 ok 90 - in-flight position source chooses fresh GPS, stale fallback, low accuracy, progress clamp, and derived track
   ---
-  duration_ms: 5.389562
+  duration_ms: 4.927386
   type: 'test'
   ...
 # Subtest: in-flight prayer snapshots are finite, ordered, UTC-based, and cover supported methods
 ok 91 - in-flight prayer snapshots are finite, ordered, UTC-based, and cover supported methods
   ---
-  duration_ms: 5.91077
+  duration_ms: 3.63363
   type: 'test'
   ...
 # Subtest: in-flight flight-plan storage validates, recovers, migrates, and clears safely
 ok 92 - in-flight flight-plan storage validates, recovers, migrates, and clears safely
   ---
-  duration_ms: 2.740286
+  duration_ms: 2.576015
   type: 'test'
   ...
 # Subtest: in-flight mode is bundled, localized, route-discoverable, and avoids magnetic compass dependency
 ok 93 - in-flight mode is bundled, localized, route-discoverable, and avoids magnetic compass dependency
   ---
-  duration_ms: 5.383981
+  duration_ms: 16.915387
   type: 'test'
   ...
 # Subtest: shared external URL sanitizer accepts only HTTP and HTTPS links
 ok 94 - shared external URL sanitizer accepts only HTTP and HTTPS links
   ---
-  duration_ms: 0.345958
+  duration_ms: 0.307255
   type: 'test'
   ...
 # Subtest: calculates distance between nearby coordinates
 ok 95 - calculates distance between nearby coordinates
   ---
-  duration_ms: 0.21851
+  duration_ms: 0.181529
   type: 'test'
   ...
 # Subtest: classifies OpenStreetMap prayer place results
 ok 96 - classifies OpenStreetMap prayer place results
   ---
-  duration_ms: 0.418555
+  duration_ms: 0.372572
   type: 'test'
   ...
 # Subtest: marks incomplete prayer place information as unverified
 ok 97 - marks incomplete prayer place information as unverified
   ---
-  duration_ms: 1.188347
+  duration_ms: 2.18764
   type: 'test'
   ...
 # Subtest: includes translated prayer-space denied and empty states
 ok 98 - includes translated prayer-space denied and empty states
   ---
-  duration_ms: 0.106881
+  duration_ms: 0.11458
   type: 'test'
   ...
 # Subtest: english place names prefer name:en
 ok 99 - english place names prefer name:en
   ---
-  duration_ms: 0.683992
+  duration_ms: 0.983817
   type: 'test'
   ...
 # Subtest: english place names convert Arabic without name:en
 ok 100 - english place names convert Arabic without name:en
   ---
-  duration_ms: 0.849643
+  duration_ms: 1.162091
   type: 'test'
   ...
 # Subtest: english place names transliterate Persian and Urdu names
 ok 101 - english place names transliterate Persian and Urdu names
   ---
-  duration_ms: 2.484106
+  duration_ms: 3.263903
   type: 'test'
   ...
 # Subtest: english place names transliterate Hebrew, Cyrillic, and Greek names
 ok 102 - english place names transliterate Hebrew, Cyrillic, and Greek names
   ---
-  duration_ms: 0.417131
+  duration_ms: 0.593509
   type: 'test'
   ...
 # Subtest: english place names transliterate Chinese, Japanese, and Korean names
 ok 103 - english place names transliterate Chinese, Japanese, and Korean names
   ---
-  duration_ms: 0.403766
+  duration_ms: 0.573039
   type: 'test'
   ...
 # Subtest: english place names handle mixed Arabic and English plus numbers
 ok 104 - english place names handle mixed Arabic and English plus numbers
   ---
-  duration_ms: 0.236223
+  duration_ms: 0.29055
   type: 'test'
   ...
 # Subtest: english place names use int_name and fallbacks
 ok 105 - english place names use int_name and fallbacks
   ---
-  duration_ms: 0.158017
+  duration_ms: 0.188209
   type: 'test'
   ...
 # Subtest: optional metadata helper never invents prayer-place fallback values
 ok 106 - optional metadata helper never invents prayer-place fallback values
   ---
-  duration_ms: 0.179326
+  duration_ms: 0.460202
   type: 'test'
   ...
 # Subtest: normalization keeps original name internally but displays Latin only
 ok 107 - normalization keeps original name internally but displays Latin only
   ---
-  duration_ms: 0.249427
+  duration_ms: 0.248738
   type: 'test'
   ...
 # Subtest: OSM-derived feature links reject unsafe protocols
 ok 108 - OSM-derived feature links reject unsafe protocols
   ---
-  duration_ms: 2.25157
+  duration_ms: 2.502685
   type: 'test'
   ...
 # Subtest: classifies structured halal restaurant tags without unsafe assumptions
 ok 109 - classifies structured halal restaurant tags without unsafe assumptions
   ---
-  duration_ms: 0.646572
+  duration_ms: 0.510155
   type: 'test'
   ...
 # Subtest: normalizes halal restaurants from node, way, and relation coordinates
 ok 110 - normalizes halal restaurants from node, way, and relation coordinates
   ---
-  duration_ms: 0.510447
+  duration_ms: 0.473351
   type: 'test'
   ...
 # Subtest: deduplicates node and way records for the same physical restaurant
 ok 111 - deduplicates node and way records for the same physical restaurant
   ---
-  duration_ms: 0.444533
+  duration_ms: 0.552207
   type: 'test'
   ...
 # Subtest: filters and sorts halal restaurants by cuisine, open-now, and nearest
 ok 112 - filters and sorts halal restaurants by cuisine, open-now, and nearest
   ---
-  duration_ms: 1.790476
+  duration_ms: 2.760878
   type: 'test'
   ...
 # Subtest: handles invalid opening hours, missing address, fallback names, and transliteration
 ok 113 - handles invalid opening hours, missing address, fallback names, and transliteration
   ---
-  duration_ms: 1.192025
+  duration_ms: 1.213177
   type: 'test'
   ...
 # Subtest: parses opening hours using destination-local timezone with fixed dates
 ok 114 - parses opening hours using destination-local timezone with fixed dates
   ---
-  duration_ms: 3.423487
+  duration_ms: 2.878943
   type: 'test'
   ...
 # Subtest: opening hours respect Tokyo, London, and New York destination timezones
 ok 115 - opening hours respect Tokyo, London, and New York destination timezones
   ---
-  duration_ms: 0.729758
+  duration_ms: 1.047301
   type: 'test'
   ...
 # Subtest: open-now filtering uses confirmed destination-local opening state across mapped features
 ok 116 - open-now filtering uses confirmed destination-local opening state across mapped features
   ---
-  duration_ms: 1.773965
+  duration_ms: 1.798573
   type: 'test'
   ...
 # Subtest: includes halal restaurant timeout, cache, denial, empty, and language labels
 ok 117 - includes halal restaurant timeout, cache, denial, empty, and language labels
   ---
-  duration_ms: 0.11769
+  duration_ms: 0.105907
   type: 'test'
   ...
 # Subtest: classifies public toilet access from structured OpenStreetMap tags
 ok 118 - classifies public toilet access from structured OpenStreetMap tags
   ---
-  duration_ms: 0.20813
+  duration_ms: 0.22274
   type: 'test'
   ...
 # Subtest: interprets public toilet fees, wheelchair access, and baby-changing tags
 ok 119 - interprets public toilet fees, wheelchair access, and baby-changing tags
   ---
-  duration_ms: 0.1704
+  duration_ms: 0.139226
   type: 'test'
   ...
 # Subtest: normalizes public toilets from node, way, and relation coordinates
 ok 120 - normalizes public toilets from node, way, and relation coordinates
   ---
-  duration_ms: 0.678542
+  duration_ms: 0.713897
   type: 'test'
   ...
 # Subtest: deduplicates, filters, and sorts public toilets
 ok 121 - deduplicates, filters, and sorts public toilets
   ---
-  duration_ms: 0.670747
+  duration_ms: 0.626728
   type: 'test'
   ...
 # Subtest: uses safe public toilet fallbacks and Latin-readable names
 ok 122 - uses safe public toilet fallbacks and Latin-readable names
   ---
-  duration_ms: 0.589585
+  duration_ms: 0.565448
   type: 'test'
   ...
 # Subtest: builds bounded toilet Overpass queries and includes toilet language states
 ok 123 - builds bounded toilet Overpass queries and includes toilet language states
   ---
-  duration_ms: 0.177383
+  duration_ms: 0.190522
   type: 'test'
   ...
 # Subtest: classifies structured car-rental office tags and excludes other vehicle services
 ok 124 - classifies structured car-rental office tags and excludes other vehicle services
   ---
-  duration_ms: 0.168495
+  duration_ms: 0.164794
   type: 'test'
   ...
 # Subtest: normalizes car-rental offices from node, area centre, and multipolygon centre coordinates
 ok 125 - normalizes car-rental offices from node, area centre, and multipolygon centre coordinates
   ---
-  duration_ms: 0.713107
+  duration_ms: 0.714749
   type: 'test'
   ...
 # Subtest: uses safe car-rental names, brand/operator fallbacks, and missing-name fallback
 ok 126 - uses safe car-rental names, brand/operator fallbacks, and missing-name fallback
   ---
-  duration_ms: 0.503303
+  duration_ms: 0.551226
   type: 'test'
   ...
 # Subtest: classifies car-rental office context without broad assumptions
 ok 127 - classifies car-rental office context without broad assumptions
   ---
-  duration_ms: 0.178264
+  duration_ms: 0.184363
   type: 'test'
   ...
 # Subtest: deduplicates, filters, and sorts car-rental offices
 ok 128 - deduplicates, filters, and sorts car-rental offices
   ---
-  duration_ms: 0.725791
+  duration_ms: 0.736461
   type: 'test'
   ...
 # Subtest: validates car-rental official website URLs safely
 ok 129 - validates car-rental official website URLs safely
   ---
-  duration_ms: 0.105939
+  duration_ms: 0.099147
   type: 'test'
   ...
 # Subtest: builds bounded car-rental Overpass queries and includes language states
 ok 130 - builds bounded car-rental Overpass queries and includes language states
   ---
-  duration_ms: 0.203922
+  duration_ms: 0.187758
   type: 'test'
   ...
 # Subtest: classifies public transport from structured OSM tags without name guessing
 ok 131 - classifies public transport from structured OSM tags without name guessing
   ---
-  duration_ms: 0.184235
+  duration_ms: 0.175259
   type: 'test'
   ...
 # Subtest: normalizes public transport details, safe websites, and destination-local opening state
 ok 132 - normalizes public transport details, safe websites, and destination-local opening state
   ---
-  duration_ms: 0.983313
+  duration_ms: 0.922426
   type: 'test'
   ...
 # Subtest: deduplicates public transport stations, platforms, and subway entrances carefully
 ok 133 - deduplicates public transport stations, platforms, and subway entrances carefully
   ---
-  duration_ms: 0.700924
+  duration_ms: 0.706236
   type: 'test'
   ...
 # Subtest: filters and sorts public transport by accessibility, open state, facilities, and type
 ok 134 - filters and sorts public transport by accessibility, open state, facilities, and type
   ---
-  duration_ms: 0.61843
+  duration_ms: 0.616113
   type: 'test'
   ...
 # Subtest: builds bounded public transport Overpass queries and includes language labels
 ok 135 - builds bounded public transport Overpass queries and includes language labels
   ---
-  duration_ms: 0.175729
+  duration_ms: 0.209319
   type: 'test'
   ...
 # Subtest: public transport route source handles cache, stale requests, errors, and responsive labels
 ok 136 - public transport route source handles cache, stale requests, errors, and responsive labels
   ---
-  duration_ms: 18.702684
+  duration_ms: 18.982378
   type: 'test'
   ...
 # Subtest: classifies taxi services conservatively from structured tags
 ok 137 - classifies taxi services conservatively from structured tags
   ---
-  duration_ms: 1.82457
+  duration_ms: 1.057205
   type: 'test'
   ...
 # Subtest: normalizes taxi nodes, areas, phones, websites, and destination-local opening state
 ok 138 - normalizes taxi nodes, areas, phones, websites, and destination-local opening state
   ---
-  duration_ms: 1.295368
+  duration_ms: 1.189872
   type: 'test'
   ...
 # Subtest: taxi optional metadata stays empty unless source data provides it
 ok 139 - taxi optional metadata stays empty unless source data provides it
   ---
-  duration_ms: 0.577583
+  duration_ms: 0.437808
   type: 'test'
   ...
 # Subtest: normalizes taxi phones conservatively
 ok 140 - normalizes taxi phones conservatively
   ---
-  duration_ms: 0.205375
+  duration_ms: 0.154409
   type: 'test'
   ...
 # Subtest: deduplicates, filters, and sorts taxi services safely
 ok 141 - deduplicates, filters, and sorts taxi services safely
   ---
-  duration_ms: 3.091102
+  duration_ms: 1.192005
   type: 'test'
   ...
 # Subtest: builds bounded taxi Overpass queries and includes labels
 ok 142 - builds bounded taxi Overpass queries and includes labels
   ---
-  duration_ms: 0.289393
+  duration_ms: 0.191274
   type: 'test'
   ...
 # Subtest: taxi route source handles cache, stale requests, errors, and mobile labels
 ok 143 - taxi route source handles cache, stale requests, errors, and mobile labels
   ---
-  duration_ms: 10.830348
+  duration_ms: 9.324357
   type: 'test'
   ...
 # Subtest: validates current, hourly, and daily Open-Meteo weather responses
 ok 144 - validates current, hourly, and daily Open-Meteo weather responses
   ---
-  duration_ms: 2.441055
+  duration_ms: 2.062894
   type: 'test'
   ...
 # Subtest: rejects missing or malformed weather API data
 ok 145 - rejects missing or malformed weather API data
   ---
-  duration_ms: 1.309855
+  duration_ms: 1.834557
   type: 'test'
   ...
 # Subtest: optional weather values stay unavailable instead of becoming zero
 ok 146 - optional weather values stay unavailable instead of becoming zero
   ---
-  duration_ms: 0.600776
+  duration_ms: 0.698694
   type: 'test'
   ...
 # Subtest: interprets WMO weather codes without exposing raw codes
 ok 147 - interprets WMO weather codes without exposing raw codes
   ---
-  duration_ms: 0.177152
+  duration_ms: 0.234637
   type: 'test'
   ...
 # Subtest: formats weather units and builds configurable Open-Meteo URLs
 ok 148 - formats weather units and builds configurable Open-Meteo URLs
   ---
-  duration_ms: 0.353021
+  duration_ms: 0.381955
   type: 'test'
   ...
 # Subtest: weather cache key source includes location, timezone, all units, duration, and model version
 ok 149 - weather cache key source includes location, timezone, all units, duration, and model version
   ---
-  duration_ms: 4.20404
+  duration_ms: 3.631508
   type: 'test'
   ...
 # Subtest: selects hourly, daily, travel-indicator, cached, and prayer weather data
 ok 150 - selects hourly, daily, travel-indicator, cached, and prayer weather data
   ---
-  duration_ms: 1.948302
+  duration_ms: 1.981454
   type: 'test'
   ...
 # Subtest: includes weather state and language labels
 ok 151 - includes weather state and language labels
   ---
-  duration_ms: 0.178555
+  duration_ms: 0.186777
   type: 'test'
   ...
 # Subtest: discovers structured OpenStreetMap attractions and excludes ordinary places
 ok 152 - discovers structured OpenStreetMap attractions and excludes ordinary places
   ---
-  duration_ms: 0.141175
+  duration_ms: 0.15553
   type: 'test'
   ...
 # Subtest: classifies attraction categories from structured tags
 ok 153 - classifies attraction categories from structured tags
   ---
-  duration_ms: 0.120756
+  duration_ms: 0.135871
   type: 'test'
   ...
 # Subtest: normalizes attraction coordinates, names, fallbacks, and distance
 ok 154 - normalizes attraction coordinates, names, fallbacks, and distance
   ---
-  duration_ms: 0.618399
+  duration_ms: 0.609472
   type: 'test'
   ...
 # Subtest: prioritizes English attraction names from source tags
 ok 155 - prioritizes English attraction names from source tags
   ---
-  duration_ms: 0.217087
+  duration_ms: 0.18937
   type: 'test'
   ...
 # Subtest: matches exact attraction sources and rejects ambiguous matches
 ok 156 - matches exact attraction sources and rejects ambiguous matches
   ---
-  duration_ms: 0.345759
+  duration_ms: 0.298472
   type: 'test'
   ...
 # Subtest: handles Wikimedia Commons metadata, licences, and placeholders
 ok 157 - handles Wikimedia Commons metadata, licences, and placeholders
   ---
-  duration_ms: 0.887102
+  duration_ms: 0.798532
   type: 'test'
   ...
 # Subtest: builds CORS-compatible attraction image URLs and parses Commons filenames
 ok 158 - builds CORS-compatible attraction image URLs and parses Commons filenames
   ---
-  duration_ms: 1.556388
+  duration_ms: 1.410648
   type: 'test'
   ...
 # Subtest: reads Wikidata P18 and reusable Commons licence metadata
 ok 159 - reads Wikidata P18 and reusable Commons licence metadata
   ---
-  duration_ms: 0.36298
+  duration_ms: 0.30391
   type: 'test'
   ...
 # Subtest: accepts high-confidence Commons search results and rejects ambiguous images
 ok 160 - accepts high-confidence Commons search results and rejects ambiguous images
   ---
-  duration_ms: 0.655419
+  duration_ms: 0.597775
   type: 'test'
   ...
 # Subtest: creates English summaries from Wikipedia, Wikidata, and OSM descriptions
 ok 161 - creates English summaries from Wikipedia, Wikidata, and OSM descriptions
   ---
-  duration_ms: 0.579797
+  duration_ms: 0.490596
   type: 'test'
   ...
 # Subtest: deduplicates, filters, sorts, and queries attractions
 ok 162 - deduplicates, filters, sorts, and queries attractions
   ---
-  duration_ms: 1.95309
+  duration_ms: 1.675752
   type: 'test'
   ...
 # Subtest: includes attraction state and language labels while keeping content English
 ok 163 - includes attraction state and language labels while keeping content English
   ---
-  duration_ms: 0.147767
+  duration_ms: 0.139637
   type: 'test'
   ...
 # Subtest: attraction search uses fallback endpoints, partial batches, and retry-only timeout UI
 ok 164 - attraction search uses fallback endpoints, partial batches, and retry-only timeout UI
   ---
-  duration_ms: 5.560913
+  duration_ms: 5.500455
   type: 'test'
   ...
 # Subtest: prayer-space searches ignore stale success and error completions
 ok 165 - prayer-space searches ignore stale success and error completions
   ---
-  duration_ms: 2.311502
+  duration_ms: 3.185507
   type: 'test'
   ...
 # Subtest: audited async feature searches isolate stale completions
 ok 166 - audited async feature searches isolate stale completions
   ---
-  duration_ms: 2.552714
+  duration_ms: 2.864582
   type: 'test'
   ...
 # Subtest: geolocation callbacks are invalidated by newer searches across async features
 ok 167 - geolocation callbacks are invalidated by newer searches across async features
   ---
-  duration_ms: 2.060592
+  duration_ms: 2.893775
   type: 'test'
   ...
 # Subtest: mapped feature opening status is recalculated with captured destination timezone
 not ok 168 - mapped feature opening status is recalculated with captured destination timezone
   ---
-  duration_ms: 3.037834
+  duration_ms: 2.675732
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/planner.test.js:2115:1'
   failureType: 'testCodeFailure'
@@ -1063,115 +1063,115 @@ not ok 168 - mapped feature opening status is recalculated with captured destina
 # Subtest: money rate and history requests are tied to the active pair and range
 ok 169 - money rate and history requests are tied to the active pair and range
   ---
-  duration_ms: 2.48097
+  duration_ms: 3.242752
   type: 'test'
   ...
 # Subtest: map-search failure states render retry actions without endless loading
 ok 170 - map-search failure states render retry actions without endless loading
   ---
-  duration_ms: 2.321221
+  duration_ms: 2.583215
   type: 'test'
   ...
 # Subtest: attraction page progressively loads images before final missing-image fallback
 ok 171 - attraction page progressively loads images before final missing-image fallback
   ---
-  duration_ms: 2.484536
+  duration_ms: 2.988666
   type: 'test'
   ...
 # Subtest: halal Overpass query filters explicit halal evidence instead of every food venue
 ok 172 - halal Overpass query filters explicit halal evidence instead of every food venue
   ---
-  duration_ms: 0.235151
+  duration_ms: 0.278813
   type: 'test'
   ...
 # Subtest: OSM Commons tags and Wikidata P18 can enrich attraction photos
 ok 173 - OSM Commons tags and Wikidata P18 can enrich attraction photos
   ---
-  duration_ms: 0.294943
+  duration_ms: 0.368256
   type: 'test'
   ...
 # Subtest: rendered prayer-place titles use the shared English-name safety function
 ok 174 - rendered prayer-place titles use the shared English-name safety function
   ---
-  duration_ms: 2.679062
+  duration_ms: 3.018309
   type: 'test'
   ...
 # Subtest: mapped feature cards omit missing optional rows and avoid duplicate opening-hours fallback text
 ok 175 - mapped feature cards omit missing optional rows and avoid duplicate opening-hours fallback text
   ---
-  duration_ms: 2.036366
+  duration_ms: 2.472281
   type: 'test'
   ...
 # Subtest: native build keeps GitHub Pages web build separate from Capacitor assets
 ok 176 - native build keeps GitHub Pages web build separate from Capacitor assets
   ---
-  duration_ms: 1.866178
+  duration_ms: 1.772985
   type: 'test'
   ...
 # Subtest: native platform helpers use official Capacitor bridges with web fallbacks
 ok 177 - native platform helpers use official Capacitor bridges with web fallbacks
   ---
-  duration_ms: 2.391753
+  duration_ms: 1.680478
   type: 'test'
   ...
 # Subtest: iOS project is configured for SafarOne TestFlight preparation without hardcoded signing
 ok 178 - iOS project is configured for SafarOne TestFlight preparation without hardcoded signing
   ---
-  duration_ms: 1.582578
+  duration_ms: 1.947083
   type: 'test'
   ...
 # Subtest: iOS localized location permission strings exist in all launch languages
 ok 179 - iOS localized location permission strings exist in all launch languages
   ---
-  duration_ms: 1.865726
+  duration_ms: 1.983247
   type: 'test'
   ...
 # Subtest: iOS app icon asset catalog references generated opaque master-derived files
 ok 180 - iOS app icon asset catalog references generated opaque master-derived files
   ---
-  duration_ms: 1.434228
+  duration_ms: 1.425531
   type: 'test'
   ...
 # Subtest: iOS launch screen uses emerald background and local SafarOne symbol
 ok 181 - iOS launch screen uses emerald background and local SafarOne symbol
   ---
-  duration_ms: 0.884027
+  duration_ms: 0.893673
   type: 'test'
   ...
 # Subtest: iOS prayer notifications use official Local Notifications without custom Athan audio bundling
 ok 182 - iOS prayer notifications use official Local Notifications without custom Athan audio bundling
   ---
-  duration_ms: 1.187185
+  duration_ms: 1.258454
   type: 'test'
   ...
 # Subtest: TestFlight and iOS privacy documentation are present and accurate
 ok 183 - TestFlight and iOS privacy documentation are present and accurate
   ---
-  duration_ms: 1.548001
+  duration_ms: 1.156262
   type: 'test'
   ...
 # Subtest: normalizes and deduplicates safe HTTPS provider endpoints
 ok 184 - normalizes and deduplicates safe HTTPS provider endpoints
   ---
-  duration_ms: 1.928886
+  duration_ms: 1.941424
   type: 'test'
   ...
 # Subtest: temporarily deprioritizes providers after repeated transient failures
 ok 185 - temporarily deprioritizes providers after repeated transient failures
   ---
-  duration_ms: 0.50709
+  duration_ms: 0.481853
   type: 'test'
   ...
 # Subtest: rate limits block immediately and success resets health
 ok 186 - rate limits block immediately and success resets health
   ---
-  duration_ms: 0.283972
+  duration_ms: 0.406472
   type: 'test'
   ...
 # Subtest: Qibla enhancement uses clear copy and keeps fixed bearing before compass permission
 not ok 187 - Qibla enhancement uses clear copy and keeps fixed bearing before compass permission
   ---
-  duration_ms: 19.661241
+  duration_ms: 14.298105
   type: 'test'
   location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/qibla-copy-bootstrap.test.js:7:1'
   failureType: 'testCodeFailure'
@@ -1193,271 +1193,129 @@ not ok 187 - Qibla enhancement uses clear copy and keeps fixed bearing before co
 # Subtest: live compass button translation stays synchronized across languages
 ok 188 - live compass button translation stays synchronized across languages
   ---
-  duration_ms: 1.002639
+  duration_ms: 1.076574
   type: 'test'
   ...
 # Subtest: future-flight GPS fixes do not replace the scheduled route estimate
 ok 189 - future-flight GPS fixes do not replace the scheduled route estimate
   ---
-  duration_ms: 3.115009
+  duration_ms: 2.447833
   type: 'test'
   ...
 # Subtest: release hardening remains wired into source and native configuration
 ok 190 - release hardening remains wired into source and native configuration
   ---
-  duration_ms: 12.469561
+  duration_ms: 13.203325
   type: 'test'
   ...
 # Subtest: temporary storage is identified as non-persistent outside a browser
 ok 191 - temporary storage is identified as non-persistent outside a browser
   ---
-  duration_ms: 0.338905
+  duration_ms: 0.333774
   type: 'test'
   ...
 # Subtest: money parsing respects locale decimal separators
 ok 192 - money parsing respects locale decimal separators
   ---
-  duration_ms: 27.454978
+  duration_ms: 28.595181
   type: 'test'
   ...
 # Subtest: travel detail validation rejects impossible or nonexistent local dates
 ok 193 - travel detail validation rejects impossible or nonexistent local dates
   ---
-  duration_ms: 15.991101
+  duration_ms: 14.54336
   type: 'test'
   ...
 # Subtest: halal restaurant searches use focused queries and usable provider timeouts
 ok 194 - halal restaurant searches use focused queries and usable provider timeouts
   ---
-  duration_ms: 0.533119
+  duration_ms: 0.424308
   type: 'test'
   ...
 # Subtest: external map fields are escaped before insertion
 ok 195 - external map fields are escaped before insertion
   ---
-  duration_ms: 20.216501
+  duration_ms: 14.603247
   type: 'test'
   ...
 # Subtest: service worker deletes only SafarOne caches
-not ok 196 - service worker deletes only SafarOne caches
+ok 196 - service worker deletes only SafarOne caches
   ---
-  duration_ms: 3.45227
+  duration_ms: 5.58595
   type: 'test'
-  location: '/home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/release-hardening.test.js:50:1'
-  failureType: 'testCodeFailure'
-  error: |-
-    The input did not match the regular expression /mtp-app-shell-v13/. Input:
-    
-    "const CACHE_PREFIX = 'mtp-app-shell-';\n" +
-      "const CACHE_VERSION = 'mtp-app-shell-v14';\n" +
-      'const APP_SCOPE = new URL(self.registration.scope);\n' +
-      "const APP_HOME = new URL('./', APP_SCOPE).toString();\n" +
-      'const APP_SHELL = [\n' +
-      '  APP_HOME,\n' +
-      "  new URL('./privacy.html', APP_SCOPE).toString(),\n" +
-      "  new URL('./support.html', APP_SCOPE).toString(),\n" +
-      "  new URL('./manifest.webmanifest', APP_SCOPE).toString(),\n" +
-      "  new URL('./icons/icon.svg', APP_SCOPE).toString()\n" +
-      '];\n' +
-      '\n' +
-      'const isSameOrigin = (request) => new URL(request.url).origin === self.location.origin;\n' +
-      'const isLiveApi = (request) => {\n' +
-      '  const url = new URL(request.url);\n' +
-      '  return /overpass|open-meteo|frankfurter|wikimedia|wikidata|wikipedia|nominatim/i.test(url.hostname);\n' +
-      '};\n' +
-      '\n' +
-      "self.addEventListener('install', (event) => {\n" +
-      '  event.waitUntil(caches.open(CACHE_VERSION).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));\n' +
-      '});\n' +
-      '\n' +
-      "self.addEventListener('activate', (event) => {\n" +
-      '  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION).map((key) => caches.delete(key)))).then(() => self.clients.claim()));\n' +
-      '});\n' +
-      '\n' +
-      "self.addEventListener('fetch', (event) => {\n" +
-      '  const request = event.request;\n' +
-      "  if (request.method !== 'GET' || !isSameOrigin(request) || isLiveApi(request)) return;\n" +
-      '\n' +
-      "  if (request.mode === 'navigate') {\n" +
-      '    event.respondWith(fetch(request).then(async (response) => {\n' +
-      '      if (response.ok) {\n' +
-      '        const copy = response.clone();\n' +
-      '        const cache = await caches.open(CACHE_VERSION);\n' +
-      '        await cache.put(request, copy);\n' +
-      '      }\n' +
-      '      return response;\n' +
-      '    }).catch(async () => {\n' +
-      '      const requestUrl = new URL(request.url);\n' +
-      "      const legalPage = requestUrl.pathname.endsWith('/privacy.html') ? new URL('./privacy.html', APP_SCOPE).toString()\n" +
-      "        : requestUrl.pathname.endsWith('/support.html') ? new URL('./support.html', APP_SCOPE).toString()\n" +
-      "          : '';\n" +
-      '      return (await caches.match(request)) ?? (legalPage ? await caches.match(legalPage) : undefined) ?? (await caches.match(APP_HOME)) ?? Response.error();\n' +
-      '    }));\n' +
-      '    return;\n' +
-      '  }\n' +
-      '\n' +
-      '  event.respondWith(caches.match(request).then(async (cached) => {\n' +
-      '    const network = fetch(request).then((response) => {\n' +
-      "      if (response.ok && ['script', 'style', 'image', 'font'].includes(request.destination)) {\n" +
-      '        const copy = response.clone();\n' +
-      '        void caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));\n' +
-      '      }\n' +
-      '      return response;\n' +
-      '    });\n' +
-      '    if (cached) {\n' +
-      '      event.waitUntil(network.then(() => undefined).catch(() => undefined));\n' +
-      '      return cached;\n' +
-      '    }\n' +
-      '    return network;\n' +
-      '  }));\n' +
-      '});\n'
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected:
-  actual: |-
-    const CACHE_PREFIX = 'mtp-app-shell-';
-    const CACHE_VERSION = 'mtp-app-shell-v14';
-    const APP_SCOPE = new URL(self.registration.scope);
-    const APP_HOME = new URL('./', APP_SCOPE).toString();
-    const APP_SHELL = [
-      APP_HOME,
-      new URL('./privacy.html', APP_SCOPE).toString(),
-      new URL('./support.html', APP_SCOPE).toString(),
-      new URL('./manifest.webmanifest', APP_SCOPE).toString(),
-      new URL('./icons/icon.svg', APP_SCOPE).toString()
-    ];
-    
-    const isSameOrigin = (request) => new URL(request.url).origin === self.location.origin;
-    const isLiveApi = (request) => {
-      const url = new URL(request.url);
-      return /overpass|open-meteo|frankfurter|wikimedia|wikidata|wikipedia|nominatim/i.test(url.hostname);
-    };
-    
-    self.addEventListener('install', (event) => {
-      event.waitUntil(caches.open(CACHE_VERSION).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
-    });
-    
-    self.addEventListener('activate', (event) => {
-      event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
-    });
-    
-    self.addEventListener('fetch', (event) => {
-      const request = event.request;
-      if (request.method !== 'GET' || !isSameOrigin(request) || isLiveApi(request)) return;
-    
-      if (request.mode === 'navigate') {
-        event.respondWith(fetch(request).then(async (response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            const cache = await caches.open(CACHE_VERSION);
-            await cache.put(request, copy);
-          }
-          return response;
-        }).catch(async () => {
-          const requestUrl = new URL(request.url);
-          const legalPage = requestUrl.pathname.endsWith('/privacy.html') ? new URL('./privacy.html', APP_SCOPE).toString()
-            : requestUrl.pathname.endsWith('/support.html') ? new URL('./support.html', APP_SCOPE).toString()
-              : '';
-          return (await caches.match(request)) ?? (legalPage ? await caches.match(legalPage) : undefined) ?? (await caches.match(APP_HOME)) ?? Response.error();
-        }));
-        return;
-      }
-    
-      event.respondWith(caches.match(request).then(async (cached) => {
-        const network = fetch(request).then((response) => {
-          if (response.ok && ['script', 'style', 'image', 'font'].includes(request.destination)) {
-            const copy = response.clone();
-            void caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        });
-        if (cached) {
-          event.waitUntil(network.then(() => undefined).catch(() => undefined));
-          return cached;
-        }
-        return network;
-      }));
-    });
-    
-  operator: 'match'
-  stack: |-
-    TestContext.<anonymous> (file:///home/runner/work/muslim-travel-planner/muslim-travel-planner/dist-test/release-hardening.test.js:53:12)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a restrictive content security policy is present
 ok 197 - a restrictive content security policy is present
   ---
-  duration_ms: 2.295021
+  duration_ms: 1.091416
   type: 'test'
   ...
 # Subtest: prayer notification fallbacks use bundled assets and exact-alarm state
 ok 198 - prayer notification fallbacks use bundled assets and exact-alarm state
   ---
-  duration_ms: 2.592459
+  duration_ms: 1.116453
   type: 'test'
   ...
 # Subtest: converts local times using their named time zones
 ok 199 - converts local times using their named time zones
   ---
-  duration_ms: 25.162251
+  duration_ms: 18.580706
   type: 'test'
   ...
 # Subtest: rejects nonexistent DST local times
 ok 200 - rejects nonexistent DST local times
   ---
-  duration_ms: 3.072989
+  duration_ms: 2.091336
   type: 'test'
   ...
 # Subtest: keeps absolute timestamps absolute and formats ICS UTC
 ok 201 - keeps absolute timestamps absolute and formats ICS UTC
   ---
-  duration_ms: 0.417323
+  duration_ms: 0.312462
   type: 'test'
   ...
 # Subtest: adds minutes without using the device time zone
 ok 202 - adds minutes without using the device time zone
   ---
-  duration_ms: 0.275296
+  duration_ms: 0.234697
   type: 'test'
   ...
 # Subtest: Turkish Car Rental copy is complete, natural, and loaded by the app
 ok 203 - Turkish Car Rental copy is complete, natural, and loaded by the app
   ---
-  duration_ms: 6.592126
+  duration_ms: 5.689713
   type: 'test'
   ...
 # Subtest: Turkish Halal Restaurants copy is complete and natural
 ok 204 - Turkish Halal Restaurants copy is complete and natural
   ---
-  duration_ms: 1.476888
+  duration_ms: 1.157614
   type: 'test'
   ...
 # Subtest: Turkish public travel-tool copy is complete, natural, and loaded by the app
 ok 205 - Turkish public travel-tool copy is complete, natural, and loaded by the app
   ---
-  duration_ms: 11.909893
+  duration_ms: 9.309315
   type: 'test'
   ...
 # Subtest: Urdu is a first-class RTL app language
 ok 206 - Urdu is a first-class RTL app language
   ---
-  duration_ms: 7.109896
+  duration_ms: 1.144184
   type: 'test'
   ...
 # Subtest: Weather and Money layouts prevent page-wide horizontal overflow
 ok 207 - Weather and Money layouts prevent page-wide horizontal overflow
   ---
-  duration_ms: 13.203507
+  duration_ms: 9.662367
   type: 'test'
   ...
 1..207
 # tests 207
 # suites 0
-# pass 202
-# fail 5
+# pass 203
+# fail 4
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 1050.222925
+# duration_ms 1028.682236
