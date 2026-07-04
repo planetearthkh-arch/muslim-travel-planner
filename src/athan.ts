@@ -272,6 +272,13 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
   };
 }
 
+export async function checkAthanPermissions() {
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    return AndroidAthan.checkPermissions();
+  }
+  return { exactAlarmAllowed: true, notificationsAllowed: true };
+}
+
 export async function hasScheduledAthanAlarms() {
   try {
     if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
@@ -300,7 +307,8 @@ export async function disableAthanAlarms() {
 export async function playTestAthan(language: Language = 'en') {
   if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
     await AndroidAthan.prepare({ audioUrl: ATHAN_AUDIO_URL });
-    await AndroidAthan.test({ language });
+    const copy = copyFor(language);
+    await AndroidAthan.test({ language, prayer: copy.testTitle, city: copy.testBody });
     return;
   }
   if (Capacitor.isNativePlatform()) {

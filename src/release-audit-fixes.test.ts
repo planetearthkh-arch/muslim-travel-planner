@@ -31,9 +31,11 @@ test('release hardening remains wired into source and native configuration', asy
     repoFile('mobile/android/java/AthanAlarmPlugin.java'),
     repoFile('mobile/android/java/AthanPlaybackService.java'),
   ]);
-  assert.equal((project.match(/CURRENT_PROJECT_VERSION = 101;/g) ?? []).length, 2);
-  assert.equal(verify.includes('version < 101'), true);
+  assert.equal((project.match(/CURRENT_PROJECT_VERSION = 102;/g) ?? []).length, 2);
+  assert.equal(verify.includes('version < 102'), true);
   assert.equal(main.includes('scheduleFlightClock()'), true);
+  assert.equal(main.includes("flightProgressMode: 'elapsed' | 'manual'"), true);
+  assert.equal(main.includes("App.addListener('appStateChange'"), true);
   assert.equal(main.includes('generatedItems = generateItinerary(generatedPrefs, replan, lang)'), true);
   assert.equal(main.includes('required'), true);
   assert.equal(main.includes('SavedAttractionSnapshot'), true);
@@ -43,6 +45,8 @@ test('release hardening remains wired into source and native configuration', asy
   assert.equal(safeStorage.includes('isPersistentStorageAvailable'), true);
   assert.equal(serviceWorker.includes("endsWith('/privacy.html')"), true);
   assert.equal(plugin.includes('MAX_AUDIO_BYTES'), true);
+  assert.equal(plugin.includes('checkPermissions(PluginCall call)'), true);
+  assert.equal(plugin.includes('validateAudioUrl'), true);
   assert.equal(plugin.includes('PendingIntent.FLAG_NO_CREATE'), true);
   assert.equal(service.includes('localized("stop", language)'), true);
 });

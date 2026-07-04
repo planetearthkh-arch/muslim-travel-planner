@@ -24,6 +24,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONArray;
@@ -89,6 +90,18 @@ public class AthanAlarmPlugin extends Plugin {
             getActivity().startActivity(intent);
         }
 
+        boolean notificationsAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        call.resolve(new JSObject()
+            .put("exactAlarmAllowed", exactAllowed)
+            .put("notificationsAllowed", notificationsAllowed));
+    }
+
+    @PluginMethod
+    public void checkPermissions(PluginCall call) {
+        Context context = getContext();
+        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        boolean exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms();
         boolean notificationsAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
         call.resolve(new JSObject()
@@ -168,8 +181,8 @@ public class AthanAlarmPlugin extends Plugin {
     @PluginMethod
     public void test(PluginCall call) {
         Intent intent = new Intent(getContext(), AthanPlaybackService.class);
-        intent.putExtra("prayer", "Test Athan");
-        intent.putExtra("city", "SafarOne");
+        intent.putExtra("prayer", call.getString("prayer", "SafarOne prayer notification"));
+        intent.putExtra("city", call.getString("city", "Prayer notification sound"));
         intent.putExtra("language", call.getString("language", "en"));
         ContextCompat.startForegroundService(getContext(), intent);
         call.resolve();
@@ -247,12 +260,24 @@ public class AthanAlarmPlugin extends Plugin {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
+    private static URL validateAudioUrl(String address) throws Exception {
+        URL url = new URL(address);
+        String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+        boolean trustedHost = host.equals("assabile.com") || host.endsWith(".assabile.com");
+        if (!"https".equalsIgnoreCase(url.getProtocol()) || !trustedHost) {
+            throw new IllegalStateException("Athan audio URL is not trusted.");
+        }
+        return url;
+    }
+
     private static void download(String address, File destination) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
+        URL sourceUrl = validateAudioUrl(address);
+        HttpURLConnection connection = (HttpURLConnection) sourceUrl.openConnection();
         connection.setConnectTimeout(15_000);
         connection.setReadTimeout(30_000);
         connection.setInstanceFollowRedirects(true);
         connection.connect();
+        validateAudioUrl(connection.getURL().toString());
         int responseCode = connection.getResponseCode();
         if (responseCode < 200 || responseCode >= 300) {
             connection.disconnect();

@@ -1,3 +1,4 @@
+import { App } from '@capacitor/app';
 import { cities } from './data.js';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -170,6 +171,7 @@ import { athanLabels } from './app-athan-i18n.js';
 import {
   calculatePrayerAlarms,
   calculatePrayerDisplay,
+  checkAthanPermissions,
   disableAthanAlarms,
   enableAthanAlarms,
   hasScheduledAthanAlarms,
@@ -232,6 +234,8 @@ const todayIso = () => {
 let replan = 0;
 let selectedRegion: Region | '' = '';
 let athanEnabled = appStorage.getItem('athanEnabled') === 'true';
+let athanPermissionRetryPending = false;
+let athanPermissionRetryRunning = false;
 let athanStateRefreshStarted = false;
 async function refreshAthanEnabledState() {
   if (athanStateRefreshStarted) return;
@@ -293,6 +297,7 @@ let flightPlanCorrupted = loadedFlightPlan.corrupted;
 let flightEditing = !preparedFlightPlan;
 let flightStatus = '';
 let flightManualProgress = preparedFlightPlan ? elapsedProgress(preparedFlightPlan) : 0;
+let flightProgressMode: 'elapsed' | 'manual' = 'elapsed';
 let flightGpsEnabled = false;
 let flightLocationStatus: 'idle' | 'watching' | 'denied' | 'unavailable' = 'idle';
 let flightWatch: AppPositionWatch | undefined;
@@ -994,9 +999,9 @@ function stopFlightClock() {
 
 function scheduleFlightClock() {
   stopFlightClock();
-  if (view !== 'flight-mode' || !preparedFlightPlan || flightEditing || flightGpsEnabled || document.hidden) return;
+  if (view !== 'flight-mode' || !preparedFlightPlan || flightEditing || flightGpsEnabled || flightProgressMode !== 'elapsed' || document.hidden) return;
   flightClockTimer = window.setTimeout(() => {
-    if (view !== 'flight-mode' || !preparedFlightPlan || flightEditing || flightGpsEnabled) return;
+    if (view !== 'flight-mode' || !preparedFlightPlan || flightEditing || flightGpsEnabled || flightProgressMode !== 'elapsed') return;
     flightManualProgress = elapsedProgress(preparedFlightPlan);
     flightModePage();
   }, 30_000);
@@ -1274,6 +1279,7 @@ function bindFlightMode() {
     preparedFlightPlan = flightPlanRepository.save(result.plan);
     flightPlanCorrupted = false;
     flightEditing = false;
+    flightProgressMode = 'elapsed';
     flightManualProgress = elapsedProgress(preparedFlightPlan);
     flightStatus = labels[lang].flightPlanSaved;
     flightModePage();
@@ -1287,6 +1293,7 @@ function bindFlightMode() {
     }
     preparedFlightPlan = flightPlanRepository.save(plan);
     flightEditing = false;
+    flightProgressMode = 'elapsed';
     flightManualProgress = elapsedProgress(preparedFlightPlan);
     flightStatus = labels[lang].flightPlanSaved;
     flightModePage();
@@ -1300,10 +1307,12 @@ function bindFlightMode() {
     }
   });
   document.querySelector<HTMLInputElement>('#flight-progress')?.addEventListener('change', (event) => {
+    flightProgressMode = 'manual';
     flightManualProgress = Number((event.target as HTMLInputElement).value) / 100;
     flightModePage();
   });
   document.querySelector<HTMLButtonElement>('#flight-elapsed')?.addEventListener('click', () => {
+    flightProgressMode = 'elapsed';
     if (preparedFlightPlan) flightManualProgress = elapsedProgress(preparedFlightPlan);
     flightModePage();
   });
@@ -1316,6 +1325,7 @@ function bindFlightMode() {
     flightPlanRepository.clear();
     preparedFlightPlan = null;
     flightEditing = true;
+    flightProgressMode = 'elapsed';
     flightStatus = labels[lang].flightPlanCleared;
     flightModePage();
   });
@@ -1505,7 +1515,7 @@ function savedAttractionSnapshot(attraction: Attraction): SavedAttractionSnapsho
 function savedAttractionsMarkup(copy: typeof labels[Language]) {
   const items = [...savedAttractions.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
   if (!items.length) return '';
-  return `<section class="saved-attractions"><h3>${copy.attractionsSaved}</h3><div class="place-list">${items.map((item) => `<article class="card"><div class="card-top"><span>${esc(attractionCategoryLabel(item.category, copy))}</span><span>${esc(item.city)}, ${esc(item.country)}</span></div><h4>${esc(item.name)}</h4>${item.address ? `<p>${esc(item.address)}</p>` : ``}<div class="place-actions"><button type="button" class="ghost" data-attraction-save="${esc(item.id)}" aria-pressed="true">${copy.attractionsSaved}</button><a class="map-link" href="${esc(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>${item.readMoreUrl ? `<a class="map-link" href="${esc(item.readMoreUrl)}" target="_blank" rel="noopener noreferrer">${copy.attractionsReadMore}</a>` : ``}</div></article>`).join(``)}</div></section>`;
+  return `<section class="saved-attractions"><h3>${copy.attractionsSaved}</h3><div class="place-list">${items.map((item) => `<article class="card"><div class="card-top"><span>${esc(attractionCategoryLabel(item.category, copy))}</span><span>${esc([item.city, item.country].filter(Boolean).join(", "))}</span></div><h4>${esc(item.name)}</h4>${item.address ? `<p>${esc(item.address)}</p>` : ``}<div class="place-actions"><button type="button" class="ghost" data-attraction-save="${esc(item.id)}" aria-pressed="true">${copy.attractionsSaved}</button><a class="map-link" href="${esc(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>${item.readMoreUrl ? `<a class="map-link" href="${esc(item.readMoreUrl)}" target="_blank" rel="noopener noreferrer">${copy.attractionsReadMore}</a>` : ``}</div></article>`).join(``)}</div></section>`;
 }
 let attractionDiagnostics: string[] = [];
 const attractionCache = new Map<string, { expires: number; results: Attraction[] }>();
@@ -1546,9 +1556,11 @@ async function requestOverpass(url: string, options: RequestInit, milliseconds: 
 
 function reportCenterDetails(center: PrayerCenter | undefined) {
   const parts = (center?.label ?? '').split(',').map((part) => part.trim()).filter(Boolean);
+  const inferredCity = parts.length > 1 ? parts.at(-2) : center?.label?.trim();
+  const inferredCountry = parts.length > 1 ? parts.at(-1) : '';
   return {
-    city: center?.city || parts.at(-2) || selectedCity().city,
-    country: center?.country || parts.at(-1) || selectedCity().country,
+    city: center?.city || inferredCity || '',
+    country: center?.country || inferredCountry || '',
   };
 }
 
@@ -4364,7 +4376,15 @@ function savedTripsPage() {
 }
 
 function plannerValidationMessage(planPrefs: PlannerPreferences, copy: typeof labels[Language]) {
-  const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(new Date(`${value}T00:00:00`).getTime());
+  const validDate = (value: string) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return false;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(`${value}T00:00:00`);
+    return Number.isFinite(date.getTime()) && date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+  };
   const validTime = (value: string) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
   if (!cityForPreferences(planPrefs)) return copy.invalidCity;
   if (!validDate(planPrefs.startDate) || !validDate(planPrefs.endDate)) return copy.invalidEndDate;
@@ -5221,6 +5241,51 @@ function render() {
   initializeMap(copy);
 }
 
+async function enableCurrentAthanAlerts() {
+  const copy = athanLabels[lang];
+  athanStatus = copy.preparing;
+  render();
+  try {
+    const alarmPrefs = generatedPrefs ?? prefs;
+    const city = cityForPreferences(alarmPrefs) ?? selectedCity();
+    const alertDays = Math.max(1, itineraryDayKeys(alarmPrefs.startDate, alarmPrefs.endDate).length);
+    const alarms = calculatePrayerAlarms(city, alarmPrefs.prayerMethod, alarmPrefs.startDate, localeForLanguage(lang), alertDays);
+    if (!alarms.length) {
+      athanPermissionRetryPending = false;
+      athanStatus = copy.noFuture;
+      render();
+      return;
+    }
+    const result = await enableAthanAlarms(alarms, lang);
+    athanEnabled = result.scheduled > 0 && result.permissions.notificationsAllowed;
+    athanPermissionRetryPending = !result.permissions.exactAlarmAllowed && result.permissions.notificationsAllowed;
+    appStorage.setItem('athanEnabled', String(athanEnabled));
+    athanStatus = athanEnabled
+      ? `${copy.scheduled}: ${result.scheduled}/${result.requested}`
+      : athanPermissionRetryPending ? copy.permissionNote : copy.failed;
+  } catch (error) {
+    console.error(error);
+    athanPermissionRetryPending = false;
+    athanStatus = copy.failed;
+  }
+  render();
+}
+
+async function retryAthanAfterPermissionReturn() {
+  if (!athanPermissionRetryPending || athanPermissionRetryRunning) return;
+  athanPermissionRetryRunning = true;
+  try {
+    const permissions = await checkAthanPermissions();
+    if (!permissions.exactAlarmAllowed || !permissions.notificationsAllowed) return;
+    athanPermissionRetryPending = false;
+    await enableCurrentAthanAlerts();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    athanPermissionRetryRunning = false;
+  }
+}
+
 function bind() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
     if (!setAppLanguage((event.target as HTMLSelectElement).value)) return;
@@ -5316,33 +5381,9 @@ function bind() {
     render();
     document.querySelector('#planner-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-  document.querySelector<HTMLButtonElement>('#enable-athan')?.addEventListener('click', async () => {
-    const copy = athanLabels[lang];
-    athanStatus = copy.preparing;
-    render();
-    try {
-      const alarmPrefs = generatedPrefs ?? prefs;
-      const city = cityForPreferences(alarmPrefs) ?? selectedCity();
-      const alertDays = Math.max(1, itineraryDayKeys(alarmPrefs.startDate, alarmPrefs.endDate).length);
-      const alarms = calculatePrayerAlarms(city, alarmPrefs.prayerMethod, alarmPrefs.startDate, localeForLanguage(lang), alertDays);
-      if (!alarms.length) {
-        athanStatus = copy.noFuture;
-        render();
-        return;
-      }
-      const result = await enableAthanAlarms(alarms, lang);
-      athanEnabled = result.scheduled > 0 && result.permissions.notificationsAllowed;
-      appStorage.setItem('athanEnabled', String(athanEnabled));
-      athanStatus = athanEnabled
-        ? `${copy.scheduled}: ${result.scheduled}/${result.requested}`
-        : !result.permissions.exactAlarmAllowed && result.permissions.notificationsAllowed ? copy.permissionNote : copy.failed;
-    } catch (error) {
-      console.error(error);
-      athanStatus = copy.failed;
-    }
-    render();
-  });
+  document.querySelector<HTMLButtonElement>('#enable-athan')?.addEventListener('click', () => void enableCurrentAthanAlerts());
   document.querySelector<HTMLButtonElement>('#disable-athan')?.addEventListener('click', async () => {
+    athanPermissionRetryPending = false;
     await disableAthanAlarms();
     athanEnabled = false;
     appStorage.setItem('athanEnabled', 'false');
@@ -5443,6 +5484,10 @@ if (view === 'money') {
 }
 if (view === 'public-transport') void searchPublicTransport(publicTransportDestinationCenter());
 if (view === 'taxi-services') void searchTaxiServices(taxiDestinationCenter());
+
+void App.addListener('appStateChange', ({ isActive }) => {
+  if (isActive) void retryAthanAfterPermissionReturn();
+}).catch((error) => console.warn('Could not register app-state listener', error));
 
 render();
 void refreshAthanEnabledState();

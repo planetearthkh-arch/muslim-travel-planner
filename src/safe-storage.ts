@@ -31,6 +31,5 @@ export function getSafeStorage(): Storage {
 }
 
 export function isPersistentStorageAvailable() {
-  getSafeStorage();
   return persistentStorageAvailable;
 }
