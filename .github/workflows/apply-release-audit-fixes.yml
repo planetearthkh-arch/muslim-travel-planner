@@ -38,16 +38,58 @@ jobs:
         if: steps.generator.outcome == 'failure'
         run: exit 1
       - run: npm ci
-      - run: npm test
-      - run: npm run lint
-      - run: npm run build:native
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: npm test > audit-tests.log 2>&1
+      - name: Commit test diagnostics
+        if: steps.tests.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audit-tests.log
+          git commit -m "Record release audit test failure" --allow-empty
+          git push origin HEAD:${{ github.head_ref }}
+      - name: Stop after test failure
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+      - name: Run lint
+        id: lint
+        continue-on-error: true
+        run: npm run lint > audit-lint.log 2>&1
+      - name: Commit lint diagnostics
+        if: steps.lint.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audit-lint.log
+          git commit -m "Record release audit lint failure" --allow-empty
+          git push origin HEAD:${{ github.head_ref }}
+      - name: Stop after lint failure
+        if: steps.lint.outcome == 'failure'
+        run: exit 1
+      - name: Run native build
+        id: build
+        continue-on-error: true
+        run: npm run build:native > audit-build.log 2>&1
+      - name: Commit build diagnostics
+        if: steps.build.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audit-build.log
+          git commit -m "Record release audit build failure" --allow-empty
+          git push origin HEAD:${{ github.head_ref }}
+      - name: Stop after build failure
+        if: steps.build.outcome == 'failure'
+        run: exit 1
       - name: Commit generated fixes
         run: |
           rm scripts/apply-release-audit-fixes.mjs
           rm scripts/patch-release-audit-generator.mjs
           rm scripts/prepare-release-audit-target.mjs
           rm .github/workflows/apply-release-audit-fixes.yml
-          rm -f audit-generator.log
+          rm -f audit-generator.log audit-tests.log audit-lint.log audit-build.log
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
