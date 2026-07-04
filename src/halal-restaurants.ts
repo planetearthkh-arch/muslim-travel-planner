@@ -184,25 +184,15 @@ export function buildHalalOverpassQuery(latitude: number, longitude: number, rad
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const food = '["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]';
 
-  // Halal keys are uncommon, so selecting them first is substantially lighter than
-  // scanning every restaurant and applying several regular-expression filters.
+  // Restrict every selector to food venues. Text-wide scans caused frequent timeouts
+  // on mobile and were not shown by the default reliable-results filter anyway.
   const selectors = [
-    `nwr["diet:halal"]${around}`,
-    `nwr["halal"]${around}`,
-    `nwr["halal:certification"]${around}`,
+    `nwr${food}["diet:halal"]${around}`,
+    `nwr${food}["halal"]${around}`,
+    `nwr${food}["halal:certification"]${around}`,
   ];
 
-  // Nearby searches may also include text-only evidence. Keep these expensive scans
-  // restricted to the reliable 1 km search.
-  if (safeRadiusKm <= 1) {
-    selectors.push(
-      `nwr${food}["description"~"halal",i]${around}`,
-      `nwr${food}["description:en"~"halal",i]${around}`,
-      `nwr${food}["note"~"halal",i]${around}`,
-    );
-  }
-
-  const timeoutSeconds = safeRadiusKm <= 1 ? 25 : 45;
+  const timeoutSeconds = safeRadiusKm <= 1 ? 20 : 35;
   return `[out:json][timeout:${timeoutSeconds}];(${selectors.join(';')};);out center tags;`;
 }
 
