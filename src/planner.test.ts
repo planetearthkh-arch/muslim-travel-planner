@@ -591,19 +591,22 @@ test('planner validation and pre-generation messages are translated', () => {
   assert.equal(labels.id.itineraryReady.length > 0, true);
 });
 
-test('supports switching among English, Arabic, Bahasa Indonesia, Bahasa Melayu, and Turkish', () => {
-  assert.deepEqual(languages.map((language) => language.code), ['en', 'ar', 'id', 'ms', 'tr']);
+test('supports switching among English, Arabic, Bahasa Indonesia, Bahasa Melayu, Turkish, and French', () => {
+  assert.deepEqual(languages.map((language) => language.code), ['en', 'ar', 'id', 'ms', 'tr', 'fr']);
   assert.equal(languages.find((language) => language.code === 'ms')?.label, 'Bahasa Melayu');
   assert.equal(languages.find((language) => language.code === 'tr')?.label, 'Türkçe');
+  assert.equal(languages.find((language) => language.code === 'fr')?.label, 'Français');
   assert.equal(nextLanguage('en'), 'ar');
   assert.equal(nextLanguage('ar'), 'id');
   assert.equal(nextLanguage('id'), 'ms');
   assert.equal(nextLanguage('ms'), 'tr');
-  assert.equal(nextLanguage('tr'), 'en');
+  assert.equal(nextLanguage('tr'), 'fr');
+  assert.equal(nextLanguage('fr'), 'en');
   assert.equal(languageDirection('en'), 'ltr');
   assert.equal(languageDirection('id'), 'ltr');
   assert.equal(languageDirection('ms'), 'ltr');
   assert.equal(languageDirection('tr'), 'ltr');
+  assert.equal(languageDirection('fr'), 'ltr');
   assert.equal(languageDirection('ar'), 'rtl');
 });
 
