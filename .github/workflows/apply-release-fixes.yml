@@ -1,0 +1,205 @@
+name: Apply remaining release fixes
+
+on:
+  push:
+    branches: [fix-all-release-blockers]
+    paths:
+      - .github/workflows/apply-release-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-all-release-blockers
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply targeted fixes and regression tests
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs');
+
+          function replaceOnce(path, before, after) {
+            const source = readFileSync(path, 'utf8');
+            const first = source.indexOf(before);
+            if (first < 0) throw new Error(`Expected text was not found in ${path}`);
+            if (source.indexOf(before, first + before.length) >= 0) throw new Error(`Expected text was not unique in ${path}`);
+            writeFileSync(path, source.slice(0, first) + after + source.slice(first + before.length));
+          }
+
+          replaceOnce(
+            'index.html',
+            "font-src 'self' data: https://tiles.openfreemap.org; connect-src",
+            "font-src 'self' data: https://tiles.openfreemap.org; worker-src 'self' blob:; connect-src",
+          );
+
+          replaceOnce(
+            'public/sw.js',
+            `    event.respondWith(fetch(request).then((response) => {
+              if (response.ok) {
+                const copy = response.clone();
+                caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+              }
+              return response;
+            }).catch(async () => (await caches.match(request)) ?? (await caches.match(APP_HOME)) ?? Response.error()));`,
+            `    event.respondWith(fetch(request).then(async (response) => {
+              if (response.ok) {
+                const copy = response.clone();
+                const cache = await caches.open(CACHE_VERSION);
+                await cache.put(request, copy);
+              }
+              return response;
+            }).catch(async () => (await caches.match(request)) ?? (await caches.match(APP_HOME)) ?? Response.error()));`,
+          );
+
+          replaceOnce(
+            'src/money.ts',
+            `          const parts = new Intl.NumberFormat(localeFor(language)).formatToParts(12345.6);
+              const localeDecimal = parts.find((part) => part.type === 'decimal')?.value || '.';
+              const localeGroup = parts.find((part) => part.type === 'group')?.value || ',';
+              numeric = separator === localeGroup ? integer + fraction : separator === localeDecimal ? integer + '.' + fraction : integer + '.' + fraction;`,
+            `          const parts = new Intl.NumberFormat(localeFor(language)).formatToParts(12345.6);
+              const normalizeSeparator = (value: string) => value.replace(/٬/g, ',').replace(/٫/g, '.');
+              const localeDecimal = normalizeSeparator(parts.find((part) => part.type === 'decimal')?.value || '.');
+              const localeGroup = normalizeSeparator(parts.find((part) => part.type === 'group')?.value || ',');
+              numeric = separator === localeGroup ? integer + fraction : separator === localeDecimal ? integer + '.' + fraction : integer + '.' + fraction;`,
+          );
+
+          replaceOnce(
+            'src/travel-details.ts',
+            "import { addMinutesToLocalDateTime, zonedDateTimeToUtc } from './time-zones.js';",
+            "import { addMinutesToLocalDateTime, parseLocalDateTime, zonedDateTimeToUtc } from './time-zones.js';",
+          );
+          replaceOnce(
+            'src/travel-details.ts',
+            `function validDateTime(value = '') {
+              return /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(value) && Number.isFinite(new Date(value).getTime());
+            }
+
+            function ordered(start: string, end: string | undefined, timeZone: string) {
+              if (!end) return true;
+              const startInstant = zonedDateTimeToUtc(start, timeZone);
+              const endInstant = zonedDateTimeToUtc(end, timeZone);
+              return Boolean(startInstant && endInstant && endInstant.getTime() > startInstant.getTime());
+            }`,
+            `function validDateTime(value = '') {
+              return Boolean(parseLocalDateTime(value));
+            }
+
+            function dateRangeStatus(start: string, end: string | undefined, timeZone: string): 'valid' | 'date' | 'range' {
+              const startInstant = zonedDateTimeToUtc(start, timeZone);
+              if (!startInstant) return 'date';
+              if (!end) return 'valid';
+              const endInstant = zonedDateTimeToUtc(end, timeZone);
+              if (!endInstant) return 'date';
+              return endInstant.getTime() > startInstant.getTime() ? 'valid' : 'range';
+            }`,
+          );
+          replaceOnce(
+            'src/travel-details.ts',
+            "    if (!ordered(checkInDateTime, checkOutDateTime, tz)) return { ok: false, error: 'range' };",
+            "    const range = dateRangeStatus(checkInDateTime, checkOutDateTime, tz);\n    if (range !== 'valid') return { ok: false, error: range };",
+          );
+          replaceOnce(
+            'src/travel-details.ts',
+            "    if (!ordered(startDateTime, endDateTime || undefined, tz)) return { ok: false, error: 'range' };",
+            "    const range = dateRangeStatus(startDateTime, endDateTime || undefined, tz);\n    if (range !== 'valid') return { ok: false, error: range };",
+          );
+
+          replaceOnce('src/athan.ts', "      icon: './icon-192.png',", "      icon: './icons/icon.svg',");
+          replaceOnce('src/athan.ts', '  await playTestAthan();', '  await playTestAthan(language);');
+          replaceOnce(
+            'src/athan.ts',
+            `    if (permissions.display !== 'granted') return;
+              await LocalNotifications.schedule({`,
+            `    if (permissions.display !== 'granted') return;
+              const exactAlarmAllowed = Capacitor.getPlatform() !== 'android' || (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
+              await LocalNotifications.schedule({`,
+          );
+          replaceOnce(
+            'src/athan.ts',
+            '        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },',
+            '        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: exactAlarmAllowed },',
+          );
+
+          replaceOnce(
+            'src/release-hardening.test.ts',
+            "import { parseAmountInput } from './money.js';",
+            "import { parseAmountInput } from './money.js';\nimport { validateTravelDetailInput } from './travel-details.js';",
+          );
+          replaceOnce(
+            'src/release-hardening.test.ts',
+            `  assert.equal(parseAmountInput('1.250', 'tr').value, 1250);
+              assert.equal(parseAmountInput('USD 12', 'en').value, 12);`,
+            `  assert.equal(parseAmountInput('1.250', 'tr').value, 1250);
+              assert.equal(parseAmountInput('١٬٢٥٠', 'ar').value, 1250);
+              assert.equal(parseAmountInput('١٫٢٥٠', 'ar').value, 1.25);
+              assert.equal(parseAmountInput('USD 12', 'en').value, 12);`,
+          );
+          replaceOnce(
+            'src/release-hardening.test.ts',
+            `test('external map fields are escaped before insertion', async () => {`,
+            `test('travel detail validation rejects impossible or nonexistent local dates', () => {
+              const impossible = validateTravelDetailInput({ type: 'reservation', title: 'Tour', startDateTime: '2026-02-30T10:00', timeZone: 'UTC' });
+              assert.equal(impossible.ok, false);
+              if (!impossible.ok) assert.equal(impossible.error, 'date');
+
+              const nonexistent = validateTravelDetailInput({ type: 'reservation', title: 'Tour', startDateTime: '2026-03-29T01:30', timeZone: 'Europe/London' });
+              assert.equal(nonexistent.ok, false);
+              if (!nonexistent.ok) assert.equal(nonexistent.error, 'date');
+
+              const valid = validateTravelDetailInput({ type: 'reservation', title: 'Tour', startDateTime: '2026-03-29T02:30', timeZone: 'Europe/London' });
+              assert.equal(valid.ok, true);
+            });
+
+            test('external map fields are escaped before insertion', async () => {`,
+          );
+          replaceOnce(
+            'src/release-hardening.test.ts',
+            `  assert.match(worker, /mtp-app-shell-v13/);`,
+            `  assert.match(worker, /mtp-app-shell-v13/);
+              assert.match(worker, /await cache\\.put\\(request, copy\\)/);`,
+          );
+          replaceOnce(
+            'src/release-hardening.test.ts',
+            `  assert.match(html, /object-src 'none'/);`,
+            `  assert.match(html, /object-src 'none'/);
+              assert.match(html, /worker-src 'self' blob:/);`,
+          );
+          replaceOnce(
+            'src/release-hardening.test.ts',
+            `});
+            `,
+            `});
+
+            test('prayer notification fallbacks use bundled assets and exact-alarm state', async () => {
+              const source = await repoFile('src/athan.ts');
+              assert.match(source, /icon: '\\.\\/icons\\/icon\\.svg'/);
+              assert.match(source, /allowWhileIdle: exactAlarmAllowed/);
+            });
+            `,
+          );
+          NODE
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test:browser-smoke
+      - name: Commit validated fixes and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-release-fixes.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html public/sw.js src/money.ts src/travel-details.ts src/athan.ts src/release-hardening.test.ts .github/workflows/apply-release-fixes.yml
+          git commit -m "Fix remaining release blockers"
+          git push origin HEAD:fix-all-release-blockers
