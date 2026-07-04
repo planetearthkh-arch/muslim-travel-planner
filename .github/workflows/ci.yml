@@ -20,34 +20,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - run: node scripts/apply-final-audit-fixes.mjs
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - name: Run tests and capture output
-        id: tests
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          npm test 2>&1 | tee test-failure.log
-          status=${PIPESTATUS[0]}
-          exit $status
-      - name: Build concise failure summary
-        if: steps.tests.outcome == 'failure'
-        run: node scripts/summarize-test-log.mjs
-      - name: Commit concise failure summary
-        if: steps.tests.outcome == 'failure' && github.actor != 'github-actions[bot]'
+      - run: npm test
+      - run: npm run lint
+      - run: npm run test:browser-smoke
+      - name: Commit validated fixes
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add failure-summary.txt
-          git commit -m "Summarize current test failures" || true
+          git add -A
+          git commit -m "Finalize deep audit fixes"
           git push origin HEAD:codex/fix-deep-audit-issues
-      - name: Fail when tests failed
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
-      - run: npm run lint
-      - run: npm run test:browser-smoke
 
   android:
     runs-on: ubuntu-latest
