@@ -41,3 +41,14 @@ jobs:
       - run: npm run android:setup
       - run: ./gradlew assembleDebug --stacktrace
         working-directory: android
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ios:verify
