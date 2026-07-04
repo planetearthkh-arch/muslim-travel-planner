@@ -12,7 +12,7 @@ jobs:
   finalize:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,16 +49,46 @@ jobs:
           text = text.replace("support.includes(\"['en', 'ar', 'id', 'ms', 'tr']\")", "support.includes(\"['en', 'ar', 'id', 'ms', 'tr', 'fr', 'ur']\")")
           planner.write_text(text, encoding='utf-8')
           PY
-      - run: npm ci
-      - run: npm test
-      - run: npm run lint
-      - run: npm run build:native
-      - name: Commit final corrections
+      - name: Validate all web/native source checks
+        id: validate
+        shell: bash
         run: |
-          rm -f TEST_FAILURE.log
+          set +e
+          : > /tmp/finalize-validation.log
+          npm ci >> /tmp/finalize-validation.log 2>&1
+          ci_status=$?
+          npm test >> /tmp/finalize-validation.log 2>&1
+          test_status=$?
+          npm run lint >> /tmp/finalize-validation.log 2>&1
+          lint_status=$?
+          npm run build:native >> /tmp/finalize-validation.log 2>&1
+          build_status=$?
+          printf '\nSTATUSES ci=%s test=%s lint=%s build=%s\n' "$ci_status" "$test_status" "$lint_status" "$build_status" >> /tmp/finalize-validation.log
+          if [ "$ci_status" -eq 0 ] && [ "$test_status" -eq 0 ] && [ "$lint_status" -eq 0 ] && [ "$build_status" -eq 0 ]; then
+            echo 'ok=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ok=false' >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+      - name: Commit successful corrections
+        if: steps.validate.outputs.ok == 'true'
+        run: |
+          rm -f TEST_FAILURE.log FINALIZE_FAILURE.log
           rm -f .github/workflows/finalize-deep-audit-fixes.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git commit -m 'Finalize deep audit fixes'
           git push
+      - name: Record validation failure
+        if: steps.validate.outputs.ok != 'true'
+        run: |
+          git reset --hard HEAD
+          cp /tmp/finalize-validation.log FINALIZE_FAILURE.log
+          rm -f .github/workflows/finalize-deep-audit-fixes.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Record final deep-audit validation failure'
+          git push
+          exit 1
