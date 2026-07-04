@@ -178,6 +178,6 @@ export class SavedTripRepository {
 }
 
 export function duplicateSavedTrip(trip: SavedTrip, now = new Date().toISOString()) {
-  const suffix: Record<Language, string> = { en: 'copy', ar: 'نسخة', id: 'salinan', ms: 'salinan', tr: 'kopya' };
+  const suffix: Record<Language, string> = { en: 'copy', ar: 'نسخة', id: 'salinan', ms: 'salinan', tr: 'kopya', fr: 'copie' };
   return { ...cloneJson(trip), id: createSavedTripId(), name: sanitizeTripName(`${trip.name} ${suffix[trip.language]}`), travelDetails: duplicateTravelDetails(validateTravelDetailsSnapshot(trip.travelDetails), now), createdAt: now, updatedAt: now, savedAt: now };
 }
