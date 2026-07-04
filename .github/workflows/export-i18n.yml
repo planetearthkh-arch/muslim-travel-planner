@@ -1,0 +1,18 @@
+name: Export I18n
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: github.head_ref == 'add-french-language'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: i18n-source
+          path: src/i18n.ts
