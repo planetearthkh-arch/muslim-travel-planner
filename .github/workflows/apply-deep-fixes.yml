@@ -3,6 +3,8 @@ name: Apply deep audit fixes
 on:
   push:
     branches: [codex/fix-deep-audit-issues]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
