@@ -7,7 +7,8 @@ import {
   PrayerTimes,
 } from 'adhan';
 import type { CityData, PrayerMethod, PrayerName } from './models.js';
-import type { Language } from './i18n.js';
+import type { Language } from './app-language.js';
+import { AndroidAthan } from './android-athan.js';
 
 export interface PrayerAlarm {
   id: number;
@@ -175,6 +176,41 @@ async function cancelNativePrayerNotifications() {
 }
 
 export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Language = 'en') {
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    const permissions = await LocalNotifications.requestPermissions();
+    if (permissions.display !== 'granted') {
+      return {
+        mode: 'native' as const,
+        scheduled: 0,
+        permissions: { exactAlarmAllowed: false, notificationsAllowed: false },
+      };
+    }
+    await AndroidAthan.prepare({ audioUrl: ATHAN_AUDIO_URL });
+    const copy = copyFor(language);
+    const now = Date.now();
+    const payload = alarms
+      .filter((alarm) => alarm.timestamp > now + 1000)
+      .slice(0, 60)
+      .map((alarm) => ({
+        id: nativeNotificationId(alarm),
+        timestamp: alarm.timestamp,
+        prayer: `${copy.prayer[alarm.prayer]} ${copy.title}`,
+        city: `${alarm.city} · ${alarm.formattedTime}`,
+      }));
+    const result = payload.length ? await AndroidAthan.schedule({ alarms: payload }) : { scheduled: 0 };
+    let exactAlarmAllowed = false;
+    try {
+      exactAlarmAllowed = (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
+    } catch {
+      exactAlarmAllowed = false;
+    }
+    return {
+      mode: 'native' as const,
+      scheduled: result.scheduled,
+      permissions: { exactAlarmAllowed, notificationsAllowed: true },
+    };
+  }
+
   if (Capacitor.isNativePlatform()) {
     const permissions = await LocalNotifications.requestPermissions();
     if (permissions.display !== 'granted') {
@@ -185,7 +221,7 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
       };
     }
     await cancelNativePrayerNotifications();
-    const exactAlarmAllowed = Capacitor.getPlatform() !== 'android' || (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
+    const exactAlarmAllowed = true;
     const now = Date.now();
     const copy = copyFor(language);
     const notifications = alarms
@@ -224,14 +260,23 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
 export async function disableAthanAlarms() {
   browserTimers.forEach((timer) => window.clearTimeout(timer));
   browserTimers = [];
-  if (Capacitor.isNativePlatform()) await cancelNativePrayerNotifications();
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    await AndroidAthan.cancelAll();
+  } else if (Capacitor.isNativePlatform()) {
+    await cancelNativePrayerNotifications();
+  }
 }
 
 export async function playTestAthan(language: Language = 'en') {
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    await AndroidAthan.prepare({ audioUrl: ATHAN_AUDIO_URL });
+    await AndroidAthan.test();
+    return;
+  }
   if (Capacitor.isNativePlatform()) {
     const permissions = await LocalNotifications.requestPermissions();
     if (permissions.display !== 'granted') return;
-    const exactAlarmAllowed = Capacitor.getPlatform() !== 'android' || (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
+    const exactAlarmAllowed = true;
     const copy = copyFor(language);
     await LocalNotifications.schedule({
       notifications: [{
@@ -254,7 +299,11 @@ export async function playTestAthan(language: Language = 'en') {
 export async function stopAthan() {
   browserAudio?.pause();
   browserAudio = undefined;
-  if (Capacitor.isNativePlatform()) await LocalNotifications.cancel({ notifications: [{ id: NATIVE_TEST_NOTIFICATION_ID }] });
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    await AndroidAthan.stop();
+  } else if (Capacitor.isNativePlatform()) {
+    await LocalNotifications.cancel({ notifications: [{ id: NATIVE_TEST_NOTIFICATION_ID }] });
+  }
 }
 
 export const isNativeAthanAvailable = () => Capacitor.isNativePlatform();

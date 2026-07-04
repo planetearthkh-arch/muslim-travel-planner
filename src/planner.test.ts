@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cities } from './data.js';
 import { labels, languageDirection, languages, nextLanguage, prayerLabels, regionLabels } from './i18n.js';
+import { localeForLanguage } from './app-language.js';
 import { athanLabels } from './athan-i18n.js';
 import { generateItinerary, itineraryDates } from './planner.js';
 import { calculateQiblaBearing } from './qibla.js';
@@ -632,7 +633,8 @@ test('Malay language support is complete and uses Malaysian terminology', async 
   assert.deepEqual(regionLabels.ms.Asia, 'Asia');
   assert.equal(athanLabels.ms.title.toLowerCase().includes('waktu solat'), true);
   assert.equal(athanLabels.ms.enable.includes('pemberitahuan solat'), true);
-  assert.equal(main.includes("language === 'ms' ? 'ms-MY'"), true);
+  assert.equal(main.includes('localeForLanguage'), true);
+  assert.equal(localeForLanguage('ms'), 'ms-MY');
 });
 
 test('Turkish language support is complete and uses Turkish terminology', async () => {
@@ -659,7 +661,8 @@ test('Turkish language support is complete and uses Turkish terminology', async 
   assert.equal(prayerLabels.tr.Fajr, 'Sabah');
   assert.equal(prayerLabels.tr.Dhuhr, 'Öğle');
   assert.equal(prayerLabels.tr.Isha, 'Yatsı');
-  assert.equal(main.includes("language === 'tr' ? 'tr-TR'"), true);
+  assert.equal(main.includes('localeForLanguage'), true);
+  assert.equal(localeForLanguage('tr'), 'tr-TR');
 });
 
 test('Malay prayer labels use common Malaysian forms', () => {
@@ -2539,7 +2542,10 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
   const privacy = await repoFile('ios/App/App/PrivacyInfo.xcprivacy');
   assert.equal(pbx.includes('PRODUCT_BUNDLE_IDENTIFIER = com.planetearthkids.muslimtravelplanner;'), true);
   assert.equal(pbx.includes('MARKETING_VERSION = 1.0.0;'), true);
-  assert.equal(pbx.includes('CURRENT_PROJECT_VERSION = 2;'), true);
+  const buildVersions = [...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map((match) => Number(match[1]));
+  assert.equal(buildVersions.length >= 2, true);
+  assert.equal(new Set(buildVersions).size, 1);
+  assert.equal(buildVersions.every((version) => version >= 100), true);
   assert.equal(pbx.includes('TARGETED_DEVICE_FAMILY = 1;'), true);
   assert.equal(pbx.includes('PRODUCT_NAME = SafarOne;'), true);
   assert.equal(pbx.includes('CODE_SIGN_STYLE = Automatic;'), true);
@@ -2565,6 +2571,7 @@ test('iOS localized location permission strings exist in all launch languages', 
     id: 'SafarOne menggunakan lokasi Anda hanya saat Anda meminta arah Kiblat atau tempat perjalanan terdekat.',
     ms: 'SafarOne menggunakan lokasi anda hanya apabila anda meminta arah kiblat atau tempat perjalanan berdekatan.',
     tr: 'SafarOne, Kıble yönünü veya yakındaki seyahat yerlerini istediğinizde konumunuzu yalnızca o anda kullanır.',
+    ur: 'SafarOne آپ کا مقام صرف اس وقت استعمال کرتا ہے جب آپ قبلہ کی سمت یا قریبی سفری مقامات طلب کرتے ہیں۔',
   };
   for (const [language, text] of Object.entries(expected)) {
     const strings = await repoFile(`ios/App/App/${language}.lproj/InfoPlist.strings`);

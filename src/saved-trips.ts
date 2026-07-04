@@ -1,6 +1,6 @@
 import { calculateQiblaBearing } from './qibla.js';
-import type { CityData, ItineraryItem, PlannerPreferences } from './models.js';
-import type { Language } from './i18n.js';
+import type { CityData, ItineraryItem, Place, PlannerPreferences, VerificationStatus } from './models.js';
+import type { Language } from './app-language.js';
 import { duplicateTravelDetails, emptyTravelDetails, validateTravelDetailsSnapshot, type TravelDetailsSnapshot } from './travel-details.js';
 
 export const SAVED_TRIP_SCHEMA_VERSION = 1;
@@ -47,6 +47,68 @@ type StoredCollection = {
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 const isString = (value: unknown): value is string => typeof value === 'string';
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+const verificationStatuses = new Set<VerificationStatus>(['Sample', 'Unverified', 'Verified']);
+const prayerMethods = new Set(['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet']);
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const timePattern = /^\d{2}:\d{2}$/;
+const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString);
+
+function isVerificationStatus(value: unknown): value is VerificationStatus {
+  return verificationStatuses.has(value as VerificationStatus);
+}
+
+function isPlace(value: unknown): value is Place {
+  if (!isRecord(value)) return false;
+  if (!isString(value.id) || !isString(value.name) || !isString(value.area) || !isString(value.description)) return false;
+  if (!['attraction', 'mosque', 'prayer-space', 'restaurant'].includes(String(value.type))) return false;
+  if (!isFiniteNumber(value.estimatedMinutes) || value.estimatedMinutes < 0 || !isStringArray(value.interests)) return false;
+  if (typeof value.familyFriendly !== 'boolean' || typeof value.indoor !== 'boolean' || !isVerificationStatus(value.verification)) return false;
+  if (value.budgetLevel !== undefined && !['low', 'mid', 'high'].includes(String(value.budgetLevel))) return false;
+  if (value.facility !== undefined) {
+    if (!isRecord(value.facility)) return false;
+    if (!isVerificationStatus(value.facility.womenPrayerSpace) || !isVerificationStatus(value.facility.wudu) || !isVerificationStatus(value.facility.accessibility) || !isString(value.facility.notes)) return false;
+  }
+  return [value.halalSupport, value.evidence].every((entry) => entry === undefined || isString(entry));
+}
+
+function isPlannerPreferences(value: unknown): value is PlannerPreferences {
+  if (!isRecord(value)) return false;
+  return isString(value.city)
+    && isString(value.startDate) && datePattern.test(value.startDate)
+    && isString(value.endDate) && datePattern.test(value.endDate)
+    && isString(value.startHour) && timePattern.test(value.startHour)
+    && isString(value.endHour) && timePattern.test(value.endHour)
+    && isStringArray(value.interests)
+    && isFiniteNumber(value.groupSize) && value.groupSize >= 1
+    && typeof value.children === 'boolean'
+    && ['low', 'medium', 'high'].includes(String(value.walkingAbility))
+    && ['walking', 'public transport', 'taxi'].includes(String(value.transportation))
+    && ['low', 'mid', 'high'].includes(String(value.budget))
+    && prayerMethods.has(String(value.prayerMethod))
+    && ['mosque', 'quiet prayer space', 'flexible'].includes(String(value.prayerPreference))
+    && typeof value.womenPrayerRequired === 'boolean'
+    && typeof value.wuduRequired === 'boolean'
+    && isString(value.accessibilityNeeds)
+    && ['strictly labelled', 'vegetarian/seafood options', 'flexible'].includes(String(value.halalPreference));
+}
+
+function isItineraryItem(value: unknown): value is ItineraryItem {
+  if (!isRecord(value)) return false;
+  return isString(value.id)
+    && isString(value.date) && datePattern.test(value.date)
+    && isString(value.time) && /^(?:\d{1,2}:\d{2}|\d{1,2}:\d{2}\s*(?:AM|PM))$/i.test(value.time)
+    && isString(value.title)
+    && ['travel', 'attraction', 'prayer', 'meal', 'free-time'].includes(String(value.kind))
+    && isFiniteNumber(value.durationMinutes) && value.durationMinutes >= 0
+    && isString(value.details)
+    && isVerificationStatus(value.status)
+    && (value.place === undefined || isPlace(value.place));
+}
+
+function isLocalCurrency(value: unknown) {
+  return isRecord(value) && isString(value.code) && isString(value.symbol) && isString(value.name);
+}
 
 export function sanitizeTripName(value: string) {
   return value
@@ -125,13 +187,24 @@ export function validateSavedTrip(value: unknown): SavedTrip | null {
   if (!isRecord(value) || value.schemaVersion !== SAVED_TRIP_SCHEMA_VERSION) return null;
   if (!isString(value.id) || !isString(value.name) || !isString(value.createdAt) || !isString(value.updatedAt) || !isString(value.savedAt)) return null;
   const language = ['en', 'ar', 'ur', 'id', 'ms', 'tr', 'fr'].includes(String(value.language)) ? value.language as Language : 'en';
-  if (!isRecord(value.preferences) || !isRecord(value.destination) || !Array.isArray(value.itinerary) || !isRecord(value.dateRange) || !isRecord(value.essentials)) return null;
+  if (!isPlannerPreferences(value.preferences) || !isRecord(value.destination) || !Array.isArray(value.itinerary) || !value.itinerary.every(isItineraryItem) || !isRecord(value.dateRange) || !isRecord(value.essentials)) return null;
   const destination = value.destination;
   if (!isString(destination.city) || !isString(destination.country) || !isString(destination.timezone) || !isRecord(destination.coordinates)) return null;
-  if (!isFiniteNumber(destination.coordinates.lat) || !isFiniteNumber(destination.coordinates.lng)) return null;
-  if (!isString(value.dateRange.startDate) || !isString(value.dateRange.endDate)) return null;
-  if (!Array.isArray(value.essentials.localCurrencies) || !isFiniteNumber(value.essentials.qiblaBearingFromCityCenter)) return null;
-  return { ...(value as SavedTrip), language, travelDetails: validateTravelDetailsSnapshot(value.travelDetails) };
+  if (!isFiniteNumber(destination.coordinates.lat) || destination.coordinates.lat < -90 || destination.coordinates.lat > 90 || !isFiniteNumber(destination.coordinates.lng) || destination.coordinates.lng < -180 || destination.coordinates.lng > 180) return null;
+  if (!isString(value.dateRange.startDate) || !datePattern.test(value.dateRange.startDate) || !isString(value.dateRange.endDate) || !datePattern.test(value.dateRange.endDate)) return null;
+  if (value.dateRange.startDate !== value.preferences.startDate || value.dateRange.endDate !== value.preferences.endDate) return null;
+  if (!Array.isArray(value.essentials.localCurrencies) || !value.essentials.localCurrencies.every(isLocalCurrency) || !isFiniteNumber(value.essentials.qiblaBearingFromCityCenter)) return null;
+  if (!isRecord(value.essentials.preferenceSummary)) return null;
+  const summary = value.essentials.preferenceSummary;
+  if (!isFiniteNumber(summary.groupSize) || !['low', 'mid', 'high'].includes(String(summary.budget)) || !['walking', 'public transport', 'taxi'].includes(String(summary.transportation)) || !prayerMethods.has(String(summary.prayerMethod)) || !['strictly labelled', 'vegetarian/seafood options', 'flexible'].includes(String(summary.halalPreference))) return null;
+  return {
+    ...(value as SavedTrip),
+    name: sanitizeTripName(value.name) || 'Saved trip',
+    language,
+    preferences: value.preferences,
+    itinerary: value.itinerary,
+    travelDetails: validateTravelDetailsSnapshot(value.travelDetails),
+  };
 }
 
 export function parseSavedTrips(raw: string | null) {

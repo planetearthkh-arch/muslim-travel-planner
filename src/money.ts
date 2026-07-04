@@ -1,5 +1,5 @@
 import type { CityData } from './models.js';
-import type { Language } from './i18n.js';
+import { localeForLanguage, type Language } from './app-language.js';
 
 export interface CurrencyInfo {
   code: string;
@@ -64,13 +64,12 @@ const names: Record<string, { en: string; ar: string; id: string; ms: string; tr
   UZS: { en: 'Uzbekistani Som', ar: 'سوم أوزبكي', id: 'Som Uzbekistan', ms: 'Som Uzbekistan', tr: 'Özbekistan Somu', symbol: "so'm", flag: '🇺🇿', countries: ['Uzbekistan'] },
 };
 
-const localeFor = (language: Language) => ({ en: 'en-US', ar: 'ar', id: 'id-ID', ms: 'ms-MY', tr: 'tr-TR', fr: 'fr-FR' })[language];
-
 export const makeCurrencyInfo = (code: string, englishName?: string): CurrencyInfo => {
   const upper = code.toUpperCase();
   const known = names[upper];
   const en = known?.en ?? englishName ?? upper;
   const ar = known?.ar ?? en;
+  const ur = known?.ar ?? en;
   const id = known?.id ?? en;
   const ms = known?.ms ?? en;
   const tr = known?.tr ?? en;
@@ -78,11 +77,11 @@ export const makeCurrencyInfo = (code: string, englishName?: string): CurrencyIn
   const countries = known?.countries ?? [];
   return {
     code: upper,
-    name: { en, ar, id, ms, tr, fr },
+    name: { en, ar, ur, id, ms, tr, fr },
     symbol: known?.symbol ?? upper,
     flag: known?.flag ?? '¤',
     countries,
-    search: [upper, en, ar, id, ms, tr, fr, ...countries, ...(known?.aliases ?? [])].map((value) => value.toLowerCase()),
+    search: [upper, en, ar, ur, id, ms, tr, fr, ...countries, ...(known?.aliases ?? [])].map((value) => value.toLowerCase()),
   };
 };
 
@@ -148,7 +147,7 @@ export function parseAmountInput(raw: string, language?: Language): { value: num
       if (fraction.length === 3 && integer !== '0') {
         if (integer.length > 3) return { value: null, error: 'invalid' };
         if (language) {
-          const parts = new Intl.NumberFormat(localeFor(language)).formatToParts(12345.6);
+          const parts = new Intl.NumberFormat(localeForLanguage(language)).formatToParts(12345.6);
           const normalizeSeparator = (value: string) => value.replace(/٬/g, ',').replace(/٫/g, '.');
           const localeDecimal = normalizeSeparator(parts.find((part) => part.type === 'decimal')?.value || '.');
           const localeGroup = normalizeSeparator(parts.find((part) => part.type === 'group')?.value || ',');
@@ -180,14 +179,14 @@ export const validateRateResponse = (payload: unknown, base: string, quote: stri
   return { base, quote, rate, date: body.date, refreshedAt, cached: false };
 };
 
-export const formatCurrencyAmount = (value: number, code: string, language: Language) => new Intl.NumberFormat(localeFor(language), {
+export const formatCurrencyAmount = (value: number, code: string, language: Language) => new Intl.NumberFormat(localeForLanguage(language), {
   style: 'currency',
   currency: code,
   currencyDisplay: 'narrowSymbol',
   maximumSignificantDigits: Math.abs(value) > 0 && Math.abs(value) < 0.01 ? 6 : undefined,
 }).format(value);
 
-export const formatPlainNumber = (value: number, language: Language) => new Intl.NumberFormat(localeFor(language), { maximumSignificantDigits: 8 }).format(value);
+export const formatPlainNumber = (value: number, language: Language) => new Intl.NumberFormat(localeForLanguage(language), { maximumSignificantDigits: 8 }).format(value);
 
 export const searchCurrencies = (currencies: CurrencyInfo[], query: string) => {
   const normalized = query.trim().toLowerCase();

@@ -159,12 +159,14 @@ import {
   labels,
   languageDirection,
   languages,
+  localeForLanguage,
   optionLabels,
+  parseLanguage,
   prayerLabels,
   regionLabels,
   type Language,
-} from './i18n.js';
-import { athanLabels } from './athan-i18n.js';
+} from './app-language.js';
+import { athanLabels } from './app-athan-i18n.js';
 import {
   calculatePrayerAlarms,
   calculatePrayerDisplay,
@@ -184,10 +186,12 @@ import { copyText, exportTripCalendarFile, shareText } from './native-share.js';
 import { bindNativeExternalLinks, staticLegalPageUrl } from './native-links.js';
 import { deleteTravelDetail, emptyTravelDetails, sortTravelDetails, upsertTravelDetail, validateTravelDetailInput, validateTravelDetailsSnapshot, type TravelDetailEntry, type TravelDetailInput, type TravelDetailsSnapshot, type TravelDetailType } from './travel-details.js';
 import { dateTimeForZone } from './time-zones.js';
+import { getSafeStorage } from './safe-storage.js';
 
 (window as unknown as { maplibregl?: typeof maplibregl }).maplibregl = maplibregl;
 
-let lang: Language = 'en';
+const appStorage = getSafeStorage();
+let lang: Language = parseLanguage(appStorage.getItem('mtp-language')) ?? 'en';
 type View = 'planner' | 'saved-trips' | 'qibla' | 'flight-mode' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'taxi-services' | 'weather' | 'attractions';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
@@ -213,7 +217,7 @@ const todayIso = () => {
 
 let replan = 0;
 let selectedRegion: Region | '' = '';
-let athanEnabled = localStorage.getItem('athanEnabled') === 'true';
+let athanEnabled = appStorage.getItem('athanEnabled') === 'true';
 let athanStatus = '';
 let prefs: PlannerPreferences = {
   city: 'London',
@@ -252,8 +256,8 @@ let connectionNoticeTimer: number | undefined;
 let connectionWasOffline = connectionState === 'offline';
 let plannerValidation = '';
 let plannerAnnouncement = '';
-const savedTripRepository = new SavedTripRepository(localStorage);
-const flightPlanRepository = new FlightPlanRepository(localStorage);
+const savedTripRepository = new SavedTripRepository(appStorage);
+const flightPlanRepository = new FlightPlanRepository(appStorage);
 const loadedFlightPlan = flightPlanRepository.read();
 let preparedFlightPlan: PreparedFlightPlan | null = loadedFlightPlan.plan;
 let flightPlanCorrupted = loadedFlightPlan.corrupted;
@@ -270,7 +274,7 @@ let flightPreviousGps: FlightPosition | undefined;
 let currencies: CurrencyInfo[] = fallbackCurrencies;
 let currencySearch = '';
 let amountInput = '100';
-let fromCurrency = localStorage.getItem('mtp-home-currency') ?? 'USD';
+let fromCurrency = appStorage.getItem('mtp-home-currency') ?? 'USD';
 let toCurrency = 'GBP';
 let rate: PairRate | null = null;
 let moneyStatus: 'idle' | 'loadingCurrencies' | 'loadingRate' | 'updated' | 'offline' | 'cached' | 'serviceUnavailable' | 'invalidAmount' | 'noCachedData' | 'copied' = 'idle';
@@ -284,7 +288,6 @@ const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America
 const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const;
 const prayerOrder: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 
-const localeForLanguage = (language: Language) => language === 'ar' ? 'ar' : language === 'id' ? 'id-ID' : language === 'ms' ? 'ms-MY' : language === 'tr' ? 'tr-TR' : 'en-US';
 
 type MapLibreStyleLayer = { id: string; type?: string };
 type MapLibreMap = {
@@ -1359,9 +1362,9 @@ let weatherHours = 24;
 let weatherSelectedDay = '';
 let weatherRequestSequence = 0;
 let weatherUnits: WeatherUnits = {
-  temperature: (localStorage.getItem('mtp-weather-temp') as WeatherUnits['temperature']) || 'celsius',
-  wind: (localStorage.getItem('mtp-weather-wind') as WeatherUnits['wind']) || 'kmh',
-  precipitation: (localStorage.getItem('mtp-weather-precip') as WeatherUnits['precipitation']) || 'mm',
+  temperature: (appStorage.getItem('mtp-weather-temp') as WeatherUnits['temperature']) || 'celsius',
+  wind: (appStorage.getItem('mtp-weather-wind') as WeatherUnits['wind']) || 'kmh',
+  precipitation: (appStorage.getItem('mtp-weather-precip') as WeatherUnits['precipitation']) || 'mm',
 };
 let attractionStatus: AttractionStatus = 'idle';
 let attractionView: AttractionView = 'photos';
@@ -1463,7 +1466,7 @@ function browserDirectionsUrl(place: PrayerPlace) {
   return `https://www.openstreetmap.org/directions?to=${place.latitude},${place.longitude}#map=17/${place.latitude}/${place.longitude}`;
 }
 
-function overpassUrl() { return localStorage.getItem('mtp-overpass-endpoint') ?? 'https://overpass-api.de/api/interpreter'; }
+function overpassUrl() { return appStorage.getItem('mtp-overpass-endpoint') ?? 'https://overpass-api.de/api/interpreter'; }
 
 async function searchPrayerPlaces(center: PrayerCenter, sequence = ++prayerSearchSequence) {
   prayerAbortController = nextAbortController(prayerAbortController);
@@ -3524,9 +3527,9 @@ function bindWeatherPage() {
   document.querySelector<HTMLButtonElement>('#toggle-weather-hours')?.addEventListener('click', () => { weatherHours = weatherHours === 24 ? 48 : 24; weatherSelectedDay = ''; weatherPage(); });
   document.querySelectorAll<HTMLButtonElement>('[data-weather-day]').forEach((button) => button.addEventListener('click', () => { weatherSelectedDay = button.dataset.weatherDay ?? ''; weatherHours = 24; weatherPage(); }));
   document.querySelectorAll<HTMLButtonElement>('[data-weather-city]').forEach((button) => button.addEventListener('click', () => { const city = cities.find((candidate) => candidate.city === button.dataset.weatherCity); if (city) void loadWeather(destinationWeatherLocation(city), true); }));
-  document.querySelector<HTMLSelectElement>('#weather-temp-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, temperature: (event.target as HTMLSelectElement).value as WeatherUnits['temperature'] }; localStorage.setItem('mtp-weather-temp', weatherUnits.temperature); if (weatherLocation) void loadWeather(weatherLocation, true); });
-  document.querySelector<HTMLSelectElement>('#weather-wind-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, wind: (event.target as HTMLSelectElement).value as WeatherUnits['wind'] }; localStorage.setItem('mtp-weather-wind', weatherUnits.wind); if (weatherLocation) void loadWeather(weatherLocation, true); });
-  document.querySelector<HTMLSelectElement>('#weather-precip-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, precipitation: (event.target as HTMLSelectElement).value as WeatherUnits['precipitation'] }; localStorage.setItem('mtp-weather-precip', weatherUnits.precipitation); if (weatherLocation) void loadWeather(weatherLocation, true); });
+  document.querySelector<HTMLSelectElement>('#weather-temp-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, temperature: (event.target as HTMLSelectElement).value as WeatherUnits['temperature'] }; appStorage.setItem('mtp-weather-temp', weatherUnits.temperature); if (weatherLocation) void loadWeather(weatherLocation, true); });
+  document.querySelector<HTMLSelectElement>('#weather-wind-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, wind: (event.target as HTMLSelectElement).value as WeatherUnits['wind'] }; appStorage.setItem('mtp-weather-wind', weatherUnits.wind); if (weatherLocation) void loadWeather(weatherLocation, true); });
+  document.querySelector<HTMLSelectElement>('#weather-precip-unit')?.addEventListener('change', (event) => { weatherUnits = { ...weatherUnits, precipitation: (event.target as HTMLSelectElement).value as WeatherUnits['precipitation'] }; appStorage.setItem('mtp-weather-precip', weatherUnits.precipitation); if (weatherLocation) void loadWeather(weatherLocation, true); });
 }
 
 function attractionCategoryLabel(category: AttractionCategory, copy: typeof labels[Language]) {
@@ -3574,8 +3577,8 @@ function overpassPostOptions(query: string): RequestInit {
 }
 
 function overpassEndpoints() {
-  const configured = localStorage.getItem('mtp-overpass-endpoint');
-  const fallback = localStorage.getItem('mtp-overpass-fallback-endpoint') ?? 'https://overpass.kumi.systems/api/interpreter';
+  const configured = appStorage.getItem('mtp-overpass-endpoint');
+  const fallback = appStorage.getItem('mtp-overpass-fallback-endpoint') ?? 'https://overpass.kumi.systems/api/interpreter';
   return availableServiceEndpoints([configured || overpassUrl(), fallback]);
 }
 
@@ -4387,7 +4390,7 @@ function snapshotFromSavedTrip(trip: SavedTrip): TripExportSnapshot {
     preferences: trip.preferences,
     itinerary: trip.itinerary,
     travelDetails: trip.travelDetails,
-    language: lang,
+    language: trip.language,
   };
 }
 
@@ -4813,7 +4816,7 @@ function bindMoneyPage() {
   });
   document.querySelector<HTMLSelectElement>('#from-currency')?.addEventListener('change', (event) => {
     fromCurrency = (event.target as HTMLSelectElement).value;
-    localStorage.setItem('mtp-home-currency', fromCurrency);
+    appStorage.setItem('mtp-home-currency', fromCurrency);
     scheduleRateLoad();
   });
   document.querySelector<HTMLSelectElement>('#to-currency')?.addEventListener('change', (event) => {
@@ -4822,7 +4825,7 @@ function bindMoneyPage() {
   });
   document.querySelector<HTMLButtonElement>('#swap-currencies')?.addEventListener('click', () => {
     [fromCurrency, toCurrency] = [toCurrency, fromCurrency];
-    localStorage.setItem('mtp-home-currency', fromCurrency);
+    appStorage.setItem('mtp-home-currency', fromCurrency);
     void loadPairRate();
   });
   document.querySelector<HTMLButtonElement>('#clear-money')?.addEventListener('click', () => {
@@ -5043,8 +5046,15 @@ function render() {
 
 function bind() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
-    lang = (event.target as HTMLSelectElement).value as Language;
+    const nextLanguage = parseLanguage((event.target as HTMLSelectElement).value);
+    if (!nextLanguage || nextLanguage === lang) return;
+    lang = nextLanguage;
+    appStorage.setItem('mtp-language', lang);
     athanStatus = '';
+    if (generatedPrefs) {
+      generatedItems = generateItinerary(generatedPrefs, replan, lang);
+      if (openedSavedTripId) savedTripStatus = 'unsaved';
+    }
     render();
   });
   document.querySelector<HTMLButtonElement>('#open-saved-trips')?.addEventListener('click', () => {
@@ -5142,8 +5152,9 @@ function bind() {
     athanStatus = copy.preparing;
     render();
     try {
-      const city = selectedCity();
-      const alarms = calculatePrayerAlarms(city, prefs.prayerMethod, prefs.startDate, localeForLanguage(lang), 7);
+      const alarmPrefs = generatedPrefs ?? prefs;
+      const city = cityForPreferences(alarmPrefs) ?? selectedCity();
+      const alarms = calculatePrayerAlarms(city, alarmPrefs.prayerMethod, alarmPrefs.startDate, localeForLanguage(lang), 7);
       if (!alarms.length) {
         athanStatus = copy.noFuture;
         render();
@@ -5151,7 +5162,7 @@ function bind() {
       }
       const result = await enableAthanAlarms(alarms, lang);
       athanEnabled = result.scheduled > 0 && result.permissions.notificationsAllowed;
-      localStorage.setItem('athanEnabled', String(athanEnabled));
+      appStorage.setItem('athanEnabled', String(athanEnabled));
       athanStatus = athanEnabled ? `${copy.scheduled}: ${result.scheduled}` : copy.failed;
     } catch (error) {
       console.error(error);
@@ -5162,7 +5173,7 @@ function bind() {
   document.querySelector<HTMLButtonElement>('#disable-athan')?.addEventListener('click', async () => {
     await disableAthanAlarms();
     athanEnabled = false;
-    localStorage.setItem('athanEnabled', 'false');
+    appStorage.setItem('athanEnabled', 'false');
     athanStatus = athanLabels[lang].disabled;
     render();
   });

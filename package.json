@@ -18,7 +18,9 @@
     "test:browser-smoke": "node scripts/browser-smoke.mjs",
     "android:setup": "npm run build:native && node scripts/setup-android.mjs",
     "android:sync": "npm run build:native && npx cap sync android",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "ios:version-verify": "node scripts/verify-ios-version.mjs",
+    "preios:sync": "npm run ios:version-verify"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
