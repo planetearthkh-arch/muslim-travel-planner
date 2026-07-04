@@ -22,5 +22,5 @@ test('Qibla enhancement uses clear copy and keeps fixed bearing before compass p
   assert.equal(source.includes("target.closest('#request-motion')"), true);
   assert.equal(source.includes("observe(root, { childList: true })"), true);
   assert.equal(source.includes('subtree: true'), false);
-  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v13'"), true);
+  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v14'"), true);
 });

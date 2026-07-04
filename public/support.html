@@ -88,6 +88,16 @@
         document.documentElement.dir = chosen === 'ar' || chosen === 'ur' ? 'rtl' : 'ltr';
         select.value = chosen;
       }
+      function rewriteNativeLinks() {
+        if (/^https?:$/.test(location.protocol)) return;
+        document.querySelectorAll('a[href^="/muslim-travel-planner/"]').forEach((anchor) => {
+          const href = anchor.getAttribute('href') || '';
+          const relative = href.slice('/muslim-travel-planner/'.length);
+          anchor.setAttribute('href', relative ? './' + relative : './index.html');
+          anchor.removeAttribute('target');
+        });
+      }
+      rewriteNativeLinks();
       select.addEventListener('change', () => setLanguage(select.value));
       setLanguage(requested);
     </script>

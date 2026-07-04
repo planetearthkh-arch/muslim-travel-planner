@@ -5,7 +5,7 @@ SafarOne is a Muslim travel planner for prayer-aware itineraries, saved trips, t
 ## Scope
 
 - Mobile-first TypeScript web app with no framework lock-in and no paid services.
-- English, Arabic, Bahasa Indonesia, and Bahasa Melayu interface support with correct RTL layout for Arabic.
+- English, Arabic, Bahasa Indonesia, Bahasa Melayu, Turkish, French, and Urdu interface support, with right-to-left layout for Arabic and Urdu.
 - Includes mock data for 30 supported cities across Europe, the Middle East, Asia, North America, Africa, and Oceania.
 - Uses open-data and public non-commercial APIs where configured; no API keys are committed.
 - Restaurants are not described as certified halal unless source information supports that wording.
@@ -42,4 +42,7 @@ npm run typecheck
 npm run test
 npm run lint
 npm run build
+npm run test:browser-smoke
 ```
+
+CI also compiles Android debug and release packages and verifies both an iOS simulator build and an unsigned device archive.

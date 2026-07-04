@@ -94,7 +94,7 @@ test('native and UI safeguards remain wired', async () => {
   assert.equal(main.includes('language: trip.language'), true);
   assert.equal(athan.includes('AndroidAthan.schedule'), true);
   assert.match(manifest, /android:allowBackup="false"/);
-  assert.match(project, /CURRENT_PROJECT_VERSION = 100;/);
+  assert.match(project, /CURRENT_PROJECT_VERSION = 102;/);
   assert.match(project, /ur InfoPlist.strings/);
   assert.equal(index.includes('urdu-runtime.ts'), false);
 });

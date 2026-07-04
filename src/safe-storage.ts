@@ -10,16 +10,26 @@ class MemoryStorage implements Storage {
 }
 
 let fallbackStorage: Storage | undefined;
+let persistentStorageAvailable = false;
 
 export function getSafeStorage(): Storage {
-  if (typeof window === 'undefined') return fallbackStorage ??= new MemoryStorage();
+  if (typeof window === 'undefined') {
+    persistentStorageAvailable = false;
+    return fallbackStorage ??= new MemoryStorage();
+  }
   try {
     const storage = window.localStorage;
     const probe = '__safarone_storage_probe__';
     storage.setItem(probe, '1');
     storage.removeItem(probe);
+    persistentStorageAvailable = true;
     return storage;
   } catch {
+    persistentStorageAvailable = false;
     return fallbackStorage ??= new MemoryStorage();
   }
+}
+
+export function isPersistentStorageAvailable() {
+  return persistentStorageAvailable;
 }

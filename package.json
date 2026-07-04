@@ -12,6 +12,7 @@
     "ios:open": "npx cap open ios",
     "ios:run": "npm run ios:sync && npx cap run ios",
     "ios:verify": "npm run ios:sync && xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+    "ios:archive-verify": "xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath build/SafarOne.xcarchive CODE_SIGNING_ALLOWED=NO archive",
     "lint": "npm run typecheck && eslint eslint.config.js \"scripts/**/*.mjs\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node scripts/run-tests.mjs",
