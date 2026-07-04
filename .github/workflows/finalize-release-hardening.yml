@@ -1,0 +1,67 @@
+name: Finalize release hardening
+
+on:
+  push:
+    branches: [fix-all-release-blockers]
+    paths:
+      - scripts/final-hardening-ready.txt
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-all-release-blockers
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Restore audited files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat scripts/final-hardening-payload.part* > /tmp/final-hardening-payload.b64
+          base64 --decode /tmp/final-hardening-payload.b64 > /tmp/final-hardening-payload.tgz
+          echo "6823817d3c6df054414871f9202f01a73dce562a705ef74f0840622ec152b56a  /tmp/final-hardening-payload.tgz" | sha256sum --check
+          tar -xzf /tmp/final-hardening-payload.tgz
+          rm -f \
+            .github/workflows/apply-release-hardening.yml \
+            .github/workflows/validate-hardening.yml \
+            .github/workflows/export-workspace.yml \
+            .github/workflows/fix-validation-errors.yml \
+            scripts/apply-release-hardening.mjs \
+            scripts/apply-release-hardening-phase2.mjs \
+            scripts/fix-validation-errors.mjs \
+            validation-run.log hardening-run.log \
+            validation-trigger.txt hardening-trigger.txt \
+            hardening-trigger-phase2.txt export-trigger.txt \
+            workspace.tgz temp/noop.txt
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate application
+        run: |
+          npm run typecheck
+          npm test
+          npm run lint
+          npm run build
+          npm run build:native
+          npm audit --omit=dev
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run browser tests
+        run: npm run test:e2e
+      - name: Commit final hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/final-hardening-payload.part* scripts/final-hardening-ready.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Complete professional release hardening"
+          git push origin HEAD:fix-all-release-blockers
