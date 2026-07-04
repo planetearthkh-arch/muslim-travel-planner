@@ -1,0 +1,14 @@
+
+> muslim-travel-planner@0.2.0 test
+> rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node scripts/run-tests.mjs
+
+src/release-audit-fixes.test.ts(14,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
+src/release-audit-fixes.test.ts(16,43): error TS2322: Type 'FlightAirport | undefined' is not assignable to type 'FlightAirport'.
+  Type 'undefined' is not assignable to type 'FlightAirport'.
+src/release-audit-fixes.test.ts(16,54): error TS2322: Type 'FlightAirport | undefined' is not assignable to type 'FlightAirport'.
+  Type 'undefined' is not assignable to type 'FlightAirport'.
+src/release-audit-fixes.test.ts(17,10): error TS2339: Property 'ok' does not exist on type '{ deepEqual(actual: unknown, expected: unknown): void; equal(actual: unknown, expected: unknown): void; match(actual: string, expected: RegExp): void; doesNotMatch(actual: string, expected: RegExp): void; throws(fn: () => void, expected?: RegExp | undefined): void; }'.
+src/release-audit-fixes.test.ts(18,41): error TS2345: Argument of type 'PreparedFlightPlan | null' is not assignable to parameter of type 'PreparedFlightPlan'.
+  Type 'null' is not assignable to type 'PreparedFlightPlan'.
+src/release-audit-fixes.test.ts(18,85): error TS18048: 'departure' is possibly 'undefined'.
+src/release-audit-fixes.test.ts(18,116): error TS18048: 'departure' is possibly 'undefined'.
