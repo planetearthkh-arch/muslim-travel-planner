@@ -5,6 +5,7 @@ import { createSavedTrip, validateSavedTrip } from './saved-trips.js';
 import { getSafeStorage } from './safe-storage.js';
 import { cities } from './data.js';
 
+// Regression coverage for the full deep-audit repair set.
 async function repoFile(relative: string) {
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
   return load('node:fs/promises').then((fs) => fs.readFile(new URL(`../${relative}`, import.meta.url), 'utf8'));
