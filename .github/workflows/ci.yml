@@ -39,7 +39,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
       - run: npm run android:setup
-      - run: ./gradlew assembleDebug --stacktrace
+      - run: ./gradlew assembleDebug assembleRelease --stacktrace
         working-directory: android
 
   ios:
@@ -52,3 +52,4 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run ios:verify
+      - run: npm run ios:archive-verify
