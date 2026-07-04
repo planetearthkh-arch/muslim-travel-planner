@@ -36,19 +36,28 @@ jobs:
       - name: Install dependencies
         if: steps.payload.outputs.ready == 'true'
         run: npm ci
-      - name: Validate application
+      - name: Typecheck
         if: steps.payload.outputs.ready == 'true'
-        run: |
-          npm run typecheck
-          npm test
-          npm run lint
-          npm run build
-          npm run build:native
-          npm audit --omit=dev
+        run: npm run typecheck
+      - name: Unit tests
+        if: steps.payload.outputs.ready == 'true'
+        run: npm test
+      - name: Lint
+        if: steps.payload.outputs.ready == 'true'
+        run: npm run lint
+      - name: Web build
+        if: steps.payload.outputs.ready == 'true'
+        run: npm run build
+      - name: Native build
+        if: steps.payload.outputs.ready == 'true'
+        run: npm run build:native
+      - name: Production dependency audit
+        if: steps.payload.outputs.ready == 'true'
+        run: npm audit --omit=dev
       - name: Install Chromium
         if: steps.payload.outputs.ready == 'true'
         run: npx playwright install --with-deps chromium
-      - name: Run browser tests
+      - name: Browser tests
         if: steps.payload.outputs.ready == 'true'
         run: npm run test:e2e
       - name: Commit final hardening
