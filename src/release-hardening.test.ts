@@ -29,6 +29,10 @@ test('travel detail validation rejects impossible or nonexistent local dates', (
 
   const valid = validateTravelDetailInput({ type: 'reservation', title: 'Tour', startDateTime: '2026-03-29T02:30', timeZone: 'Europe/London' });
   assert.equal(valid.ok, true);
+
+  const reversed = validateTravelDetailInput({ type: 'accommodation', propertyName: 'Hotel', checkInDateTime: '2026-07-04T12:00', checkOutDateTime: '2026-07-04T11:00', timeZone: 'UTC' });
+  assert.equal(reversed.ok, false);
+  if (!reversed.ok) assert.equal(reversed.error, 'range');
 });
 
 test('external map fields are escaped before insertion', async () => {
