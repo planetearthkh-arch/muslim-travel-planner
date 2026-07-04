@@ -1,1 +1,1 @@
-apply audited hardening patch
+apply final validated release fixes
