@@ -1,8 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { get } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const host = '127.0.0.1';
 const port = 4173;
@@ -21,18 +23,29 @@ function commandExists(command) {
   return probe.status === 0;
 }
 
+function requestStatus(url) {
+  return new Promise((resolve, reject) => {
+    const request = get(url, (response) => {
+      response.resume();
+      resolve(response.statusCode ?? 0);
+    });
+    request.setTimeout(2_000, () => request.destroy(new Error('HTTP readiness probe timed out.')));
+    request.on('error', reject);
+  });
+}
+
 async function waitForServer(url, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(url, { redirect: 'follow' });
-      if (response.ok) return;
-      lastError = new Error(`HTTP ${response.status}`);
+      const status = await requestStatus(url);
+      if (status >= 200 && status < 400) return;
+      lastError = new Error(`HTTP ${status}`);
     } catch (error) {
       lastError = error;
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await delay(250);
   }
   throw new Error(`Vite preview did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
