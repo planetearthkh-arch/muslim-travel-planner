@@ -54,6 +54,9 @@ test('a restrictive content security policy is present', async () => {
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /object-src 'none'/);
   assert.match(html, /worker-src 'self' blob:/);
+  assert.equal(html.includes('https://overpass-api.de'), true);
+  assert.equal(html.includes('https://overpass.private.coffee'), true);
+  assert.equal(html.includes('https://overpass.kumi.systems'), true);
 });
 
 test('prayer notification fallbacks use bundled assets and exact-alarm state', async () => {
