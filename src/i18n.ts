@@ -1,5 +1,11 @@
 import type { PrayerName, Region, VerificationStatus } from './models.js';
+import { frenchExtraLabelsA } from './french-labels-extra-a.js';
+import { frenchExtraLabelsC } from './french-labels-extra-c.js';
+import { frenchFlightLabels } from './french-labels-flight.js';
 import { frenchLabels } from './french-labels.js';
+import { frenchTransportLabelsA } from './french-labels-transport-a.js';
+import { frenchTransportLabelsB } from './french-labels-transport-b.js';
+import { frenchTransportLabelsC } from './french-labels-transport-c.js';
 
 export type Language = 'en' | 'ar' | 'id' | 'ms' | 'tr' | 'fr';
 
@@ -4314,7 +4320,7 @@ const baseLabels = {
 
 export const labels: Record<Language, Record<string, string>> = {
   ...baseLabels,
-  fr: { ...baseLabels.en, ...frenchLabels },
+  fr: { ...frenchLabels, ...frenchFlightLabels, ...frenchTransportLabelsA, ...frenchTransportLabelsB, ...frenchTransportLabelsC, ...frenchExtraLabelsA, ...frenchExtraLabelsC },
 };
 
 export const regionLabels: Record<Language, Record<Region, string>> = {
