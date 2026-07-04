@@ -89,7 +89,6 @@ jobs:
           rm scripts/apply-release-audit-fixes.mjs
           rm scripts/patch-release-audit-generator.mjs
           rm scripts/prepare-release-audit-target.mjs
-          rm .github/workflows/apply-release-audit-fixes.yml
           rm -f audit-generator.log audit-tests.log audit-test-summary.log audit-lint.log audit-build.log
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
