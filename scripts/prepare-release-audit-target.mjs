@@ -16,6 +16,12 @@ for (const [path, oldText, newText, label] of [
   ['src/app-hardening.test.ts', "const CACHE_VERSION = 'mtp-app-shell-v13'", "const CACHE_VERSION = 'mtp-app-shell-v14'", 'service-worker test version'],
   ['src/deep-audit-fixes.test.ts', 'CURRENT_PROJECT_VERSION = 100;', 'CURRENT_PROJECT_VERSION = 101;', 'iOS test build number'],
   ['src/release-hardening.test.ts', 'mtp-app-shell-v13', 'mtp-app-shell-v14', 'release hardening cache version'],
+  ['src/halal-page-bootstrap.test.ts', "const CACHE_VERSION = 'mtp-app-shell-v13'", "const CACHE_VERSION = 'mtp-app-shell-v14'", 'halal bootstrap cache version'],
+  ['src/qibla-copy-bootstrap.test.ts', "const CACHE_VERSION = 'mtp-app-shell-v13'", "const CACHE_VERSION = 'mtp-app-shell-v14'", 'Qibla bootstrap cache version'],
+  ['src/planner.test.ts', 'Last updated: July 2, 2026', 'Last updated: July 4, 2026', 'English privacy date'],
+  ['src/planner.test.ts', 'Dikemas kini terakhir: 2 Julai 2026', 'Dikemas kini terakhir: 4 Julai 2026', 'Malay privacy date'],
+  ['src/planner.test.ts', 'Son güncelleme: 2 Temmuz 2026', 'Son güncelleme: 4 Temmuz 2026', 'Turkish privacy date'],
+  ['src/planner.test.ts', 'type PrayerCenter = { latitude: number; longitude: number; label: string; timezone?: string }', 'type PrayerCenter = { latitude: number; longitude: number; label: string; timezone?: string; city?: string; country?: string }', 'structured prayer-center metadata'],
 ]) {
   let source = await readFile(path, 'utf8');
   if (!source.includes(oldText)) throw new Error(`Could not find ${label}`);
