@@ -1,6 +1,13 @@
 import type { PrayerName, Region, VerificationStatus } from './models.js';
+import { frenchExtraLabelsA } from './french-labels-extra-a.js';
+import { frenchExtraLabelsC } from './french-labels-extra-c.js';
+import { frenchFlightLabels } from './french-labels-flight.js';
+import { frenchLabels } from './french-labels.js';
+import { frenchTransportLabelsA } from './french-labels-transport-a.js';
+import { frenchTransportLabelsB } from './french-labels-transport-b.js';
+import { frenchTransportLabelsC } from './french-labels-transport-c.js';
 
-export type Language = 'en' | 'ar' | 'id' | 'ms' | 'tr';
+export type Language = 'en' | 'ar' | 'id' | 'ms' | 'tr' | 'fr';
 
 export const languages: Array<{ code: Language; label: string }> = [
   { code: 'en', label: 'English' },
@@ -8,6 +15,7 @@ export const languages: Array<{ code: Language; label: string }> = [
   { code: 'id', label: 'Bahasa Indonesia' },
   { code: 'ms', label: 'Bahasa Melayu' },
   { code: 'tr', label: 'Türkçe' },
+  { code: 'fr', label: 'Français' },
 ];
 
 export const languageDirection = (language: Language) => (language === 'ar' ? 'rtl' : 'ltr');
@@ -17,7 +25,7 @@ export const nextLanguage = (language: Language): Language => {
   return languages[(index + 1) % languages.length].code;
 };
 
-export const labels = {
+const baseLabels = {
   en: {
     title: 'SafarOne',
     subtitle: 'Muslim Travel Planner',
@@ -211,7 +219,7 @@ export const labels = {
     qiblaOpen: 'Open Qibla',
     qiblaBack: 'Back to planner',
     qiblaRequestLocation: 'Use my location',
-    qiblaRequestMotion: 'Enable compass',
+    qiblaRequestMotion: 'Start live compass',
     qiblaRetry: 'Retry',
     qiblaLoadingLocation: 'Finding your location...',
     qiblaLocationDenied: 'Location permission was denied. Enable location access or retry.',
@@ -1069,7 +1077,7 @@ export const labels = {
     qiblaOpen: 'افتح القبلة',
     qiblaBack: 'العودة إلى المخطط',
     qiblaRequestLocation: 'استخدم موقعي',
-    qiblaRequestMotion: 'تفعيل البوصلة',
+    qiblaRequestMotion: 'ابدأ البوصلة المباشرة',
     qiblaRetry: 'إعادة المحاولة',
     qiblaLoadingLocation: 'جار تحديد موقعك...',
     qiblaLocationDenied: 'تم رفض إذن الموقع. فعّل الوصول إلى الموقع أو أعد المحاولة.',
@@ -1927,7 +1935,7 @@ export const labels = {
     qiblaOpen: 'Buka Kiblat',
     qiblaBack: 'Kembali ke perencana',
     qiblaRequestLocation: 'Gunakan lokasi saya',
-    qiblaRequestMotion: 'Aktifkan kompas',
+    qiblaRequestMotion: 'Mulai kompas langsung',
     qiblaRetry: 'Coba lagi',
     qiblaLoadingLocation: 'Mencari lokasi Anda...',
     qiblaLocationDenied: 'Izin lokasi ditolak. Aktifkan akses lokasi atau coba lagi.',
@@ -2785,7 +2793,7 @@ export const labels = {
     qiblaOpen: 'Buka Kiblat',
     qiblaBack: 'Kembali ke perancangan',
     qiblaRequestLocation: 'Gunakan lokasi saya',
-    qiblaRequestMotion: 'Aktifkan kompas',
+    qiblaRequestMotion: 'Mulakan kompas langsung',
     qiblaRetry: 'Cuba lagi',
     qiblaLoadingLocation: 'Mencari lokasi anda...',
     qiblaLocationDenied: 'Izin lokasi ditolak. Aktifkan akses lokasi atau cuba lagi.',
@@ -3643,7 +3651,7 @@ export const labels = {
     qiblaOpen: 'Kıbleyi aç',
     qiblaBack: 'Planlayıcıya dön',
     qiblaRequestLocation: 'Konumumu kullan',
-    qiblaRequestMotion: 'Pusulayı etkinleştir',
+    qiblaRequestMotion: 'Canlı pusulayı başlat',
     qiblaRetry: 'Tekrar dene',
     qiblaLoadingLocation: 'Konumunuz bulunuyor...',
     qiblaLocationDenied: 'Konum izni reddedildi. Konum erişimini etkinleştirin veya tekrar deneyin.',
@@ -4308,7 +4316,12 @@ export const labels = {
     toiletsSortAccessible: 'Tuvaletler sırala erişilebilir',
     toiletsLegend: 'Tuvaletler açıklama',
   },
-} satisfies Record<Language, Record<string, string>>;
+} satisfies Record<Exclude<Language, 'fr'>, Record<string, string>>;
+
+export const labels: Record<Language, Record<string, string>> = {
+  ...baseLabels,
+  fr: { ...frenchLabels, ...frenchFlightLabels, ...frenchTransportLabelsA, ...frenchTransportLabelsB, ...frenchTransportLabelsC, ...frenchExtraLabelsA, ...frenchExtraLabelsC },
+};
 
 export const regionLabels: Record<Language, Record<Region, string>> = {
   en: { Europe: 'Europe', 'Middle East': 'Middle East', Asia: 'Asia', 'North America': 'North America', Africa: 'Africa', Oceania: 'Oceania' },
@@ -4316,6 +4329,7 @@ export const regionLabels: Record<Language, Record<Region, string>> = {
   id: { Europe: 'Eropa', 'Middle East': 'Timur Tengah', Asia: 'Asia', 'North America': 'Amerika Utara', Africa: 'Afrika', Oceania: 'Oseania' },
   ms: { Europe: 'Eropah', 'Middle East': 'Timur Tengah', Asia: 'Asia', 'North America': 'Amerika Utara', Africa: 'Afrika', Oceania: 'Oseania' },
   tr: { Europe: 'Avrupa', 'Middle East': 'Orta Doğu', Asia: 'Asya', 'North America': 'Kuzey Amerika', Africa: 'Afrika', Oceania: 'Okyanusya' },
+  fr: { Europe: 'Europe', 'Middle East': 'Moyen-Orient', Asia: 'Asie', 'North America': 'Amérique du Nord', Africa: 'Afrique', Oceania: 'Océanie' },
 };
 
 export const statusLabels: Record<Language, Record<VerificationStatus, string>> = {
@@ -4324,6 +4338,7 @@ export const statusLabels: Record<Language, Record<VerificationStatus, string>> 
   id: { Sample: 'Contoh', Unverified: 'Belum diverifikasi', Verified: 'Terverifikasi' },
   ms: { Sample: 'Contoh', Unverified: 'Belum disahkan', Verified: 'Disahkan' },
   tr: { Sample: 'Örnek', Unverified: 'Doğrulanmamış', Verified: 'Doğrulanmış' },
+  fr: { Sample: 'Exemple', Unverified: 'Non vérifié', Verified: 'Vérifié' },
 };
 
 export const prayerLabels: Record<Language, Record<PrayerName, string>> = {
@@ -4332,6 +4347,7 @@ export const prayerLabels: Record<Language, Record<PrayerName, string>> = {
   id: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' },
   ms: { Fajr: 'Subuh', Dhuhr: 'Zohor', Asr: 'Asar', Maghrib: 'Maghrib', Isha: 'Isyak' },
   tr: { Fajr: 'Sabah', Dhuhr: 'Öğle', Asr: 'İkindi', Maghrib: 'Akşam', Isha: 'Yatsı' },
+  fr: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' },
 };
 
 export const optionLabels = {
@@ -4341,6 +4357,7 @@ export const optionLabels = {
     id: { low: 'hemat', mid: 'sedang', high: 'tinggi' },
     ms: { low: 'jimat', mid: 'sederhana', high: 'tinggi' },
     tr: { low: 'ekonomik', mid: 'orta', high: 'yüksek' },
+    fr: { low: 'économique', mid: 'moyen', high: 'élevé' },
   },
   walkingAbility: {
     en: { low: 'low', medium: 'medium', high: 'high' },
@@ -4348,6 +4365,7 @@ export const optionLabels = {
     id: { low: 'rendah', medium: 'sedang', high: 'tinggi' },
     ms: { low: 'rendah', medium: 'sederhana', high: 'tinggi' },
     tr: { low: 'düşük', medium: 'orta', high: 'yüksek' },
+    fr: { low: 'faible', medium: 'moyenne', high: 'élevée' },
   },
   transportation: {
     en: { walking: 'walking', 'public transport': 'public transport', taxi: 'taxi' },
@@ -4355,6 +4373,7 @@ export const optionLabels = {
     id: { walking: 'berjalan kaki', 'public transport': 'transportasi umum', taxi: 'taksi' },
     ms: { walking: 'berjalan kaki', 'public transport': 'pengangkutan awam', taxi: 'teksi' },
     tr: { walking: 'yürüyüş', 'public transport': 'toplu taşıma', taxi: 'taksi' },
+    fr: { walking: 'à pied', 'public transport': 'transports en commun', taxi: 'taxi' },
   },
   prayerPreference: {
     en: { mosque: 'mosque', 'quiet prayer space': 'quiet prayer space', flexible: 'flexible' },
@@ -4362,6 +4381,7 @@ export const optionLabels = {
     id: { mosque: 'masjid', 'quiet prayer space': 'ruang salat tenang', flexible: 'fleksibel' },
     ms: { mosque: 'masjid', 'quiet prayer space': 'ruang solat tenang', flexible: 'fleksibel' },
     tr: { mosque: 'cami', 'quiet prayer space': 'sakin mescit', flexible: 'esnek' },
+    fr: { mosque: 'mosquée', 'quiet prayer space': 'espace de prière calme', flexible: 'flexible' },
   },
   halalPreference: {
     en: { 'strictly labelled': 'strictly labelled', 'vegetarian/seafood options': 'vegetarian/seafood options', flexible: 'flexible' },
@@ -4369,5 +4389,6 @@ export const optionLabels = {
     id: { 'strictly labelled': 'berlabel jelas', 'vegetarian/seafood options': 'opsi vegetarian/seafood', flexible: 'fleksibel' },
     ms: { 'strictly labelled': 'berlabel jelas', 'vegetarian/seafood options': 'pilihan vegetarian/makanan laut', flexible: 'fleksibel' },
     tr: { 'strictly labelled': 'açıkça etiketli', 'vegetarian/seafood options': 'vejetaryen/deniz ürünü seçenekleri', flexible: 'esnek' },
+    fr: { 'strictly labelled': 'clairement indiqué', 'vegetarian/seafood options': 'options végétariennes ou fruits de mer', flexible: 'flexible' },
   },
 };

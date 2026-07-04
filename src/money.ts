@@ -64,7 +64,7 @@ const names: Record<string, { en: string; ar: string; id: string; ms: string; tr
   UZS: { en: 'Uzbekistani Som', ar: 'سوم أوزبكي', id: 'Som Uzbekistan', ms: 'Som Uzbekistan', tr: 'Özbekistan Somu', symbol: "so'm", flag: '🇺🇿', countries: ['Uzbekistan'] },
 };
 
-const localeFor = (language: Language) => ({ en: 'en-US', ar: 'ar', id: 'id-ID', ms: 'ms-MY', tr: 'tr-TR' })[language];
+const localeFor = (language: Language) => ({ en: 'en-US', ar: 'ar', id: 'id-ID', ms: 'ms-MY', tr: 'tr-TR', fr: 'fr-FR' })[language];
 
 export const makeCurrencyInfo = (code: string, englishName?: string): CurrencyInfo => {
   const upper = code.toUpperCase();
@@ -74,14 +74,15 @@ export const makeCurrencyInfo = (code: string, englishName?: string): CurrencyIn
   const id = known?.id ?? en;
   const ms = known?.ms ?? en;
   const tr = known?.tr ?? en;
+  const fr = en;
   const countries = known?.countries ?? [];
   return {
     code: upper,
-    name: { en, ar, id, ms, tr },
+    name: { en, ar, id, ms, tr, fr },
     symbol: known?.symbol ?? upper,
     flag: known?.flag ?? '¤',
     countries,
-    search: [upper, en, ar, id, ms, tr, ...countries, ...(known?.aliases ?? [])].map((value) => value.toLowerCase()),
+    search: [upper, en, ar, id, ms, tr, fr, ...countries, ...(known?.aliases ?? [])].map((value) => value.toLowerCase()),
   };
 };
 

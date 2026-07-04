@@ -12,7 +12,7 @@ test('iOS location permission text and portrait-only phone orientation are commi
   assert.equal(plist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>'), true);
   assert.match(plist, /<key>UISupportedInterfaceOrientations<\/key>\s*<array>\s*<string>UIInterfaceOrientationPortrait<\/string>\s*<\/array>/);
 
-  for (const language of ['en', 'ar', 'id', 'ms', 'tr']) {
+  for (const language of ['en', 'ar', 'id', 'ms', 'tr', 'fr']) {
     const localized = await repoFile(`ios/App/App/${language}.lproj/InfoPlist.strings`);
     assert.equal(localized.includes('NSLocationWhenInUseUsageDescription'), true);
     assert.equal(localized.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), true);

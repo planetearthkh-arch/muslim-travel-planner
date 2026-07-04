@@ -32,6 +32,7 @@ const notificationCopy: Record<Language, { prayer: Record<PrayerName, string>; t
   id: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' }, title: 'salat', testTitle: 'Notifikasi salat SafarOne', testBody: 'Suara notifikasi salat' },
   ms: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Maghrib', Isha: 'Isyak' }, title: 'solat', testTitle: 'Pemberitahuan solat SafarOne', testBody: 'Bunyi pemberitahuan solat' },
   tr: { prayer: { Fajr: 'Sabah', Dhuhr: 'Öğle', Asr: 'İkindi', Maghrib: 'Akşam', Isha: 'Yatsı' }, title: 'namazı', testTitle: 'SafarOne namaz bildirimi', testBody: 'Namaz bildirimi sesi' },
+  fr: { prayer: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' }, title: 'prière', testTitle: 'Notification de prière SafarOne', testBody: 'Son de notification de prière' },
 };
 
 function methodParameters(method: PrayerMethod) {
