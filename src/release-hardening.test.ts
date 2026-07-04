@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parseAmountInput } from './money.js';
+
+async function repoFile(path: string) {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  return load('node:fs/promises').then((fs) => fs.readFile(new URL('../' + path, import.meta.url), 'utf8'));
+}
 
 test('money parsing respects locale decimal separators', () => {
   assert.equal(parseAmountInput('0.125', 'en').value, 0.125);
@@ -11,19 +15,21 @@ test('money parsing respects locale decimal separators', () => {
   assert.equal(parseAmountInput('USD 12', 'en').error, 'invalid');
 });
 
-test('external map fields are escaped before insertion', () => {
-  const main = readFileSync('src/main.ts', 'utf8');
-  for (const expression of ['esc(place.address)', 'esc(toilet.address)', 'esc(office.address)', 'esc(stop.address)', 'esc(item.address)', 'esc(attraction.address)']) assert.match(main, new RegExp(expression.replace(/[()]/g, '\\$&')));
+test('external map fields are escaped before insertion', async () => {
+  const main = await repoFile('src/main.ts');
+  for (const expression of ['esc(place.address)', 'esc(toilet.address)', 'esc(office.address)', 'esc(stop.address)', 'esc(item.address)', 'esc(attraction.address)']) {
+    assert.equal(main.includes(expression), true, expression);
+  }
 });
 
-test('service worker deletes only SafarOne caches', () => {
-  const worker = readFileSync('public/sw.js', 'utf8');
+test('service worker deletes only SafarOne caches', async () => {
+  const worker = await repoFile('public/sw.js');
   assert.match(worker, /key\.startsWith\(CACHE_PREFIX\)/);
   assert.match(worker, /mtp-app-shell-v13/);
 });
 
-test('a restrictive content security policy is present', () => {
-  const html = readFileSync('index.html', 'utf8');
+test('a restrictive content security policy is present', async () => {
+  const html = await repoFile('index.html');
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /object-src 'none'/);
 });

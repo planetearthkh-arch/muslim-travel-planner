@@ -115,7 +115,7 @@ export const parseAmountInput = (raw: string, language: Language = 'en'): { valu
     .replace(/٫/g, '.')
     .replace(/[\u00a0\u202f]/g, ' ');
   if (!/^[+]?\s*[0-9][0-9.,' ]*\s*$/.test(normalized)) return { value: null, error: 'invalid' };
-  const unsigned = normalized.replace(/^+/, '').trim();
+  const unsigned = normalized.replace(/^\+/, '').trim();
   const locale = localeFor(language);
   const parts = new Intl.NumberFormat(locale).formatToParts(12345.6);
   const localeDecimal = parts.find((part) => part.type === 'decimal')?.value || '.';
