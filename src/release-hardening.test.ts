@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { halalEndpointTimeout } from './halal-overpass.js';
+import { buildHalalOverpassQuery } from './halal-restaurants.js';
 import { parseAmountInput } from './money.js';
 import { validateTravelDetailInput } from './travel-details.js';
 
@@ -33,6 +35,15 @@ test('travel detail validation rejects impossible or nonexistent local dates', (
   const reversed = validateTravelDetailInput({ type: 'accommodation', propertyName: 'Hotel', checkInDateTime: '2026-07-04T12:00', checkOutDateTime: '2026-07-04T11:00', timeZone: 'UTC' });
   assert.equal(reversed.ok, false);
   if (!reversed.ok) assert.equal(reversed.error, 'range');
+});
+
+test('halal restaurant searches use focused queries and usable provider timeouts', () => {
+  const query = buildHalalOverpassQuery(31.7683, 35.2137, 1);
+  assert.equal(query.includes('["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["diet:halal"]'), true);
+  assert.equal(query.includes('["description"~"halal"'), false);
+  assert.equal(query.includes('["description:en"~"halal"'), false);
+  assert.equal(query.includes('["note"~"halal"'), false);
+  assert.equal(halalEndpointTimeout(20_000, 2), 15_000);
 });
 
 test('external map fields are escaped before insertion', async () => {
