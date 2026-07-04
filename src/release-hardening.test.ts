@@ -18,7 +18,7 @@ test('money parsing respects locale decimal separators', () => {
 test('external map fields are escaped before insertion', async () => {
   const main = await repoFile('src/main.ts');
   for (const expression of ['esc(place.address)', 'esc(toilet.address)', 'esc(office.address)', 'esc(stop.address)', 'esc(item.address)', 'esc(attraction.address)']) {
-    assert.equal(main.includes(expression), true, expression);
+    assert.equal(main.includes(expression), true);
   }
 });
 
