@@ -26,14 +26,20 @@ const NATIVE_DEFAULT_SOUND = 'default';
 let browserTimers: number[] = [];
 let browserAudio: HTMLAudioElement | undefined;
 
-const notificationCopy: Record<Language, { prayer: Record<PrayerName, string>; title: string; testTitle: string; testBody: string }> = {
+type NotificationCopy = { prayer: Record<PrayerName, string>; title: string; testTitle: string; testBody: string };
+const notificationCopy: Record<string, NotificationCopy> = {
   en: { prayer: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' }, title: 'prayer', testTitle: 'SafarOne prayer notification', testBody: 'Prayer notification sound' },
   ar: { prayer: { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' }, title: 'صلاة', testTitle: 'إشعار الصلاة من SafarOne', testBody: 'صوت إشعار الصلاة' },
+  ur: { prayer: { Fajr: 'فجر', Dhuhr: 'ظہر', Asr: 'عصر', Maghrib: 'مغرب', Isha: 'عشاء' }, title: 'نماز', testTitle: 'SafarOne نماز کی اطلاع', testBody: 'نماز کی اطلاع کی آواز' },
   id: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' }, title: 'salat', testTitle: 'Notifikasi salat SafarOne', testBody: 'Suara notifikasi salat' },
   ms: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Maghrib', Isha: 'Isyak' }, title: 'solat', testTitle: 'Pemberitahuan solat SafarOne', testBody: 'Bunyi pemberitahuan solat' },
   tr: { prayer: { Fajr: 'Sabah', Dhuhr: 'Öğle', Asr: 'İkindi', Maghrib: 'Akşam', Isha: 'Yatsı' }, title: 'namazı', testTitle: 'SafarOne namaz bildirimi', testBody: 'Namaz bildirimi sesi' },
   fr: { prayer: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' }, title: 'prière', testTitle: 'Notification de prière SafarOne', testBody: 'Son de notification de prière' },
 };
+
+function copyFor(language: Language | string) {
+  return notificationCopy[language] ?? notificationCopy.en;
+}
 
 function methodParameters(method: PrayerMethod) {
   switch (method) {
@@ -132,7 +138,7 @@ export function calculatePrayerDisplay(
 
 async function showBrowserAlert(alarm: PrayerAlarm, language: Language) {
   if ('Notification' in window && Notification.permission === 'granted') {
-    const copy = notificationCopy[language];
+    const copy = copyFor(language);
     new Notification(`${copy.prayer[alarm.prayer]} ${copy.title}`, {
       body: `${alarm.city} · ${alarm.formattedTime}`,
       icon: './icons/icon.svg',
@@ -181,12 +187,13 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
     await cancelNativePrayerNotifications();
     const exactAlarmAllowed = Capacitor.getPlatform() !== 'android' || (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
     const now = Date.now();
+    const copy = copyFor(language);
     const notifications = alarms
       .filter((alarm) => alarm.timestamp > now + 1000)
       .slice(0, 60)
       .map((alarm) => ({
         id: nativeNotificationId(alarm),
-        title: `${notificationCopy[language].prayer[alarm.prayer]} ${notificationCopy[language].title}`,
+        title: `${copy.prayer[alarm.prayer]} ${copy.title}`,
         body: `${alarm.city} · ${alarm.formattedTime}`,
         sound: NATIVE_DEFAULT_SOUND,
         schedule: { at: new Date(alarm.timestamp), allowWhileIdle: exactAlarmAllowed },
@@ -225,11 +232,12 @@ export async function playTestAthan(language: Language = 'en') {
     const permissions = await LocalNotifications.requestPermissions();
     if (permissions.display !== 'granted') return;
     const exactAlarmAllowed = Capacitor.getPlatform() !== 'android' || (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
+    const copy = copyFor(language);
     await LocalNotifications.schedule({
       notifications: [{
         id: NATIVE_TEST_NOTIFICATION_ID,
-        title: notificationCopy[language].testTitle,
-        body: notificationCopy[language].testBody,
+        title: copy.testTitle,
+        body: copy.testBody,
         sound: NATIVE_DEFAULT_SOUND,
         schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: exactAlarmAllowed },
         extra: { safarOne: true, test: true },

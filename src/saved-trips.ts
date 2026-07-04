@@ -124,7 +124,7 @@ export function createSavedTrip(input: {
 export function validateSavedTrip(value: unknown): SavedTrip | null {
   if (!isRecord(value) || value.schemaVersion !== SAVED_TRIP_SCHEMA_VERSION) return null;
   if (!isString(value.id) || !isString(value.name) || !isString(value.createdAt) || !isString(value.updatedAt) || !isString(value.savedAt)) return null;
-  const language = ['en', 'ar', 'id', 'ms', 'tr'].includes(String(value.language)) ? value.language as Language : 'en';
+  const language = ['en', 'ar', 'ur', 'id', 'ms', 'tr', 'fr'].includes(String(value.language)) ? value.language as Language : 'en';
   if (!isRecord(value.preferences) || !isRecord(value.destination) || !Array.isArray(value.itinerary) || !isRecord(value.dateRange) || !isRecord(value.essentials)) return null;
   const destination = value.destination;
   if (!isString(destination.city) || !isString(destination.country) || !isString(destination.timezone) || !isRecord(destination.coordinates)) return null;
@@ -178,6 +178,7 @@ export class SavedTripRepository {
 }
 
 export function duplicateSavedTrip(trip: SavedTrip, now = new Date().toISOString()) {
-  const suffix: Record<Language, string> = { en: 'copy', ar: 'نسخة', id: 'salinan', ms: 'salinan', tr: 'kopya', fr: 'copie' };
-  return { ...cloneJson(trip), id: createSavedTripId(), name: sanitizeTripName(`${trip.name} ${suffix[trip.language]}`), travelDetails: duplicateTravelDetails(validateTravelDetailsSnapshot(trip.travelDetails), now), createdAt: now, updatedAt: now, savedAt: now };
+  const suffix: Record<string, string> = { en: 'copy', ar: 'نسخة', ur: 'نقل', id: 'salinan', ms: 'salinan', tr: 'kopya', fr: 'copie' };
+  const language = String(trip.language);
+  return { ...cloneJson(trip), id: createSavedTripId(), name: sanitizeTripName(`${trip.name} ${suffix[language] ?? suffix.en}`), travelDetails: duplicateTravelDetails(validateTravelDetailsSnapshot(trip.travelDetails), now), createdAt: now, updatedAt: now, savedAt: now };
 }
