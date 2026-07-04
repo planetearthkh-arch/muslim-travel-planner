@@ -2,6 +2,7 @@ import type { CityData, ItineraryItem, PlannerPreferences } from './models.js';
 import type { Language } from './i18n.js';
 import { labels } from './i18n.js';
 import { travelDetailEndDate, travelDetailPrimaryDate, travelDetailTimeZone, type TravelDetailEntry, type TravelDetailsSnapshot } from './travel-details.js';
+import { addMinutesToLocalDateTime, formatUtcForIcs, zonedDateTimeToUtc } from './time-zones.js';
 
 export type TripExportSnapshot = {
   name: string;
@@ -23,14 +24,8 @@ const minutesOfDay = (time: string) => {
 };
 
 const dateTimeValue = (date: string, minutes: number) => {
-  const day = new Date(`${date}T00:00:00`);
-  day.setMinutes(minutes);
-  const y = day.getFullYear();
-  const m = String(day.getMonth() + 1).padStart(2, '0');
-  const d = String(day.getDate()).padStart(2, '0');
-  const hh = String(day.getHours()).padStart(2, '0');
-  const mm = String(day.getMinutes()).padStart(2, '0');
-  return `${y}${m}${d}T${hh}${mm}00`;
+  const local = addMinutesToLocalDateTime(date + 'T00:00', minutes);
+  return local ? local.replace(/[-:]/g, '') + '00' : '';
 };
 
 export function groupedItinerary(items: ItineraryItem[]) {
@@ -88,11 +83,19 @@ export function escapeIcs(value: string) {
 }
 
 function foldIcsLine(line: string) {
+  const encoder = new TextEncoder();
   const chunks: string[] = [];
-  let current = line;
-  while (current.length > 74) {
-    chunks.push(current.slice(0, 74));
-    current = ` ${current.slice(74)}`;
+  let current = '';
+  let limit = 75;
+  for (const character of line) {
+    const next = current + character;
+    if (encoder.encode(next).length > limit && current) {
+      chunks.push(current);
+      current = ' ' + character;
+      limit = 75;
+    } else {
+      current = next;
+    }
   }
   chunks.push(current);
   return chunks.join('\r\n');
@@ -130,8 +133,20 @@ export function buildIcsCalendar(snapshot: TripExportSnapshot) {
     const tz = travelDetailTimeZone(entry, snapshot.city.timezone);
     lines.push('BEGIN:VEVENT');
     lines.push(`UID:${escapeIcs(`travel-${snapshot.name}-${entry.type}-${index}`.replace(/[^a-z0-9-]+/gi, '-').toLowerCase())}@muslim-travel-planner.local`);
-    lines.push(`DTSTART;TZID=${escapeIcs(tz)}:${localDateTimeToIcs(start)}`);
-    lines.push(`DTEND;TZID=${escapeIcs(tz)}:${localDateTimeToIcs(end)}`);
+    if (entry.type === 'flight') {
+      const startUtc = zonedDateTimeToUtc(entry.departureDateTime, entry.departureTimeZone || 'UTC');
+      const endUtc = zonedDateTimeToUtc(entry.arrivalDateTime, entry.arrivalTimeZone || 'UTC');
+      if (!startUtc || !endUtc) {
+        lines.pop();
+        lines.pop();
+        return;
+      }
+      lines.push(`DTSTART:${formatUtcForIcs(startUtc)}`);
+      lines.push(`DTEND:${formatUtcForIcs(endUtc)}`);
+    } else {
+      lines.push(`DTSTART;TZID=${escapeIcs(tz)}:${localDateTimeToIcs(start)}`);
+      lines.push(`DTEND;TZID=${escapeIcs(tz)}:${localDateTimeToIcs(end)}`);
+    }
     lines.push(`SUMMARY:${escapeIcs(travelDetailTitle(entry))}`);
     lines.push(`DESCRIPTION:${escapeIcs(travelDetailExportSummary(entry, labels[snapshot.language]))}`);
     lines.push('END:VEVENT');

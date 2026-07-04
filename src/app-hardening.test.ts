@@ -21,7 +21,7 @@ test('iOS location permission text and portrait-only phone orientation are commi
 
 test('offline navigation caches each page separately', async () => {
   const source = await repoFile('public/sw.js');
-  assert.equal(source.includes("const CACHE_VERSION = 'mtp-app-shell-v12'"), true);
+  assert.equal(source.includes("const CACHE_VERSION = 'mtp-app-shell-v13'"), true);
   assert.equal(source.includes('cache.put(request, copy)'), true);
   assert.equal(source.includes('cache.put(APP_HOME, copy)'), false);
   assert.equal(source.includes('caches.match(request)'), true);

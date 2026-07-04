@@ -7,6 +7,7 @@ import {
   PrayerTimes,
 } from 'adhan';
 import type { CityData, PrayerMethod, PrayerName } from './models.js';
+import type { Language } from './i18n.js';
 
 export interface PrayerAlarm {
   id: number;
@@ -24,6 +25,14 @@ const NATIVE_TEST_NOTIFICATION_ID = 199_900_001;
 const NATIVE_DEFAULT_SOUND = 'default';
 let browserTimers: number[] = [];
 let browserAudio: HTMLAudioElement | undefined;
+
+const notificationCopy: Record<Language, { prayer: Record<PrayerName, string>; title: string; testTitle: string; testBody: string }> = {
+  en: { prayer: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' }, title: 'prayer', testTitle: 'SafarOne prayer notification', testBody: 'Prayer notification sound' },
+  ar: { prayer: { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' }, title: 'صلاة', testTitle: 'إشعار الصلاة من SafarOne', testBody: 'صوت إشعار الصلاة' },
+  id: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' }, title: 'salat', testTitle: 'Notifikasi salat SafarOne', testBody: 'Suara notifikasi salat' },
+  ms: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Maghrib', Isha: 'Isyak' }, title: 'solat', testTitle: 'Pemberitahuan solat SafarOne', testBody: 'Bunyi pemberitahuan solat' },
+  tr: { prayer: { Fajr: 'Sabah', Dhuhr: 'Öğle', Asr: 'İkindi', Maghrib: 'Akşam', Isha: 'Yatsı' }, title: 'namazı', testTitle: 'SafarOne namaz bildirimi', testBody: 'Namaz bildirimi sesi' },
+};
 
 function methodParameters(method: PrayerMethod) {
   switch (method) {
@@ -120,9 +129,10 @@ export function calculatePrayerDisplay(
   };
 }
 
-async function showBrowserAlert(alarm: PrayerAlarm) {
+async function showBrowserAlert(alarm: PrayerAlarm, language: Language) {
   if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(`${alarm.prayer} prayer`, {
+    const copy = notificationCopy[language];
+    new Notification(`${copy.prayer[alarm.prayer]} ${copy.title}`, {
       body: `${alarm.city} · ${alarm.formattedTime}`,
       icon: './icon-192.png',
     });
@@ -130,14 +140,14 @@ async function showBrowserAlert(alarm: PrayerAlarm) {
   await playTestAthan();
 }
 
-function scheduleBrowserFallback(alarms: PrayerAlarm[]) {
+function scheduleBrowserFallback(alarms: PrayerAlarm[], language: Language) {
   browserTimers.forEach((timer) => window.clearTimeout(timer));
   browserTimers = [];
   const maximumDelay = 2_147_000_000;
   alarms.forEach((alarm) => {
     const delay = alarm.timestamp - Date.now();
     if (delay <= 0 || delay > maximumDelay) return;
-    browserTimers.push(window.setTimeout(() => void showBrowserAlert(alarm), delay));
+    browserTimers.push(window.setTimeout(() => void showBrowserAlert(alarm, language), delay));
   });
 }
 
@@ -157,7 +167,7 @@ async function cancelNativePrayerNotifications() {
   if (notifications.length) await LocalNotifications.cancel({ notifications });
 }
 
-export async function enableAthanAlarms(alarms: PrayerAlarm[]) {
+export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Language = 'en') {
   if (Capacitor.isNativePlatform()) {
     const permissions = await LocalNotifications.requestPermissions();
     if (permissions.display !== 'granted') {
@@ -168,30 +178,31 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[]) {
       };
     }
     await cancelNativePrayerNotifications();
+    const exactAlarmAllowed = Capacitor.getPlatform() !== 'android' || (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
     const now = Date.now();
     const notifications = alarms
       .filter((alarm) => alarm.timestamp > now + 1000)
       .slice(0, 60)
       .map((alarm) => ({
         id: nativeNotificationId(alarm),
-        title: `${alarm.prayer} prayer`,
+        title: `${notificationCopy[language].prayer[alarm.prayer]} ${notificationCopy[language].title}`,
         body: `${alarm.city} · ${alarm.formattedTime}`,
         sound: NATIVE_DEFAULT_SOUND,
-        schedule: { at: new Date(alarm.timestamp), allowWhileIdle: true },
+        schedule: { at: new Date(alarm.timestamp), allowWhileIdle: exactAlarmAllowed },
         extra: { safarOne: true, prayer: alarm.prayer, city: alarm.city },
       }));
     if (notifications.length) await LocalNotifications.schedule({ notifications });
     return {
       mode: 'native' as const,
       scheduled: notifications.length,
-      permissions: { exactAlarmAllowed: true, notificationsAllowed: true },
+      permissions: { exactAlarmAllowed, notificationsAllowed: true },
     };
   }
 
   if ('Notification' in window && Notification.permission === 'default') {
     await Notification.requestPermission();
   }
-  scheduleBrowserFallback(alarms);
+  scheduleBrowserFallback(alarms, language);
   return {
     mode: 'browser' as const,
     scheduled: browserTimers.length,
@@ -208,15 +219,15 @@ export async function disableAthanAlarms() {
   if (Capacitor.isNativePlatform()) await cancelNativePrayerNotifications();
 }
 
-export async function playTestAthan() {
+export async function playTestAthan(language: Language = 'en') {
   if (Capacitor.isNativePlatform()) {
     const permissions = await LocalNotifications.requestPermissions();
     if (permissions.display !== 'granted') return;
     await LocalNotifications.schedule({
       notifications: [{
         id: NATIVE_TEST_NOTIFICATION_ID,
-        title: 'SafarOne prayer notification',
-        body: 'Prayer notification sound',
+        title: notificationCopy[language].testTitle,
+        body: notificationCopy[language].testBody,
         sound: NATIVE_DEFAULT_SOUND,
         schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
         extra: { safarOne: true, test: true },
