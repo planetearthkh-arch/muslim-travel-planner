@@ -21,6 +21,7 @@ test('French core travel and Muslim-essential labels are translated', () => {
   assert.equal(labels.fr.subtitle, 'Planificateur de voyage musulman');
   assert.equal(labels.fr.plan, 'Créer l’itinéraire');
   assert.equal(labels.fr.qiblaTitle, 'Direction de la Qibla');
+  assert.equal(labels.fr.qiblaRequestMotion, 'Démarrer la boussole en direct');
   assert.equal(labels.fr.halalRestaurantsTitle, 'Restaurants halal');
   assert.equal(labels.fr.prayerSpacesTitle, 'Mosquées et espaces de prière');
   assert.equal(labels.fr.weatherTitle, 'Météo');
