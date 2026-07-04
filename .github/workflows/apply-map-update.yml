@@ -1,0 +1,27 @@
+name: Apply Map Update
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'add-french-language'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: add-french-language
+      - name: Update imports and map
+        run: |
+          perl -0pi -e "s#import \{ frenchLabels \} from '\./french-labels\.js';#import { frenchExtraLabelsA } from './french-labels-extra-a.js';\nimport { frenchExtraLabelsC } from './french-labels-extra-c.js';\nimport { frenchFlightLabels } from './french-labels-flight.js';\nimport { frenchLabels } from './french-labels.js';\nimport { frenchTransportLabelsA } from './french-labels-transport-a.js';\nimport { frenchTransportLabelsB } from './french-labels-transport-b.js';\nimport { frenchTransportLabelsC } from './french-labels-transport-c.js';#" src/i18n.ts
+          perl -0pi -e "s#fr: \{ \.\.\.baseLabels\.en, \.\.\.frenchLabels \}#fr: { ...frenchLabels, ...frenchFlightLabels, ...frenchTransportLabelsA, ...frenchTransportLabelsB, ...frenchTransportLabelsC, ...frenchExtraLabelsA, ...frenchExtraLabelsC }#" src/i18n.ts
+      - name: Save update
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/i18n.ts
+          git commit -m "Use complete French map" || exit 0
+          git push origin HEAD:add-french-language
