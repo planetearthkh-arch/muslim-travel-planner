@@ -1,0 +1,44 @@
+name: Apply release hardening
+
+on:
+  push:
+    branches: [fix-all-release-blockers]
+    paths:
+      - scripts/apply-release-hardening.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-all-release-blockers
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply hardening patch
+        run: node scripts/apply-release-hardening.mjs
+      - name: Refresh lockfile and install
+        run: npm install
+      - name: Validate
+        run: |
+          npm run typecheck
+          npm test
+          npm run lint
+          npm run build
+      - name: Commit hardening changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Harden app correctness, security, and release checks"
+          git push origin HEAD:fix-all-release-blockers
