@@ -47,13 +47,10 @@ const dateReplacement = "      .replaceAll('2 Juli 2026', '4 Juli 2026')\n      
 if (!generator.includes(dateMarker)) throw new Error('Could not find legal-page date replacement block');
 generator = generator.replace(dateMarker, dateReplacement);
 
-const ciBlock = `await edit('.github/workflows/ci.yml', (source) => source
-  .replace('./gradlew assembleDebug --stacktrace', './gradlew assembleDebug assembleRelease --stacktrace')
-  .replace('      - run: npm run ios:verify\n', '      - run: npm run ios:verify\n      - run: npm run ios:archive-verify\n'));
-
-`;
-if (!generator.includes(ciBlock)) throw new Error('Could not find CI workflow generator block');
-generator = generator.replace(ciBlock, '');
+const ciStart = generator.indexOf("await edit('.github/workflows/ci.yml'");
+const nextTestWrite = generator.indexOf("await write('src/release-audit-fixes.test.ts'", ciStart);
+if (ciStart < 0 || nextTestWrite < 0) throw new Error('Could not find CI workflow generator block');
+generator = generator.slice(0, ciStart) + generator.slice(nextTestWrite);
 
 const oldTest = `  const departure = airportByIata('LHR');
   const arrival = airportByIata('JFK');
