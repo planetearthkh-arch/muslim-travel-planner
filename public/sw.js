@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'mtp-app-shell-';
-const CACHE_VERSION = `${CACHE_PREFIX}v13`;
+const CACHE_VERSION = 'mtp-app-shell-v13';
 const APP_SCOPE = new URL(self.registration.scope);
 const APP_HOME = new URL('./', APP_SCOPE).toString();
 const APP_SHELL = [
