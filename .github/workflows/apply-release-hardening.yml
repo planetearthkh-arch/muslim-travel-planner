@@ -5,6 +5,7 @@ on:
     branches: [fix-all-release-blockers]
     paths:
       - scripts/apply-release-hardening.mjs
+      - hardening-trigger.txt
 
 permissions:
   contents: write
@@ -62,6 +63,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ "${{ steps.hardening.outputs.status }}" = "0" ]; then
             rm -f hardening-run.log
+            rm -f hardening-trigger.txt
             message="Harden app correctness, security, and release checks"
           else
             message="Record release hardening failure diagnostics"
