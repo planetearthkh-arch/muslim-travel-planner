@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   web:
     runs-on: ubuntu-latest
@@ -19,6 +22,7 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run lint
+      - run: npm run test:browser-smoke
 
   android:
     runs-on: ubuntu-latest
@@ -32,7 +36,8 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
       - run: npm run android:setup
-      - run: ./gradlew assembleDebug
+      - run: ./gradlew assembleDebug --stacktrace
         working-directory: android
