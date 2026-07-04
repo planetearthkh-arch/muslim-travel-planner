@@ -6,36 +6,9 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch-stale-halal-test:
-    if: github.event_name == 'pull_request' && github.head_ref == 'halal-provider-csp-fix'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: halal-provider-csp-fix
-      - name: Update stale assertion
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('src/planner.test.ts')
-          text = path.read_text()
-          old = "assert.equal(query.includes('nwr[\"diet:halal\"](around:5000,0,0)'), true);"
-          new = "assert.equal(query.includes('nwr[\"amenity\"~\"^(restaurant|fast_food|cafe|food_court)$\"][\"diet:halal\"](around:5000,0,0)'), true);"
-          if old not in text:
-              raise SystemExit('Expected stale assertion was not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
-      - name: Commit correction
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src/planner.test.ts
-          git commit -m "Update halal query planner test"
-          git push origin HEAD:halal-provider-csp-fix
-
   web:
     runs-on: ubuntu-latest
     steps:
@@ -47,19 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - name: Run tests
-        id: tests
-        continue-on-error: true
-        run: npm test > test-output.txt 2>&1
-      - name: Upload test output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-test-output
-          path: test-output.txt
-      - name: Fail on test error
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
+      - run: npm test
       - run: npm run lint
       - run: npm run test:browser-smoke
 
