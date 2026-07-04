@@ -1,6 +1,6 @@
 import { cities } from './data.js';
 import { calculatePrayerDisplay } from './athan.js';
-import { localeForLanguage, optionLabels, type Language } from './app-language.js';
+import { optionLabels, type Language } from './app-language.js';
 import type { CityData, ItineraryItem, PlannerPreferences, Place, PrayerName, VerificationStatus } from './models.js';
 
 const addMinutes = (time: string, minutes: number) => {
@@ -414,7 +414,7 @@ function generateBaseItinerary(prefs: PlannerPreferences, language: Language, re
     const endMinutes = minutesOfDay(prefs.endHour);
     const dayAttractions = rotate(attractionPool, dayIndex === replanDayIndex ? dayIndex + 1 : 0);
     const context: ScheduleContext = { copy, language: languageCode, prefs, city, date, dayIndex, travel, attractionPool: dayAttractions, attractionOffset: dayIndex, meal, prayer, replanDay: dayIndex === replanDayIndex };
-    const prayerTimes = calculatePrayerDisplay(city, prefs.prayerMethod, date, localeForLanguage(language));
+    const prayerTimes = calculatePrayerDisplay(city, prefs.prayerMethod, date, 'en-GB');
     const prayers = prayerNames
       .map((name) => ({ name, time: prayerTimes[name], minutes: minutesOfDay(prayerTimes[name]), duration: prayer.place.estimatedMinutes }))
       .filter((entry) => Number.isFinite(entry.minutes) && entry.minutes >= startMinutes && entry.minutes + entry.duration <= endMinutes)

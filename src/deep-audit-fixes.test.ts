@@ -88,10 +88,10 @@ test('native and UI safeguards remain wired', async () => {
     repoFile('ios/App/App.xcodeproj/project.pbxproj'),
     repoFile('index.html'),
   ]);
-  assert.match(main, /generatedItems = generateItinerary(generatedPrefs, replan, lang)/);
-  assert.match(main, /const alarmPrefs = generatedPrefs ?? prefs/);
-  assert.match(main, /language: trip.language/);
-  assert.match(athan, /AndroidAthan.schedule/);
+  assert.equal(main.includes('generatedItems = generateItinerary(generatedPrefs, replan, lang);'), true);
+  assert.equal(main.includes('const alarmPrefs = generatedPrefs ?? prefs;'), true);
+  assert.equal(main.includes('language: trip.language'), true);
+  assert.equal(athan.includes('AndroidAthan.schedule'), true);
   assert.match(manifest, /android:allowBackup="false"/);
   assert.match(project, /CURRENT_PROJECT_VERSION = 100;/);
   assert.match(project, /ur InfoPlist.strings/);

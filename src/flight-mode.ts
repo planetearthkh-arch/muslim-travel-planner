@@ -211,52 +211,65 @@ export function positionByDistance(points: RoutePoint[], distanceKm: number) {
   return { point: last.to, trackDegrees: initialTrueBearing(last.from, last.to), progress: 1, totalDistanceKm: total };
 }
 
+function closestFractionOnGreatCircle(segment: { from: RoutePoint; to: RoutePoint; distanceKm: number }, position: RoutePoint) {
+  const samples = Math.max(32, Math.min(256, Math.ceil(segment.distanceKm / 80)));
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index <= samples; index += 1) {
+    const fraction = index / samples;
+    const candidate = greatCircleInterpolate(segment.from, segment.to, fraction);
+    const distance = haversineDistanceKm(candidate, position);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  }
+
+  let low = Math.max(0, (bestIndex - 1) / samples);
+  let high = Math.min(1, (bestIndex + 1) / samples);
+  for (let iteration = 0; iteration < 28; iteration += 1) {
+    const first = low + (high - low) / 3;
+    const second = high - (high - low) / 3;
+    const firstDistance = haversineDistanceKm(greatCircleInterpolate(segment.from, segment.to, first), position);
+    const secondDistance = haversineDistanceKm(greatCircleInterpolate(segment.from, segment.to, second), position);
+    if (firstDistance <= secondDistance) high = second;
+    else low = first;
+  }
+  return Math.min(1, Math.max(0, (low + high) / 2));
+}
+
 export function projectPositionOntoRoute(points: RoutePoint[], position: RoutePoint) {
   if (!validCoordinate(position.latitude, position.longitude)) return null;
   const segments = routeSegments(points);
   const totalDistanceKm = segments.reduce((sum, segment) => sum + segment.distanceKm, 0);
   if (!segments.length || totalDistanceKm <= 0) return null;
+
   let traversed = 0;
   let best: { progress: number; distanceKm: number; crossTrackDistanceKm: number; trackDegrees: number } | null = null;
-
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index];
-    const meanLatitude = toRadians((segment.from.latitude + segment.to.latitude + position.latitude) / 3);
-    const xy = (point: RoutePoint) => ({
-      x: toRadians(normalizeLongitude(point.longitude - segment.from.longitude)) * Math.cos(meanLatitude) * EARTH_RADIUS_KM,
-      y: toRadians(point.latitude - segment.from.latitude) * EARTH_RADIUS_KM,
-    });
-    const end = xy(segment.to);
-    const current = xy(position);
-    const denominator = end.x * end.x + end.y * end.y;
-    const fraction = denominator > 0 ? Math.min(1, Math.max(0, (current.x * end.x + current.y * end.y) / denominator)) : 0;
+    const fraction = closestFractionOnGreatCircle(segment, position);
     const projected = greatCircleInterpolate(segment.from, segment.to, fraction);
     const crossTrackDistanceKm = haversineDistanceKm(projected, position);
     const distanceKm = traversed + segment.distanceKm * fraction;
-    const segmentTrack = fraction >= 1 - 1e-9
-      ? initialTrueBearing(segment.from, segment.to)
+    const nextSegment = segments[index + 1];
+    const trackDegrees = fraction >= 1 - 1e-8
+      ? nextSegment
+        ? initialTrueBearing(nextSegment.from, nextSegment.to)
+        : initialTrueBearing(segment.from, segment.to)
       : initialTrueBearing(projected, segment.to);
     if (!best || crossTrackDistanceKm < best.crossTrackDistanceKm) {
       best = {
         progress: Math.min(1, Math.max(0, distanceKm / totalDistanceKm)),
         distanceKm,
         crossTrackDistanceKm,
-        trackDegrees: index < segments.length - 1 && fraction >= 1 - 1e-9
-          ? initialTrueBearing(segments[index + 1].from, segments[index + 1].to)
-          : segmentTrack,
+        trackDegrees,
       };
     }
     traversed += segment.distanceKm;
   }
 
-  if (!best) return null;
-  return {
-    progress: best.progress,
-    distanceKm: best.distanceKm,
-    crossTrackDistanceKm: best.crossTrackDistanceKm,
-    trackDegrees: best.trackDegrees,
-    totalDistanceKm,
-  };
+  return best ? { ...best, totalDistanceKm } : null;
 }
 
 export function elapsedProgress(plan: PreparedFlightPlan, nowMs = Date.now()) {

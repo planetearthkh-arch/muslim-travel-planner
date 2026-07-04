@@ -221,6 +221,7 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
       };
     }
     await cancelNativePrayerNotifications();
+    const exactAlarmAllowed = true;
     const now = Date.now();
     const copy = copyFor(language);
     const notifications = alarms
@@ -231,14 +232,14 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
         title: `${copy.prayer[alarm.prayer]} ${copy.title}`,
         body: `${alarm.city} · ${alarm.formattedTime}`,
         sound: NATIVE_DEFAULT_SOUND,
-        schedule: { at: new Date(alarm.timestamp) },
+        schedule: { at: new Date(alarm.timestamp), allowWhileIdle: exactAlarmAllowed },
         extra: { safarOne: true, prayer: alarm.prayer, city: alarm.city },
       }));
     if (notifications.length) await LocalNotifications.schedule({ notifications });
     return {
       mode: 'native' as const,
       scheduled: notifications.length,
-      permissions: { exactAlarmAllowed: true, notificationsAllowed: true },
+      permissions: { exactAlarmAllowed, notificationsAllowed: true },
     };
   }
 
@@ -275,6 +276,7 @@ export async function playTestAthan(language: Language = 'en') {
   if (Capacitor.isNativePlatform()) {
     const permissions = await LocalNotifications.requestPermissions();
     if (permissions.display !== 'granted') return;
+    const exactAlarmAllowed = true;
     const copy = copyFor(language);
     await LocalNotifications.schedule({
       notifications: [{
@@ -282,7 +284,7 @@ export async function playTestAthan(language: Language = 'en') {
         title: copy.testTitle,
         body: copy.testBody,
         sound: NATIVE_DEFAULT_SOUND,
-        schedule: { at: new Date(Date.now() + 1000) },
+        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: exactAlarmAllowed },
         extra: { safarOne: true, test: true },
       }],
     });
