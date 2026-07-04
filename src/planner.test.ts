@@ -2483,8 +2483,8 @@ test('mapped feature cards omit missing optional rows and avoid duplicate openin
   const taxiDetails = source.slice(source.indexOf('function taxiDetails'), source.indexOf('function taxiCard'));
   const publicTransportDetails = source.slice(source.indexOf('function publicTransportDetails'), source.indexOf('function publicTransportCard'));
   const carRentalDetails = source.slice(source.indexOf('function carRentalDetails'), source.indexOf('function carRentalCard'));
-  assert.equal(taxiDetails.includes('[copy.transportOperator, item.operator]'), true);
-  assert.equal(taxiDetails.includes('[copy.prayerOpeningHours, item.openingHours]'), true);
+  assert.equal(taxiDetails.includes('[copy.transportOperator, esc(item.operator)]'), true);
+  assert.equal(taxiDetails.includes('[copy.prayerOpeningHours, esc(item.openingHours)]'), true);
   assert.equal(taxiDetails.includes('item.openingHours || copy.halalOpeningUnavailable'), false);
   assert.equal(publicTransportDetails.includes('stop.openingHours || copy.halalOpeningUnavailable'), false);
   assert.equal(carRentalDetails.includes('office.openingHours || copy.halalOpeningUnavailable'), false);

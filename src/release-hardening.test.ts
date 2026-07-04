@@ -12,7 +12,7 @@ test('money parsing respects locale decimal separators', () => {
   assert.equal(parseAmountInput('0,125', 'tr').value, 0.125);
   assert.equal(parseAmountInput('1,250', 'en').value, 1250);
   assert.equal(parseAmountInput('1.250', 'tr').value, 1250);
-  assert.equal(parseAmountInput('USD 12', 'en').error, 'invalid');
+  assert.equal(parseAmountInput('USD 12', 'en').value, 12);
 });
 
 test('external map fields are escaped before insertion', async () => {

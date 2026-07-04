@@ -1,6 +1,0 @@
-
-> muslim-travel-planner@0.2.0 typecheck
-> tsc -p tsconfig.json --noEmit
-
-src/halal-overpass.ts(2,111): error TS2307: Cannot find module './provider-health.js' or its corresponding type declarations.
-src/main.ts(6,113): error TS2307: Cannot find module './provider-health.js' or its corresponding type declarations.

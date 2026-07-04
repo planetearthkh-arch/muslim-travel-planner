@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { generateItinerary } from './planner.js';
 import { RequestError, classifyRequestError, requestJson, retryOnceForTemporary } from './http.js';
+import { availableServiceEndpoints, recordServiceFailure, recordServiceSuccess } from './provider-health.js';
 import { requestHalalWithFailover } from './halal-overpass.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
 import {
@@ -3575,7 +3576,7 @@ function overpassPostOptions(query: string): RequestInit {
 function overpassEndpoints() {
   const configured = localStorage.getItem('mtp-overpass-endpoint');
   const fallback = localStorage.getItem('mtp-overpass-fallback-endpoint') ?? 'https://overpass.kumi.systems/api/interpreter';
-  return [...new Set([configured || overpassUrl(), fallback].filter(Boolean))];
+  return availableServiceEndpoints([configured || overpassUrl(), fallback]);
 }
 
 function isTemporaryOverpassError(error: unknown) {
@@ -3614,9 +3615,13 @@ async function requestAttractionBatch(batch: AttractionQueryBatch, signal?: Abor
   const endpoints = overpassEndpoints();
   for (const endpoint of endpoints) {
     try {
-      return await requestOverpass(endpoint, { ...overpassPostOptions(batch.query), signal }, 9000);
+      const result = await requestOverpass(endpoint, { ...overpassPostOptions(batch.query), signal }, 9000);
+      recordServiceSuccess(endpoint);
+      return result;
     } catch (error) {
       lastError = error;
+      const classified = classifyRequestError(error);
+      recordServiceFailure(endpoint, classified.kind, classified.retryAfterMs);
       recordAttractionDiagnostic(`Overpass ${batch.label} via ${new URL(endpoint).hostname}`, error);
       if (!isTemporaryOverpassError(error)) break;
     }

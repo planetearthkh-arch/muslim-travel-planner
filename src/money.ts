@@ -104,46 +104,55 @@ export const normalizeCurrencies = (payload: unknown): CurrencyInfo[] => {
   return normalized;
 };
 
-export const parseAmountInput = (raw: string, language: Language = 'en'): { value: number | null; error?: 'empty' | 'negative' | 'invalid' | 'tooLarge' } => {
+export function parseAmountInput(raw: string, language?: Language): { value: number | null; error?: 'empty' | 'negative' | 'invalid' | 'tooLarge' } {
   const trimmed = raw.trim();
   if (!trimmed) return { value: null, error: 'empty' };
-  if (/^-|−/.test(trimmed)) return { value: null, error: 'negative' };
-  const normalized = trimmed
+  if (/(?:^|\s)[-−]|[-−]\s*\d/.test(trimmed)) return { value: null, error: 'negative' };
+
+  const normalizedText = trimmed
     .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
     .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
     .replace(/٬/g, ',')
     .replace(/٫/g, '.')
-    .replace(/[\u00a0\u202f]/g, ' ');
-  if (!/^[+]?\s*[0-9][0-9.,' ]*\s*$/.test(normalized)) return { value: null, error: 'invalid' };
-  const unsigned = normalized.replace(/^\+/, '').trim();
-  const locale = localeFor(language);
-  const parts = new Intl.NumberFormat(locale).formatToParts(12345.6);
-  const localeDecimal = parts.find((part) => part.type === 'decimal')?.value || '.';
-  const localeGroup = parts.find((part) => part.type === 'group')?.value || ',';
-  const compact = unsigned.replace(/[ ']/g, '');
-  const separators = [...compact].filter((character) => character === '.' || character === ',');
+    .replace(/[\u0000-\u001f\u007f]/g, '');
+  const numericToken = normalizedText.match(/[+]?\d[\d.,' \u00a0\u202f]*/)?.[0] ?? '';
+  const normalized = numericToken.replace(/[ '’\u00a0\u202f]/g, '').replace(/^\+/, '');
+  if (!normalized || !/^[0-9][0-9.,]*$/.test(normalized)) return { value: null, error: 'invalid' };
+
   const grouped = (value: string, separator: string) => {
     const groups = value.split(separator);
     return /^[0-9]{1,3}$/.test(groups[0] || '') && groups.length > 1 && groups.slice(1).every((group) => /^[0-9]{3}$/.test(group));
   };
-  let numeric = compact;
-  if (separators.length) {
-    const hasDot = compact.includes('.');
-    const hasComma = compact.includes(',');
-    if (hasDot && hasComma) {
-      const decimal = compact.lastIndexOf('.') > compact.lastIndexOf(',') ? '.' : ',';
-      const group = decimal === '.' ? ',' : '.';
-      const [integer, fraction] = [compact.slice(0, compact.lastIndexOf(decimal)), compact.slice(compact.lastIndexOf(decimal) + 1)];
-      if (!/^\d+$/.test(fraction) || integer.includes(decimal) || integer.includes(group) && !grouped(integer, group)) return { value: null, error: 'invalid' };
-      numeric = integer.replaceAll(group, '') + '.' + fraction;
+
+  let numeric = normalized;
+  const hasDot = normalized.includes('.');
+  const hasComma = normalized.includes(',');
+  if (hasDot && hasComma) {
+    const decimal = normalized.lastIndexOf('.') > normalized.lastIndexOf(',') ? '.' : ',';
+    const group = decimal === '.' ? ',' : '.';
+    const decimalIndex = normalized.lastIndexOf(decimal);
+    const integer = normalized.slice(0, decimalIndex);
+    const fraction = normalized.slice(decimalIndex + 1);
+    if (!/^\d+$/.test(fraction) || fraction.length > 12 || integer.includes(decimal) || !grouped(integer, group)) return { value: null, error: 'invalid' };
+    numeric = integer.replaceAll(group, '') + '.' + fraction;
+  } else if (hasDot || hasComma) {
+    const separator = hasDot ? '.' : ',';
+    const occurrences = normalized.split(separator).length - 1;
+    if (occurrences > 1) {
+      if (!grouped(normalized, separator)) return { value: null, error: 'invalid' };
+      numeric = normalized.replaceAll(separator, '');
     } else {
-      const separator = hasDot ? '.' : ',';
-      const occurrences = compact.split(separator).length - 1;
-      if (separator === localeDecimal && occurrences === 1) numeric = compact.replace(separator, '.');
-      else if (separator === localeGroup && grouped(compact, separator)) numeric = compact.replaceAll(separator, '');
-      else if (occurrences > 1 && grouped(compact, separator)) numeric = compact.replaceAll(separator, '');
-      else if (occurrences === 1) numeric = compact.replace(separator, '.');
-      else return { value: null, error: 'invalid' };
+      const [integer, fraction = ''] = normalized.split(separator);
+      if (!/^\d+$/.test(integer) || !/^\d+$/.test(fraction)) return { value: null, error: 'invalid' };
+      if (fraction.length === 3 && integer !== '0') {
+        if (integer.length > 3) return { value: null, error: 'invalid' };
+        if (language) {
+          const parts = new Intl.NumberFormat(localeFor(language)).formatToParts(12345.6);
+          const localeDecimal = parts.find((part) => part.type === 'decimal')?.value || '.';
+          const localeGroup = parts.find((part) => part.type === 'group')?.value || ',';
+          numeric = separator === localeGroup ? integer + fraction : separator === localeDecimal ? integer + '.' + fraction : integer + '.' + fraction;
+        } else numeric = integer + fraction;
+      } else numeric = integer + '.' + fraction;
     }
   }
   if (!/^\d+(?:\.\d+)?$/.test(numeric)) return { value: null, error: 'invalid' };
@@ -151,7 +160,7 @@ export const parseAmountInput = (raw: string, language: Language = 'en'): { valu
   if (!Number.isFinite(value)) return { value: null, error: 'invalid' };
   if (value > 1_000_000_000_000_000) return { value: null, error: 'tooLarge' };
   return { value };
-};
+}
 
 export const convertAmount = (amount: number, rate: number): ConversionResult => {
   if (!Number.isFinite(amount) || !Number.isFinite(rate) || rate <= 0) throw new Error('Invalid conversion input');
