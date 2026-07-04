@@ -20,7 +20,21 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: node scripts/apply-release-audit-fixes.mjs
+      - name: Run release-audit generator
+        id: generator
+        continue-on-error: true
+        run: node scripts/apply-release-audit-fixes.mjs > audit-generator.log 2>&1
+      - name: Commit generator diagnostics
+        if: steps.generator.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audit-generator.log
+          git commit -m "Record release audit generator failure"
+          git push origin HEAD:${{ github.head_ref }}
+      - name: Stop after generator failure
+        if: steps.generator.outcome == 'failure'
+        run: exit 1
       - run: npm ci
       - run: npm test
       - run: npm run lint
@@ -29,6 +43,7 @@ jobs:
         run: |
           rm scripts/apply-release-audit-fixes.mjs
           rm .github/workflows/apply-release-audit-fixes.yml
+          rm -f audit-generator.log
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
