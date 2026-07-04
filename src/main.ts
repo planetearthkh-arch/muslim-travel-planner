@@ -172,6 +172,7 @@ import {
   calculatePrayerDisplay,
   disableAthanAlarms,
   enableAthanAlarms,
+  hasScheduledAthanAlarms,
   isNativeAthanAvailable,
   playTestAthan,
   stopAthan,
@@ -192,6 +193,13 @@ import { getSafeStorage } from './safe-storage.js';
 
 const appStorage = getSafeStorage();
 let lang: Language = parseLanguage(appStorage.getItem('mtp-language')) ?? 'en';
+function setAppLanguage(value: unknown) {
+  const parsed = parseLanguage(value);
+  if (!parsed) return false;
+  lang = parsed;
+  appStorage.setItem('mtp-language', lang);
+  return true;
+}
 type View = 'planner' | 'saved-trips' | 'qibla' | 'flight-mode' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'taxi-services' | 'weather' | 'attractions';
 type QiblaLocation = { latitude: number; longitude: number; accuracy?: number };
 type QiblaLocationStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'unavailable';
@@ -218,6 +226,21 @@ const todayIso = () => {
 let replan = 0;
 let selectedRegion: Region | '' = '';
 let athanEnabled = appStorage.getItem('athanEnabled') === 'true';
+let athanStateRefreshStarted = false;
+async function refreshAthanEnabledState() {
+  if (athanStateRefreshStarted) return;
+  athanStateRefreshStarted = true;
+  try {
+    const next = await hasScheduledAthanAlarms();
+    if (next !== athanEnabled) {
+      athanEnabled = next;
+      appStorage.setItem('athanEnabled', String(next));
+      render();
+    }
+  } finally {
+    athanStateRefreshStarted = false;
+  }
+}
 let athanStatus = '';
 let prefs: PlannerPreferences = {
   city: 'London',
@@ -395,10 +418,12 @@ function openReportDialog(place: ReportablePlace, includeHalal = false, trigger?
     <p class="status" data-report-status role="status" aria-live="polite"></p>
   </div>`;
   document.body.append(backdrop);
+  root?.setAttribute('inert', '');
   const reasonInput = backdrop.querySelector<HTMLSelectElement>('#report-reason');
   const noteInput = backdrop.querySelector<HTMLTextAreaElement>('#report-note');
   const status = backdrop.querySelector<HTMLElement>('[data-report-status]');
   const close = () => {
+    root?.removeAttribute('inert');
     backdrop.remove();
     trigger?.focus();
   };
@@ -426,7 +451,16 @@ function openReportDialog(place: ReportablePlace, includeHalal = false, trigger?
   reasonInput?.addEventListener('change', refreshLinks);
   noteInput?.addEventListener('input', refreshLinks);
   backdrop.querySelectorAll<HTMLElement>('[data-report-close]').forEach((button) => button.addEventListener('click', close));
-  backdrop.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
+  backdrop.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { close(); return; }
+    if (event.key !== 'Tab') return;
+    const focusable = [...backdrop.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), select, textarea, input:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((element) => !element.hidden);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
   backdrop.querySelector<HTMLButtonElement>('[data-report-copy]')?.addEventListener('click', async () => {
     try {
       await copyText(buildReportText(currentReport()));
@@ -888,7 +922,7 @@ function requestQiblaLocation() {
 
 function bindQibla() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
-    lang = (event.target as HTMLSelectElement).value as Language;
+    if (!setAppLanguage((event.target as HTMLSelectElement).value)) return;
     qiblaPage();
   });
   document.querySelector<HTMLButtonElement>('#back-to-planner')?.addEventListener('click', () => {
@@ -981,7 +1015,7 @@ function flightPlanFormMarkup(copy: typeof labels[Language]) {
         <label>${copy.flightCruiseAltitude}<input id="flight-altitude" type="number" min="0" max="60000" value="${altitudeFeet}" /></label>
         <label>${copy.flightAltitudeUnit}<select id="flight-altitude-unit"><option value="ft">${copy.flightFeet}</option><option value="m">${copy.flightMeters}</option></select></label>
       </div>
-      ${choiceSelect('prayerMethod', copy.flightMethod, prayerMethods, Object.fromEntries(prayerMethods.map((method) => [method, method])) as Record<(typeof prayerMethods)[number], string>)}
+      <label>${copy.flightMethod}<select id="flight-prayer-method">${prayerMethods.map((method) => `<option value="${esc(method)}" ${(plan?.prayerMethod ?? prefs.prayerMethod) === method ? 'selected' : ''}>${esc(method)}</option>`).join('')}</select></label>
       <label>${copy.flightWaypoints}<textarea id="flight-waypoints" rows="3" placeholder="${esc(copy.flightWaypointHelp)}">${esc(waypointText(plan))}</textarea></label>
       <div class="flight-actions">
         <button type="submit">${copy.flightPrepareButton}</button>
@@ -1013,7 +1047,7 @@ function flightDashboardMarkup(copy: typeof labels[Language], plan: PreparedFlig
   const now = Date.now();
   const progress = chooseFlightProgress(plan, { gps: flightLatestGps, previousGps: flightPreviousGps, manualProgress: flightManualProgress, nowMs: now });
   const activePosition = progress.position ?? positionByProgress(plan, flightManualProgress, now).position;
-  const prayer = activePosition ? calculateInflightPrayerSnapshot(activePosition.latitude, activePosition.longitude, now, plan.prayerMethod) : null;
+  const prayer = activePosition ? calculateInflightPrayerSnapshot(activePosition.latitude, activePosition.longitude, activePosition.timestamp, plan.prayerMethod) : null;
   const qiblaBearing = activePosition ? calculateQiblaBearing(activePosition.latitude, activePosition.longitude) : Number.NaN;
   const relative = typeof progress.trackDegrees === 'number' ? signedShortestAngle(progress.trackDegrees, qiblaBearing) : Number.NaN;
   const prayerRows = prayer ? prayerOrder.map((name) => `<div><span>${prayerLabels[lang][name]}</span><strong>${formatUtcTime(prayer.prayers[name])} UTC</strong>${plan.departureTimeZone || plan.arrivalTimeZone ? `<small>${formatInTimeZone(prayer.prayers[name], plan.departureTimeZone, localeForLanguage(lang))}${plan.arrivalTimeZone ? ` · ${formatInTimeZone(prayer.prayers[name], plan.arrivalTimeZone, localeForLanguage(lang))}` : ''}</small>` : ''}</div>`).join('') : '';
@@ -1042,8 +1076,8 @@ function flightDashboardMarkup(copy: typeof labels[Language], plan: PreparedFlig
     <div class="flight-qibla-layout">
       ${flightDiagramMarkup(qiblaBearing, progress.trackDegrees, copy)}
       <div class="flight-grid">
-        <div><span>${copy.flightQiblaTrue}</span><strong>${Number.isFinite(qiblaBearing) ? `${qiblaBearing.toFixed(1)}° true` : copy.flightUnavailableSource}</strong></div>
-        <div><span>${copy.flightTrack}</span><strong>${typeof progress.trackDegrees === 'number' ? `${progress.trackDegrees.toFixed(1)}° true` : copy.flightUnavailableSource}</strong></div>
+        <div><span>${copy.flightQiblaTrue}</span><strong>${Number.isFinite(qiblaBearing) ? `${qiblaBearing.toFixed(1)}°` : copy.flightUnavailableSource}</strong></div>
+        <div><span>${copy.flightTrack}</span><strong>${typeof progress.trackDegrees === 'number' ? `${progress.trackDegrees.toFixed(1)}°` : copy.flightUnavailableSource}</strong></div>
         <div><span>${copy.flightRelativeAngle}</span><strong>${flightRelativeAngleText(relative, copy)}</strong></div>
         <div><span>${copy.flightConfidence}</span><strong>${flightSourceLabel(progress.source, copy)}</strong></div>
       </div>
@@ -1108,7 +1142,7 @@ function readFlightFormPlan(copy: typeof labels[Language]): { plan: PreparedFlig
     waypoints,
     scheduledDepartureUtc,
     durationMinutes,
-    prayerMethod: prefs.prayerMethod,
+    prayerMethod: (document.querySelector<HTMLSelectElement>('#flight-prayer-method')?.value as PlannerPreferences['prayerMethod']) || prefs.prayerMethod,
     cruiseAltitudeMeters: altitudeMeters,
     departureTimeZone: document.querySelector<HTMLInputElement>('#flight-departure-zone')?.value.trim() || undefined,
     arrivalTimeZone: document.querySelector<HTMLInputElement>('#flight-arrival-zone')?.value.trim() || undefined,
@@ -1139,7 +1173,7 @@ async function startFlightGpsWatch() {
         source: 'gps',
       };
       if (preparedFlightPlan) flightManualProgress = chooseFlightProgress(preparedFlightPlan, { gps: flightLatestGps, previousGps: flightPreviousGps, manualProgress: flightManualProgress }).progress;
-      flightModePage();
+      if (document.activeElement?.id !== 'flight-progress') flightModePage();
     },
     (error) => {
       if (sequence !== flightWatchSequence || view !== 'flight-mode') return;
@@ -1154,7 +1188,7 @@ async function startFlightGpsWatch() {
 
 function bindFlightMode() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
-    lang = (event.target as HTMLSelectElement).value as Language;
+    if (!setAppLanguage((event.target as HTMLSelectElement).value)) return;
     flightModePage();
   });
   document.querySelector<HTMLButtonElement>('#flight-back')?.addEventListener('click', () => {
@@ -1199,7 +1233,7 @@ function bindFlightMode() {
       void startFlightGpsWatch();
     }
   });
-  document.querySelector<HTMLInputElement>('#flight-progress')?.addEventListener('input', (event) => {
+  document.querySelector<HTMLInputElement>('#flight-progress')?.addEventListener('change', (event) => {
     flightManualProgress = Number((event.target as HTMLInputElement).value) / 100;
     flightModePage();
   });
@@ -1380,6 +1414,19 @@ let attractionSearchTimer: number | undefined;
 let attractionSearchSequence = 0;
 let attractionEnrichmentSequence = 0;
 let selectedAttractionId = '';
+const SAVED_ATTRACTIONS_KEY = 'mtp-saved-attractions-v1';
+function readSavedAttractionIds() {
+  try {
+    const value = JSON.parse(appStorage.getItem(SAVED_ATTRACTIONS_KEY) ?? '[]') as unknown;
+    return new Set(Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+let savedAttractionIds = readSavedAttractionIds();
+function persistSavedAttractionIds() {
+  appStorage.setItem(SAVED_ATTRACTIONS_KEY, JSON.stringify([...savedAttractionIds]));
+}
 let attractionDiagnostics: string[] = [];
 const attractionCache = new Map<string, { expires: number; results: Attraction[] }>();
 const attractionEnrichmentCache = new Map<string, { expires: number; result: Attraction }>();
@@ -1415,6 +1462,14 @@ function validateOverpassResponse(payload: unknown): OverpassResponse {
 
 async function requestOverpass(url: string, options: RequestInit, milliseconds: number) {
   return validateOverpassResponse(await retryOnceForTemporary(() => requestJson<unknown>(url, options, milliseconds), options.signal ?? undefined));
+}
+
+function reportCenterDetails(center: PrayerCenter | undefined) {
+  const parts = (center?.label ?? '').split(',').map((part) => part.trim()).filter(Boolean);
+  return {
+    city: parts[0] || selectedCity().city,
+    country: parts.slice(1).join(', ') || selectedCity().country,
+  };
 }
 
 function prayerTypeLabel(type: PrayerPlaceType, copy: typeof labels[Language]) {
@@ -1549,18 +1604,15 @@ async function searchPrayerDestination() {
       await searchPrayerPlaces({ latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone }, sequence);
       return;
     }
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
-    const data = await requestJson<NominatimResult[]>(url, { headers: { Accept: 'application/json' } }, 12000);
+    const center = await resolveRestaurantDestination(query);
     if (!isCurrentPrayerSearch()) return;
-    const first = data[0];
-    if (!first) {
-      if (!isCurrentPrayerSearch()) return;
+    if (!center) {
       prayerStatus = 'empty';
       prayerResults = [];
       prayerPage();
       return;
     }
-    await searchPrayerPlaces({ latitude: Number(first.lat), longitude: Number(first.lon), label: first.display_name }, sequence);
+    await searchPrayerPlaces(center, sequence);
   } catch (error) {
     console.error(error);
     if (!isCurrentPrayerSearch()) return;
@@ -1612,7 +1664,7 @@ function prayerResultCard(place: PrayerPlace, copy: typeof labels[Language]) {
   const missing = (value: string) => value || copy.prayerUnknown;
   const displayName = ensureLatinDisplayName(getEnglishPlaceName(place), place.type);
   const openLabel = openingStatusLabel(openingState(place.openingHours, prayerCenter?.timezone), copy);
-  const reportPlace: ReportablePlace = { feature: copy.prayerSpacesTitle, name: displayName, sourceUrl: place.sourceUrl, latitude: place.latitude, longitude: place.longitude, city: selectedCity().city, country: selectedCity().country };
+  const reportPlace: ReportablePlace = { feature: copy.prayerSpacesTitle, name: displayName, sourceUrl: place.sourceUrl, latitude: place.latitude, longitude: place.longitude, ...reportCenterDetails(prayerCenter) };
   return `<article class="card prayer-place-card" aria-label="${esc(displayName)}">
     <div class="card-top"><span>${place.distanceKm.toFixed(1)} km · ${prayerTypeLabel(place.type, copy)}</span><span class="badge ${place.verification === 'Verified' ? 'verified' : 'unverified'}">${verified(place.verification)}</span></div>
     <h3>${esc(displayName)}</h3>
@@ -1687,7 +1739,7 @@ function prayerPage() {
 
 function bindPrayerPage() {
   bindReportButtons();
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; prayerPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; prayerPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-prayer')?.addEventListener('click', () => { view = 'planner'; prayerMap?.remove(); prayerMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-prayer-location')?.addEventListener('click', requestPrayerLocation);
   document.querySelector<HTMLSelectElement>('#prayer-radius')?.addEventListener('change', (event) => { prayerRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof prayerRadii[number]; if (prayerCenter) void searchPrayerPlaces(prayerCenter); });
@@ -1745,6 +1797,19 @@ function filteredRestaurantResults() {
   return sortRestaurants(filterRestaurants(restaurantResults, restaurantFilters), restaurantSort);
 }
 
+async function resolveTimeZoneForCoordinates(latitude: number, longitude: number) {
+  try {
+    const url = `${OPEN_METEO_FORECAST_URL}?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&timezone=auto&forecast_days=1&current=temperature_2m`;
+    const result = await requestJson<{ timezone?: string }>(url, { headers: { Accept: 'application/json' } }, 7000);
+    const candidate = result.timezone?.trim();
+    if (!candidate) return undefined;
+    new Intl.DateTimeFormat('en', { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return undefined;
+  }
+}
+
 async function resolveRestaurantDestination(query: string): Promise<PrayerCenter | undefined> {
   const trimmed = query.trim();
   if (!trimmed) return undefined;
@@ -1755,7 +1820,11 @@ async function resolveRestaurantDestination(query: string): Promise<PrayerCenter
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=en&q=${encodeURIComponent(trimmed)}`;
   const data = await requestJson<NominatimResult[]>(url, { headers: { Accept: 'application/json' } }, 12000);
   const first = data[0];
-  const center = first ? { latitude: Number(first.lat), longitude: Number(first.lon), label: first.display_name } : undefined;
+  const latitude = first ? Number(first.lat) : Number.NaN;
+  const longitude = first ? Number(first.lon) : Number.NaN;
+  const center = first && Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? { latitude, longitude, label: first.display_name, timezone: await resolveTimeZoneForCoordinates(latitude, longitude) }
+    : undefined;
   destinationCache.set(trimmed.toLowerCase(), { expires: Date.now() + 15 * 60 * 1000, center });
   return center;
 }
@@ -2019,7 +2088,7 @@ function halalRestaurantsPage() {
 
 function bindHalalRestaurantsPage() {
   bindReportButtons();
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; halalRestaurantsPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; halalRestaurantsPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-halal')?.addEventListener('click', () => { view = 'planner'; restaurantMap?.remove(); restaurantMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-halal-location')?.addEventListener('click', requestRestaurantLocation);
   document.querySelector<HTMLSelectElement>('#halal-radius')?.addEventListener('change', (event) => { restaurantRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof prayerRadii[number]; if (restaurantCenter) void searchHalalRestaurants(restaurantCenter); });
@@ -2343,7 +2412,7 @@ function publicToiletsPage() {
 
 function bindPublicToiletsPage() {
   bindReportButtons();
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; publicToiletsPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; publicToiletsPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-toilets')?.addEventListener('click', () => { view = 'planner'; toiletMap?.remove(); toiletMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-toilet-location')?.addEventListener('click', requestToiletLocation);
   document.querySelector<HTMLSelectElement>('#toilet-radius')?.addEventListener('change', (event) => { toiletRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof toiletRadii[number]; if (toiletCenter) void searchPublicToilets(toiletCenter); });
@@ -2654,7 +2723,7 @@ function carRentalPage() {
 
 function bindCarRentalPage() {
   bindReportButtons();
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; carRentalPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; carRentalPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-car-rental')?.addEventListener('click', () => { view = 'planner'; carRentalMap?.remove(); carRentalMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-car-rental-location')?.addEventListener('click', requestCarRentalLocation);
   document.querySelector<HTMLSelectElement>('#car-rental-radius')?.addEventListener('change', (event) => { carRentalRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof carRentalRadii[number]; if (carRentalCenter) void searchCarRentalOffices(carRentalCenter); });
@@ -2961,7 +3030,7 @@ function publicTransportPage() {
 
 function bindPublicTransportPage() {
   bindReportButtons();
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; publicTransportPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; publicTransportPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-public-transport')?.addEventListener('click', () => { view = 'planner'; publicTransportMap?.remove(); publicTransportMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-public-transport-location')?.addEventListener('click', requestPublicTransportLocation);
   document.querySelector<HTMLButtonElement>('#use-public-transport-destination')?.addEventListener('click', () => void searchPublicTransport(publicTransportDestinationCenter()));
@@ -3225,7 +3294,7 @@ function taxiPage() {
 
 function bindTaxiPage() {
   bindReportButtons();
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; taxiPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; taxiPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-taxi')?.addEventListener('click', () => { view = 'planner'; taxiMap?.remove(); taxiMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-taxi-location')?.addEventListener('click', requestTaxiLocation);
   document.querySelector<HTMLButtonElement>('#use-taxi-destination')?.addEventListener('click', () => void searchTaxiServices(taxiDestinationCenter()));
@@ -3283,7 +3352,7 @@ async function loadWeather(location: WeatherLocation, force = false) {
   const isCurrentWeatherRequest = () => sequence === weatherRequestSequence;
   weatherLocation = requestLocation;
   const cacheKey = weatherCacheKey(requestLocation, requestUnits);
-  const cached = readJsonCache<WeatherForecast>(localStorage, cacheKey, WEATHER_CACHE_MS);
+  const cached = readJsonCache<WeatherForecast>(appStorage, cacheKey, WEATHER_CACHE_MS);
   if (cached && !force) {
     if (!isCurrentWeatherRequest()) return;
     weatherForecast = { ...cached, cached: true };
@@ -3299,12 +3368,12 @@ async function loadWeather(location: WeatherLocation, force = false) {
     if (!isCurrentWeatherRequest()) return;
     weatherForecast = forecast;
     weatherSelectedDay = forecast.daily[0]?.date ?? '';
-    writeJsonCache(localStorage, cacheKey, forecast);
+    writeJsonCache(appStorage, cacheKey, forecast);
     weatherStatus = 'updated';
   } catch (error) {
     if (!isCurrentWeatherRequest()) return;
     if (classifyRequestError(error).kind === 'aborted') return;
-    const fallback = readJsonCache<WeatherForecast>(localStorage, cacheKey, 7 * 24 * 60 * 60 * 1000);
+    const fallback = readJsonCache<WeatherForecast>(appStorage, cacheKey, 7 * 24 * 60 * 60 * 1000);
     if (!isCurrentWeatherRequest()) return;
     if (fallback) {
       weatherForecast = { ...fallback, cached: true };
@@ -3516,7 +3585,7 @@ function weatherPage() {
 }
 
 function bindWeatherPage() {
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; weatherPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; weatherPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-weather')?.addEventListener('click', () => { view = 'planner'; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-weather-location')?.addEventListener('click', requestWeatherLocation);
   document.querySelector<HTMLButtonElement>('#use-weather-destination')?.addEventListener('click', () => void loadWeather(destinationWeatherLocation(), true));
@@ -3978,7 +4047,7 @@ function attractionDetailsRows(attraction: Attraction, copy: typeof labels[Langu
 }
 
 function attractionCard(attraction: Attraction, copy: typeof labels[Language]) {
-  const reportPlace: ReportablePlace = { feature: copy.attractionsTitle, name: attraction.name, sourceUrl: attraction.sourceUrl, latitude: attraction.latitude, longitude: attraction.longitude, city: selectedCity().city, country: selectedCity().country };
+  const reportPlace: ReportablePlace = { feature: copy.attractionsTitle, name: attraction.name, sourceUrl: attraction.sourceUrl, latitude: attraction.latitude, longitude: attraction.longitude, ...reportCenterDetails(attractionCenter) };
   return `<article class="card attraction-card" aria-label="${esc(attraction.name)}">
     ${attractionPhoto(attraction, copy)}
     <div class="card-top"><span>${attraction.distanceKm.toFixed(1)} km</span><span class="badge attraction-${attraction.category}">${attractionCategoryLabel(attraction.category, copy)}</span></div>
@@ -3987,7 +4056,7 @@ function attractionCard(attraction: Attraction, copy: typeof labels[Language]) {
     ${attractionDetailsRows(attraction, copy)}
     <div class="place-actions">
       <button type="button" class="ghost" data-attraction-detail="${attraction.id}">${copy.attractionsDetails}</button>
-      <button type="button" class="ghost" data-attraction-save="${attraction.id}">${copy.attractionsSave}</button>
+      <button type="button" class="ghost" data-attraction-save="${attraction.id}" aria-pressed="${savedAttractionIds.has(attraction.id)}">${savedAttractionIds.has(attraction.id) ? copy.attractionsSaved : copy.attractionsSave}</button>
       ${attraction.readMoreUrl ? `<a class="map-link" href="${esc(attraction.readMoreUrl)}" target="_blank" rel="noopener noreferrer">${copy.attractionsReadMore}</a>` : ''}
       <a class="map-link" href="${attraction.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
       <a class="map-link" href="${attractionAppleMapsUrl(attraction)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
@@ -4031,7 +4100,7 @@ function attractionsPage() {
       <p class="prayer-status ${attractionStatus}" role="status">${attractionStatusMessage(copy)}</p>
       <div class="segmented" role="tablist" aria-label="${copy.attractionsTitle}"><button type="button" class="${attractionView === 'photos' ? 'active' : 'ghost'}" data-attraction-view="photos">${copy.attractionsPhotoView}</button><button type="button" class="${attractionView === 'list' ? 'active' : 'ghost'}" data-attraction-view="list">${copy.attractionsListView}</button><button type="button" class="${attractionView === 'map' ? 'active' : 'ghost'}" data-attraction-view="map">${copy.attractionsMapView}</button></div>
       <div class="prayer-filters"><select id="attraction-category-filter"><option value="all">${copy.attractionsAll}</option>${(['historic','museum','gallery','monument','archaeological','castle','religious','viewpoint','natural','park','zoo','theme','artwork','cultural','other'] as AttractionCategory[]).map((category) => `<option value="${category}" ${attractionFilters.category === category ? 'selected' : ''}>${attractionCategoryLabel(category, copy)}</option>`).join('')}</select>${['photo','history','openNow','free','wheelchair'].map((key) => { const label = ({ photo: copy.attractionsPhotoAvailable, history: copy.attractionsHistoryAvailable, openNow: copy.toiletsOpenNow, free: copy.toiletsFree, wheelchair: copy.toiletsWheelchair } as Record<string, string>)[key]; return `<label class="inline-check"><input type="checkbox" data-attraction-filter="${key}" ${attractionFilters[key as keyof AttractionFilters] ? 'checked' : ''}/> ${label}</label>`; }).join('')}<label>${copy.carRentalSort}<select id="attraction-sort"><option value="distance" ${attractionSort === 'distance' ? 'selected' : ''}>${copy.toiletsNearest}</option><option value="name" ${attractionSort === 'name' ? 'selected' : ''}>${copy.toiletsSortName}</option><option value="category" ${attractionSort === 'category' ? 'selected' : ''}>${copy.attractionsSortCategory}</option><option value="photo" ${attractionSort === 'photo' ? 'selected' : ''}>${copy.attractionsSortPhoto}</option><option value="history" ${attractionSort === 'history' ? 'selected' : ''}>${copy.attractionsSortHistory}</option><option value="open" ${attractionSort === 'open' ? 'selected' : ''}>${copy.toiletsSortOpen}</option><option value="complete" ${attractionSort === 'complete' ? 'selected' : ''}>${copy.attractionsSortComplete}</option></select></label></div>
-      <div class="place-actions"><button type="button" id="attractions-search-this-area" class="ghost" ${attractionMapMoved ? '' : 'hidden'}>${copy.toiletsSearchThisArea}</button><button type="button" id="attractions-recentre" class="ghost">${copy.toiletsRecentre}</button><button type="button" id="attractions-fit-results" class="ghost">${copy.toiletsFitResults}</button></div>
+      <div class="place-actions"><button type="button" id="attractions-search-this-area" class="ghost" ${attractionMapMoved ? '' : 'hidden'}>${copy.attractionsSearch}</button><button type="button" id="attractions-recentre" class="ghost">${copy.toiletsRecentre}</button><button type="button" id="attractions-fit-results" class="ghost">${copy.toiletsFitResults}</button></div>
       ${selectedAttractionDetail(copy)}
       ${attractionView === 'map' ? `<div id="attractions-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : `<div class="${attractionView === 'photos' ? 'attraction-grid' : 'place-list'}">${results.length ? results.map((attraction) => attractionCard(attraction, copy)).join('') : attractionStatus === 'ready' ? `<p>${copy.attractionsNoResults}</p>` : ''}</div>`}
       ${(['empty', 'timeout', 'service-unavailable', 'offline', 'cached'].includes(attractionStatus) || !results.length && attractionResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-attractions" class="ghost">${copy.weatherRetry}</button>${attractionStatus === 'timeout' ? '' : `<button type="button" id="increase-attraction-radius">${copy.toiletsIncreaseRadius}</button>`}<button type="button" id="another-attraction-city" class="ghost">${copy.attractionsSearchAnother}</button></div>` : ''}
@@ -4045,7 +4114,7 @@ function attractionsPage() {
 
 function bindAttractionsPage() {
   bindReportButtons();
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; attractionsPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; attractionsPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-attractions')?.addEventListener('click', () => { view = 'planner'; attractionAbortController?.abort(); attractionEnrichmentAbortController?.abort(); attractionsMap?.remove(); attractionsMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-attraction-location')?.addEventListener('click', requestAttractionLocation);
   document.querySelector<HTMLButtonElement>('#use-attraction-destination')?.addEventListener('click', () => void searchAttractions(destinationAttractionCenter()));
@@ -4057,11 +4126,19 @@ function bindAttractionsPage() {
   document.querySelector<HTMLSelectElement>('#attraction-sort')?.addEventListener('change', (event) => { attractionSort = (event.target as HTMLSelectElement).value as AttractionSort; attractionsPage(); });
   document.querySelectorAll<HTMLButtonElement>('[data-attraction-detail]').forEach((button) => button.addEventListener('click', () => { selectedAttractionId = button.dataset.attractionDetail ?? ''; attractionsPage(); }));
   document.querySelector<HTMLButtonElement>('#close-attraction-detail')?.addEventListener('click', () => { selectedAttractionId = ''; attractionsPage(); });
-  document.querySelectorAll<HTMLButtonElement>('[data-attraction-save]').forEach((button) => button.addEventListener('click', () => { button.textContent = labels[lang].attractionsSaved; }));
+  document.querySelectorAll<HTMLButtonElement>('[data-attraction-save]').forEach((button) => button.addEventListener('click', () => {
+    const id = button.dataset.attractionSave;
+    if (!id) return;
+    if (savedAttractionIds.has(id)) savedAttractionIds.delete(id);
+    else savedAttractionIds.add(id);
+    persistSavedAttractionIds();
+    button.setAttribute('aria-pressed', String(savedAttractionIds.has(id)));
+    button.textContent = savedAttractionIds.has(id) ? labels[lang].attractionsSaved : labels[lang].attractionsSave;
+  }));
   document.querySelector<HTMLButtonElement>('#retry-attractions')?.addEventListener('click', () => { if (attractionCenter) void searchAttractions(attractionCenter); else void searchAttractions(destinationAttractionCenter()); });
   document.querySelector<HTMLButtonElement>('#increase-attraction-radius')?.addEventListener('click', () => { const next = attractionRadii.find((radius) => radius > attractionRadiusKm); if (next) attractionRadiusKm = next; if (attractionCenter) void searchAttractions(attractionCenter); });
   document.querySelector<HTMLButtonElement>('#another-attraction-city')?.addEventListener('click', () => document.querySelector<HTMLInputElement>('#attraction-manual-query')?.focus());
-  document.querySelector<HTMLButtonElement>('#attractions-search-this-area')?.addEventListener('click', () => { const center = attractionsMap?.getCenter?.(); if (!center) return; debouncedAttractionSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].toiletsSearchThisArea, timezone: attractionCenter?.timezone }); });
+  document.querySelector<HTMLButtonElement>('#attractions-search-this-area')?.addEventListener('click', () => { const center = attractionsMap?.getCenter?.(); if (!center) return; debouncedAttractionSearch({ latitude: center.lat, longitude: center.lng, label: labels[lang].attractionsSearch, timezone: attractionCenter?.timezone }); });
   document.querySelector<HTMLButtonElement>('#attractions-recentre')?.addEventListener('click', requestAttractionLocation);
   document.querySelector<HTMLButtonElement>('#attractions-fit-results')?.addEventListener('click', () => {
     const results = filteredAttractionResults();
@@ -4131,6 +4208,7 @@ function saveCurrentTrip(copy: typeof labels[Language]) {
 }
 
 function openSavedTrip(trip: SavedTrip) {
+  setAppLanguage(trip.language);
   prefs = { ...trip.preferences, interests: [...trip.preferences.interests] };
   generatedPrefs = { ...trip.preferences, interests: [...trip.preferences.interests] };
   generatedItems = trip.itinerary.map((item) => ({ ...item }));
@@ -4550,7 +4628,7 @@ function readPlannerDraftFromForm() {
 }
 
 async function loadCurrencies() {
-  const cached = readJsonCache<CurrencyInfo[]>(localStorage, 'mtp-currencies', CURRENCY_CACHE_MS);
+  const cached = readJsonCache<CurrencyInfo[]>(appStorage, 'mtp-currencies', CURRENCY_CACHE_MS);
   if (cached?.length) currencies = cached;
   moneyStatus = cached?.length ? 'idle' : 'loadingCurrencies';
   render();
@@ -4558,7 +4636,7 @@ async function loadCurrencies() {
     const loaded = normalizeCurrencies(await requestJson<unknown>(`${FRANKFURTER_BASE_URL}/currencies`, { headers: { Accept: 'application/json' } }, 7000));
     if (loaded.length) {
       currencies = loaded;
-      writeJsonCache(localStorage, 'mtp-currencies', loaded);
+      writeJsonCache(appStorage, 'mtp-currencies', loaded);
       moneyStatus = 'idle';
       render();
     }
@@ -4582,7 +4660,7 @@ async function loadPairRate(useCache = true) {
     return;
   }
   const key = cacheKeyForRate(requestFromCurrency, requestToCurrency);
-  const cachedRaw = readJsonCache<PairRate>(localStorage, key, RATE_CACHE_MS);
+  const cachedRaw = readJsonCache<PairRate>(appStorage, key, RATE_CACHE_MS);
   const cached = cachedRaw?.base === requestFromCurrency && cachedRaw.quote === requestToCurrency && typeof cachedRaw.rate === 'number' && Number.isFinite(cachedRaw.rate) && cachedRaw.rate > 0 ? cachedRaw : null;
   moneyStatus = 'loadingRate';
   moneyError = '';
@@ -4591,7 +4669,7 @@ async function loadPairRate(useCache = true) {
     const loaded = validateRateResponse(await requestJson<unknown>(`${FRANKFURTER_BASE_URL}/rate/${requestFromCurrency}/${requestToCurrency}`, { headers: { Accept: 'application/json' } }, 7000), requestFromCurrency, requestToCurrency);
     if (!isCurrentRateRequest()) return;
     rate = loaded;
-    writeJsonCache(localStorage, key, rate);
+    writeJsonCache(appStorage, key, rate);
     moneyStatus = 'updated';
     void loadHistory(requestFromCurrency, requestToCurrency);
   } catch (error) {
@@ -4626,7 +4704,7 @@ async function loadHistory(historyFromCurrency = fromCurrency, historyToCurrency
   const startIso = iso(start);
   const endIso = iso(end);
   const cacheKey = cacheKeyForHistory(historyFromCurrency, historyToCurrency, requestHistoryDays, startIso, endIso);
-  const cached = readJsonCache<ReturnType<typeof historyStats>>(localStorage, cacheKey, RATE_CACHE_MS);
+  const cached = readJsonCache<ReturnType<typeof historyStats>>(appStorage, cacheKey, RATE_CACHE_MS);
   if (cached) {
     historySummary = cached;
     render();
@@ -4635,7 +4713,7 @@ async function loadHistory(historyFromCurrency = fromCurrency, historyToCurrency
     const body = await requestJson<Array<{ date: string; base: string; quote: string; rate: number }>>(`${FRANKFURTER_BASE_URL}/rates?from=${startIso}&to=${endIso}&base=${historyFromCurrency}&quotes=${historyToCurrency}`, { headers: { Accept: 'application/json' } }, 7000);
     if (!isCurrentHistoryRequest()) return;
     historySummary = historyStats(body, historyToCurrency, historyFromCurrency);
-    writeJsonCache(localStorage, cacheKey, historySummary);
+    writeJsonCache(appStorage, cacheKey, historySummary);
   } catch {
     if (!isCurrentHistoryRequest()) return;
     historySummary = cached ?? null;
@@ -4804,7 +4882,7 @@ function moneyPage() {
 }
 
 function bindMoneyPage() {
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; moneyPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; moneyPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-money')?.addEventListener('click', () => { view = 'planner'; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLInputElement>('#money-amount')?.addEventListener('input', (event) => {
     amountInput = (event.target as HTMLInputElement).value;
@@ -4854,7 +4932,7 @@ function bindMoneyPage() {
 }
 
 function bindSavedTripsPage() {
-  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { lang = (event.target as HTMLSelectElement).value as Language; savedTripsPage(); });
+  document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; savedTripsPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-saved-trips')?.addEventListener('click', () => { view = 'planner'; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelectorAll<HTMLButtonElement>('[data-open-trip]').forEach((button) => button.addEventListener('click', () => {
     const trip = savedTrips.find((candidate) => candidate.id === button.dataset.openTrip);
@@ -5154,7 +5232,8 @@ function bind() {
     try {
       const alarmPrefs = generatedPrefs ?? prefs;
       const city = cityForPreferences(alarmPrefs) ?? selectedCity();
-      const alarms = calculatePrayerAlarms(city, alarmPrefs.prayerMethod, alarmPrefs.startDate, localeForLanguage(lang), 7);
+      const alertDays = Math.max(1, itineraryDayKeys(alarmPrefs.startDate, alarmPrefs.endDate).length);
+      const alarms = calculatePrayerAlarms(city, alarmPrefs.prayerMethod, alarmPrefs.startDate, localeForLanguage(lang), alertDays);
       if (!alarms.length) {
         athanStatus = copy.noFuture;
         render();
@@ -5234,7 +5313,11 @@ function bind() {
 
 window.addEventListener('hashchange', () => {
   view = viewFromHash();
-  if (view === 'planner') { stopQiblaOrientation(); prayerMap?.remove(); prayerMap = undefined; restaurantMap?.remove(); restaurantMap = undefined; publicTransportMap?.remove(); publicTransportMap = undefined; taxiMap?.remove(); taxiMap = undefined; }
+  if (view === 'planner') {
+    stopQiblaOrientation();
+    [cityMap, prayerMap, restaurantMap, toiletMap, carRentalMap, publicTransportMap, taxiMap, attractionsMap].forEach((map) => map?.remove());
+    cityMap = prayerMap = restaurantMap = toiletMap = carRentalMap = publicTransportMap = taxiMap = attractionsMap = undefined;
+  }
   if (view === 'money') {
     toCurrency = destinationCurrency(selectedCity());
     void loadCurrencies();
@@ -5269,4 +5352,5 @@ if (view === 'public-transport') void searchPublicTransport(publicTransportDesti
 if (view === 'taxi-services') void searchTaxiServices(taxiDestinationCenter());
 
 render();
+void refreshAthanEnabledState();
 void registerAppServiceWorker();

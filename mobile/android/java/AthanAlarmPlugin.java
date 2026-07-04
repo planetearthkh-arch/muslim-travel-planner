@@ -111,7 +111,8 @@ public class AthanAlarmPlugin extends Plugin {
                 if (timestamp <= now) continue;
                 String prayer = alarm.optString("prayer", "Prayer");
                 String city = alarm.optString("city", "");
-                scheduleOne(getContext(), id, timestamp, prayer, city);
+                boolean audioReady = alarm.optBoolean("audioReady", false);
+                scheduleOne(getContext(), id, timestamp, prayer, city, audioReady);
                 stored.put(alarm);
                 scheduled += 1;
             }
@@ -120,6 +121,20 @@ public class AthanAlarmPlugin extends Plugin {
         } catch (Exception error) {
             call.reject("Could not schedule Athan alarms.", error);
         }
+    }
+
+    @PluginMethod
+    public void pending(PluginCall call) {
+        int scheduled = 0;
+        try {
+            String encoded = preferences(getContext()).getString(KEY_ALARMS, "[]");
+            JSONArray alarms = new JSONArray(encoded);
+            long now = System.currentTimeMillis();
+            for (int index = 0; index < alarms.length(); index += 1) {
+                if (alarms.getJSONObject(index).optLong("timestamp", 0L) > now) scheduled += 1;
+            }
+        } catch (Exception ignored) {}
+        call.resolve(new JSObject().put("scheduled", scheduled));
     }
 
     @PluginMethod
@@ -159,18 +174,20 @@ public class AthanAlarmPlugin extends Plugin {
                     alarm.optInt("id", index + 1),
                     timestamp,
                     alarm.optString("prayer", "Prayer"),
-                    alarm.optString("city", "")
+                    alarm.optString("city", ""),
+                    alarm.optBoolean("audioReady", false)
                 );
             }
         } catch (Exception ignored) {}
     }
 
-    private static void scheduleOne(Context context, int id, long timestamp, String prayer, String city) {
+    private static void scheduleOne(Context context, int id, long timestamp, String prayer, String city, boolean audioReady) {
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         Intent intent = new Intent(context, AthanReceiver.class);
         intent.putExtra("alarmId", id);
         intent.putExtra("prayer", prayer);
         intent.putExtra("city", city);
+        intent.putExtra("audioReady", audioReady);
         PendingIntent pendingIntent = PendingIntent.getBroadcast(
             context,
             id,

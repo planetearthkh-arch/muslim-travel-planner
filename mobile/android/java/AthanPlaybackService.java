@@ -18,6 +18,7 @@ import java.io.File;
 public class AthanPlaybackService extends Service {
     public static final String ACTION_STOP = "com.planetearthkids.muslimtravelplanner.STOP_ATHAN";
     private static final String CHANNEL_ID = "athan_alarm_channel";
+    private static final String FALLBACK_CHANNEL_ID = "prayer_notification_channel";
     private static final int NOTIFICATION_ID = 4100;
     private MediaPlayer player;
     private PowerManager.WakeLock wakeLock;
@@ -40,8 +41,9 @@ public class AthanPlaybackService extends Service {
         if (prayer == null || prayer.isEmpty()) prayer = "Prayer";
         if (city == null) city = "";
 
+        boolean audioReady = intent != null && intent.getBooleanExtra("audioReady", true);
         startForeground(NOTIFICATION_ID, buildNotification(prayer, city));
-        startPlayback();
+        startPlayback(prayer, city, audioReady);
         return START_NOT_STICKY;
     }
 
@@ -70,18 +72,28 @@ public class AthanPlaybackService extends Service {
             .setContentText(body)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(openPendingIntent)
             .addAction(android.R.drawable.ic_media_pause, "Stop Athan", stopPendingIntent)
             .setOngoing(true)
             .build();
     }
 
-    private void startPlayback() {
+    private void startPlayback(String prayer, String city, boolean audioReady) {
         stopPlayer();
         String audioPath = AthanAlarmPlugin.preferences(this).getString(AthanAlarmPlugin.KEY_AUDIO_PATH, "");
         File audioFile = new File(audioPath == null ? "" : audioPath);
-        if (!audioFile.exists() || audioFile.length() == 0) {
+        if (!audioReady || !audioFile.exists() || audioFile.length() == 0) {
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            manager.notify(NOTIFICATION_ID + 1, new NotificationCompat.Builder(this, FALLBACK_CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(prayer)
+                .setContentText(city.isEmpty() ? "Prayer time" : city)
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setAutoCancel(true)
+                .build());
             stopSelf();
             return;
         }
@@ -121,6 +133,14 @@ public class AthanPlaybackService extends Service {
         channel.enableVibration(true);
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.createNotificationChannel(channel);
+        NotificationChannel fallback = new NotificationChannel(
+            FALLBACK_CHANNEL_ID,
+            "Prayer notifications",
+            NotificationManager.IMPORTANCE_HIGH
+        );
+        fallback.setDescription("Prayer-time notification fallback");
+        fallback.enableVibration(true);
+        manager.createNotificationChannel(fallback);
     }
 
     private void stopPlayer() {
