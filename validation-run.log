@@ -1,0 +1,15 @@
+== npm ci ==
+
+added 273 packages, and audited 274 packages in 4s
+
+55 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+== typecheck ==
+
+> muslim-travel-planner@0.2.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+src/money.ts(118,41): error TS1507: There is nothing available for repetition.
+src/release-hardening.test.ts(2,30): error TS2591: Cannot find name 'node:fs'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
