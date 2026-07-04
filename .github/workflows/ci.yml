@@ -21,7 +21,7 @@ jobs:
       - run: npm run lint
       - name: Package temporary debug workspace
         if: always()
-        run: tar --exclude=.git --exclude=dist --exclude=dist-test --exclude=android/.gradle -czf hardening-workspace.tgz .
+        run: tar --exclude='./.git' --exclude='./dist' --exclude='./dist-test' --exclude='./android/.gradle' --exclude='./hardening-workspace.tgz' -czf hardening-workspace.tgz .
       - uses: actions/upload-artifact@v4
         if: always()
         with:
