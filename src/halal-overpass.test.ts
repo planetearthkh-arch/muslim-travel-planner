@@ -28,9 +28,9 @@ test('halal Overpass endpoints include a global fallback without duplicates', ()
   );
 });
 
-test('halal endpoint time is divided across available services', () => {
+test('halal endpoints receive enough time to return on mobile networks', () => {
   assert.equal(halalEndpointTimeout(30_000, 2), 15_000);
-  assert.equal(halalEndpointTimeout(30_000, 3), 10_000);
+  assert.equal(halalEndpointTimeout(30_000, 3), 15_000);
 });
 
 test('halal request moves to the next service after a timeout', async () => {
@@ -52,7 +52,7 @@ test('halal request moves to the next service after a timeout', async () => {
 
   assert.equal(result, HALAL_OVERPASS_ENDPOINTS[0]);
   assert.deepEqual(calls, [
-    'https://custom.example/api/interpreter|10000',
-    `${HALAL_OVERPASS_ENDPOINTS[0]}|10000`,
+    'https://custom.example/api/interpreter|15000',
+    `${HALAL_OVERPASS_ENDPOINTS[0]}|15000`,
   ]);
 });

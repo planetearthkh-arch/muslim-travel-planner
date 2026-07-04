@@ -27,7 +27,7 @@ test('offline navigation caches each page separately', async () => {
   assert.equal(source.includes('caches.match(request)'), true);
 });
 
-test('native prayer notifications are audible and accurately described', async () => {
+test('native mobile networking and prayer notifications are configured', async () => {
   const labels = await repoFile('src/athan-i18n.ts');
   const implementation = await repoFile('src/athan.ts');
   const config = await repoFile('capacitor.config.ts');
@@ -38,5 +38,7 @@ test('native prayer notifications are audible and accurately described', async (
   assert.equal(labels.includes('iPhone uses the system notification sound'), true);
   assert.equal(implementation.includes("const NATIVE_DEFAULT_SOUND = 'default'"), true);
   assert.equal((implementation.match(/sound: NATIVE_DEFAULT_SOUND/g) ?? []).length, 2);
+  assert.equal(config.includes('CapacitorHttp'), true);
+  assert.match(config, /CapacitorHttp:\s*\{\s*enabled:\s*true/);
   assert.equal(config.includes("presentationOptions: ['sound', 'banner', 'list']"), true);
 });

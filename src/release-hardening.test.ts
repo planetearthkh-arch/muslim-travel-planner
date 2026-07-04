@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { halalEndpointTimeout } from './halal-overpass.js';
+import { buildHalalOverpassQuery } from './halal-restaurants.js';
 import { parseAmountInput } from './money.js';
 import { validateTravelDetailInput } from './travel-details.js';
 
@@ -35,6 +37,15 @@ test('travel detail validation rejects impossible or nonexistent local dates', (
   if (!reversed.ok) assert.equal(reversed.error, 'range');
 });
 
+test('halal restaurant searches use focused queries and usable provider timeouts', () => {
+  const query = buildHalalOverpassQuery(31.7683, 35.2137, 1);
+  assert.equal(query.includes('["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["diet:halal"]'), true);
+  assert.equal(query.includes('["description"~"halal"'), false);
+  assert.equal(query.includes('["description:en"~"halal"'), false);
+  assert.equal(query.includes('["note"~"halal"'), false);
+  assert.equal(halalEndpointTimeout(20_000, 2), 15_000);
+});
+
 test('external map fields are escaped before insertion', async () => {
   const main = await repoFile('src/main.ts');
   for (const expression of ['esc(place.address)', 'esc(toilet.address)', 'esc(office.address)', 'esc(stop.address)', 'esc(item.address)', 'esc(attraction.address)']) {
@@ -54,6 +65,9 @@ test('a restrictive content security policy is present', async () => {
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /object-src 'none'/);
   assert.match(html, /worker-src 'self' blob:/);
+  assert.equal(html.includes('https://overpass-api.de'), true);
+  assert.equal(html.includes('https://overpass.private.coffee'), true);
+  assert.equal(html.includes('https://overpass.kumi.systems'), true);
 });
 
 test('prayer notification fallbacks use bundled assets and exact-alarm state', async () => {

@@ -2452,7 +2452,7 @@ test('attraction page progressively loads images before final missing-image fall
 
 test('halal Overpass query filters explicit halal evidence instead of every food venue', () => {
   const query = buildHalalOverpassQuery(0, 0, 5);
-  assert.equal(query.includes('nwr["diet:halal"](around:5000,0,0)'), true);
+  assert.equal(query.includes('nwr["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["diet:halal"](around:5000,0,0)'), true);
   assert.equal(query.includes('["halal:certification"]'), true);
   assert.equal(query.includes('["description"~"halal",i]'), false);
   assert.equal(query.includes('node["amenity"="restaurant"]'), false);

@@ -14,6 +14,9 @@ const config: CapacitorConfig = {
     contentInset: 'automatic',
   },
   plugins: {
+    CapacitorHttp: {
+      enabled: true,
+    },
     LocalNotifications: {
       presentationOptions: ['sound', 'banner', 'list'],
     },

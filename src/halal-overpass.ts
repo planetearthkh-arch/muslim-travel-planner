@@ -13,7 +13,7 @@ export function halalOverpassEndpoints(primary?: string | null) {
 
 export function halalEndpointTimeout(totalMilliseconds: number, endpointCount: number) {
   const safeCount = Math.max(1, endpointCount);
-  return Math.max(8_000, Math.floor(totalMilliseconds / safeCount));
+  return Math.max(15_000, Math.ceil(totalMilliseconds / safeCount));
 }
 
 export async function requestHalalWithFailover<T>(
