@@ -19,6 +19,15 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run lint
+      - name: Package temporary debug workspace
+        if: always()
+        run: tar --exclude=.git --exclude=dist --exclude=dist-test --exclude=android/.gradle -czf hardening-workspace.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hardening-workspace
+          path: hardening-workspace.tgz
+          retention-days: 1
 
   android:
     runs-on: ubuntu-latest
