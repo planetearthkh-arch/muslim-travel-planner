@@ -37,33 +37,48 @@ jobs:
         if: steps.payload.outputs.ready == 'true'
         run: npm ci
       - name: Typecheck
+        id: typecheck
         if: steps.payload.outputs.ready == 'true'
-        run: npm run typecheck
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee finalizer-typecheck.log
+      - name: Commit typecheck diagnostics
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add finalizer-typecheck.log
+          git commit -m "Record final hardening typecheck diagnostics"
+          git push origin HEAD:fix-all-release-blockers
+      - name: Stop after typecheck failure
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'failure'
+        run: exit 1
       - name: Unit tests
-        if: steps.payload.outputs.ready == 'true'
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'success'
         run: npm test
       - name: Lint
-        if: steps.payload.outputs.ready == 'true'
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'success'
         run: npm run lint
       - name: Web build
-        if: steps.payload.outputs.ready == 'true'
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'success'
         run: npm run build
       - name: Native build
-        if: steps.payload.outputs.ready == 'true'
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'success'
         run: npm run build:native
       - name: Production dependency audit
-        if: steps.payload.outputs.ready == 'true'
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'success'
         run: npm audit --omit=dev
       - name: Install Chromium
-        if: steps.payload.outputs.ready == 'true'
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'success'
         run: npx playwright install --with-deps chromium
       - name: Browser tests
-        if: steps.payload.outputs.ready == 'true'
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'success'
         run: npm run test:e2e
       - name: Commit final hardening
-        if: steps.payload.outputs.ready == 'true'
+        if: steps.payload.outputs.ready == 'true' && steps.typecheck.outcome == 'success'
         run: |
-          rm -f scripts/final-hardening-patch.part* scripts/final-hardening-ready.txt scripts/finalize-hardening-prep.sh
+          rm -f scripts/final-hardening-patch.part* scripts/final-hardening-ready.txt scripts/finalize-hardening-prep.sh finalizer-typecheck.log
           rm -f .github/workflows/finalize-release-hardening.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
