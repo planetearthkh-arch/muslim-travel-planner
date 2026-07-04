@@ -21,21 +21,12 @@ if (!testFiles.length) {
 
 console.log(`Discovered ${testFiles.length} compiled test file${testFiles.length === 1 ? '' : 's'}.`);
 
-const child = spawn(process.execPath, ['--test', ...testFiles], { stdio: ['ignore', 'pipe', 'pipe'] });
-let output = '';
-child.stdout.on('data', (chunk) => { output += chunk.toString(); });
-child.stderr.on('data', (chunk) => { output += chunk.toString(); });
+const child = spawn(process.execPath, ['--test', ...testFiles], { stdio: 'inherit' });
 
 child.on('exit', (code, signal) => {
   if (signal) {
     console.error(`Test runner stopped by ${signal}.`);
     process.exit(1);
   }
-  if (code === 0) {
-    console.log(output);
-    process.exit(0);
-  }
-  const lines = output.trimEnd().split('\n');
-  console.error(lines.slice(-240).join('\n'));
   process.exit(code ?? 1);
 });
