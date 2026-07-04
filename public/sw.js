@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'mtp-app-shell-';
-const CACHE_VERSION = 'mtp-app-shell-v13';
+const CACHE_VERSION = 'mtp-app-shell-v14';
 const APP_SCOPE = new URL(self.registration.scope);
 const APP_HOME = new URL('./', APP_SCOPE).toString();
 const APP_SHELL = [
@@ -36,7 +36,13 @@ self.addEventListener('fetch', (event) => {
         await cache.put(request, copy);
       }
       return response;
-    }).catch(async () => (await caches.match(request)) ?? (await caches.match(APP_HOME)) ?? Response.error()));
+    }).catch(async () => {
+      const requestUrl = new URL(request.url);
+      const legalPage = requestUrl.pathname.endsWith('/privacy.html') ? new URL('./privacy.html', APP_SCOPE).toString()
+        : requestUrl.pathname.endsWith('/support.html') ? new URL('./support.html', APP_SCOPE).toString()
+          : '';
+      return (await caches.match(request)) ?? (legalPage ? await caches.match(legalPage) : undefined) ?? (await caches.match(APP_HOME)) ?? Response.error();
+    }));
     return;
   }
 

@@ -56,7 +56,7 @@ test('external map fields are escaped before insertion', async () => {
 test('service worker deletes only SafarOne caches', async () => {
   const worker = await repoFile('public/sw.js');
   assert.match(worker, /key\.startsWith\(CACHE_PREFIX\)/);
-  assert.match(worker, /mtp-app-shell-v13/);
+  assert.match(worker, /mtp-app-shell-v14/);
   assert.match(worker, /await cache\.put\(request, copy\)/);
 });
 

@@ -4,6 +4,7 @@ import {
   CalculationMethod,
   Coordinates,
   HighLatitudeRule,
+  Madhab,
   PrayerTimes,
 } from 'adhan';
 import type { CityData, PrayerMethod, PrayerName } from './models.js';
@@ -24,6 +25,7 @@ const NATIVE_PRAYER_NOTIFICATION_MIN = 200_000_000;
 const NATIVE_PRAYER_NOTIFICATION_MAX = 299_999_999;
 const NATIVE_TEST_NOTIFICATION_ID = 199_900_001;
 const NATIVE_DEFAULT_SOUND = 'default';
+const MAX_IOS_PENDING_NOTIFICATIONS = 64;
 let browserTimers: number[] = [];
 let browserAudio: HTMLAudioElement | undefined;
 
@@ -43,19 +45,20 @@ function copyFor(language: Language | string) {
 }
 
 function methodParameters(method: PrayerMethod) {
-  switch (method) {
-    case 'Egyptian General Authority':
-      return CalculationMethod.Egyptian();
-    case 'Umm al-Qura':
-      return CalculationMethod.UmmAlQura();
-    case 'ISNA':
-      return CalculationMethod.NorthAmerica();
-    case 'Turkey Diyanet':
-      return CalculationMethod.Turkey();
-    case 'Muslim World League':
-    default:
-      return CalculationMethod.MuslimWorldLeague();
-  }
+  const hanafi = method.endsWith(' (Hanafi Asr)');
+  const baseMethod = method.replace(' (Hanafi Asr)', '') as PrayerMethod;
+  const parameters = (() => {
+    switch (baseMethod) {
+      case 'Egyptian General Authority': return CalculationMethod.Egyptian();
+      case 'Umm al-Qura': return CalculationMethod.UmmAlQura();
+      case 'ISNA': return CalculationMethod.NorthAmerica();
+      case 'Turkey Diyanet': return CalculationMethod.Turkey();
+      case 'Muslim World League':
+      default: return CalculationMethod.MuslimWorldLeague();
+    }
+  })();
+  parameters.madhab = hanafi ? Madhab.Hanafi : Madhab.Shafi;
+  return parameters;
 }
 
 function parseIsoDate(value: string) {
@@ -178,10 +181,13 @@ async function cancelNativePrayerNotifications() {
 export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Language = 'en') {
   if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
     const permissions = await LocalNotifications.requestPermissions();
+    const now = Date.now();
+    const future = alarms.filter((alarm) => alarm.timestamp > now + 1000);
     if (permissions.display !== 'granted') {
       return {
         mode: 'native' as const,
         scheduled: 0,
+        requested: future.length,
         permissions: { exactAlarmAllowed: false, notificationsAllowed: false },
       };
     }
@@ -192,24 +198,29 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
       audioReady = false;
     }
     const alarmPermissions = await AndroidAthan.requestPermissions();
+    if (!alarmPermissions.exactAlarmAllowed) {
+      return {
+        mode: 'native' as const,
+        scheduled: 0,
+        requested: future.length,
+        permissions: { exactAlarmAllowed: false, notificationsAllowed: true },
+      };
+    }
     const copy = copyFor(language);
-    const now = Date.now();
-    const payload = alarms
-      .filter((alarm) => alarm.timestamp > now + 1000)
-      .slice(0, 60)
-      .map((alarm) => ({
-        id: nativeNotificationId(alarm),
-        timestamp: alarm.timestamp,
-        prayer: `${copy.prayer[alarm.prayer]} ${copy.title}`,
-        city: `${alarm.city} · ${alarm.formattedTime}`,
-        audioReady,
-      }));
+    const payload = future.map((alarm) => ({
+      id: nativeNotificationId(alarm),
+      timestamp: alarm.timestamp,
+      prayer: `${copy.prayer[alarm.prayer]} ${copy.title}`,
+      city: `${alarm.city} · ${alarm.formattedTime}`,
+      language,
+      audioReady,
+    }));
     const result = payload.length ? await AndroidAthan.schedule({ alarms: payload }) : { scheduled: 0 };
-    const exactAlarmAllowed = alarmPermissions.exactAlarmAllowed;
     return {
       mode: 'native' as const,
       scheduled: result.scheduled,
-      permissions: { exactAlarmAllowed, notificationsAllowed: true },
+      requested: future.length,
+      permissions: { exactAlarmAllowed: true, notificationsAllowed: true },
     };
   }
 
@@ -226,9 +237,9 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
     const exactAlarmAllowed = true;
     const now = Date.now();
     const copy = copyFor(language);
-    const notifications = alarms
-      .filter((alarm) => alarm.timestamp > now + 1000)
-      .slice(0, 60)
+    const future = alarms.filter((alarm) => alarm.timestamp > now + 1000);
+    const notifications = future
+      .slice(0, MAX_IOS_PENDING_NOTIFICATIONS)
       .map((alarm) => ({
         id: nativeNotificationId(alarm),
         title: `${copy.prayer[alarm.prayer]} ${copy.title}`,
@@ -241,6 +252,7 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
     return {
       mode: 'native' as const,
       scheduled: notifications.length,
+      requested: future.length,
       permissions: { exactAlarmAllowed, notificationsAllowed: true },
     };
   }
@@ -252,6 +264,7 @@ export async function enableAthanAlarms(alarms: PrayerAlarm[], language: Languag
   return {
     mode: 'browser' as const,
     scheduled: browserTimers.length,
+    requested: alarms.filter((alarm) => alarm.timestamp > Date.now()).length,
     permissions: {
       exactAlarmAllowed: false,
       notificationsAllowed: !('Notification' in window) || Notification.permission === 'granted',
@@ -287,7 +300,7 @@ export async function disableAthanAlarms() {
 export async function playTestAthan(language: Language = 'en') {
   if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
     await AndroidAthan.prepare({ audioUrl: ATHAN_AUDIO_URL });
-    await AndroidAthan.test();
+    await AndroidAthan.test({ language });
     return;
   }
   if (Capacitor.isNativePlatform()) {

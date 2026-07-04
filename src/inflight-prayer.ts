@@ -2,6 +2,7 @@ import {
   CalculationMethod,
   Coordinates,
   HighLatitudeRule,
+  Madhab,
   PrayerTimes,
 } from 'adhan';
 import type { PrayerMethod, PrayerName } from './models.js';
@@ -21,19 +22,20 @@ export type InflightPrayerSnapshot = {
 const prayerOrder: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 
 function methodParameters(method: PrayerMethod) {
-  switch (method) {
-    case 'Egyptian General Authority':
-      return CalculationMethod.Egyptian();
-    case 'Umm al-Qura':
-      return CalculationMethod.UmmAlQura();
-    case 'ISNA':
-      return CalculationMethod.NorthAmerica();
-    case 'Turkey Diyanet':
-      return CalculationMethod.Turkey();
-    case 'Muslim World League':
-    default:
-      return CalculationMethod.MuslimWorldLeague();
-  }
+  const hanafi = method.endsWith(' (Hanafi Asr)');
+  const baseMethod = method.replace(' (Hanafi Asr)', '') as PrayerMethod;
+  const parameters = (() => {
+    switch (baseMethod) {
+      case 'Egyptian General Authority': return CalculationMethod.Egyptian();
+      case 'Umm al-Qura': return CalculationMethod.UmmAlQura();
+      case 'ISNA': return CalculationMethod.NorthAmerica();
+      case 'Turkey Diyanet': return CalculationMethod.Turkey();
+      case 'Muslim World League':
+      default: return CalculationMethod.MuslimWorldLeague();
+    }
+  })();
+  parameters.madhab = hanafi ? Madhab.Hanafi : Madhab.Shafi;
+  return parameters;
 }
 
 function prayerTimesForDate(coordinates: Coordinates, date: Date, method: PrayerMethod) {

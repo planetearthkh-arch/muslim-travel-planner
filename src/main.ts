@@ -177,7 +177,7 @@ import {
   playTestAthan,
   stopAthan,
 } from './athan.js';
-import type { ItineraryItem, PlannerPreferences, PrayerName, Region, VerificationStatus } from './models.js';
+import type { ItineraryItem, PlannerPreferences, PrayerMethod, PrayerName, Region, VerificationStatus } from './models.js';
 import { createSavedTrip, defaultTripName, duplicateSavedTrip, sanitizeTripName, SavedTripRepository, type SavedTrip } from './saved-trips.js';
 import { currentConnectionState, registerAppServiceWorker, type ConnectionState } from './offline.js';
 import { buildReportText, createPlaceReport, githubIssueUrl, osmReportUrl, reportReasons, sanitizeReportNote, type ReportReason, type ReportablePlace } from './place-report.js';
@@ -187,7 +187,7 @@ import { copyText, exportTripCalendarFile, shareText } from './native-share.js';
 import { bindNativeExternalLinks, staticLegalPageUrl } from './native-links.js';
 import { deleteTravelDetail, emptyTravelDetails, sortTravelDetails, upsertTravelDetail, validateTravelDetailInput, validateTravelDetailsSnapshot, type TravelDetailEntry, type TravelDetailInput, type TravelDetailsSnapshot, type TravelDetailType } from './travel-details.js';
 import { dateTimeForZone } from './time-zones.js';
-import { getSafeStorage } from './safe-storage.js';
+import { getSafeStorage, isPersistentStorageAvailable } from './safe-storage.js';
 
 (window as unknown as { maplibregl?: typeof maplibregl }).maplibregl = maplibregl;
 
@@ -196,8 +196,14 @@ let lang: Language = parseLanguage(appStorage.getItem('mtp-language')) ?? 'en';
 function setAppLanguage(value: unknown) {
   const parsed = parseLanguage(value);
   if (!parsed) return false;
+  const changed = parsed !== lang;
   lang = parsed;
   appStorage.setItem('mtp-language', lang);
+  if (changed && generatedPrefs) {
+    generatedItems = generateItinerary(generatedPrefs, replan, lang);
+    if (openedSavedTripId) savedTripStatus = 'unsaved';
+    athanStatus = '';
+  }
   return true;
 }
 type View = 'planner' | 'saved-trips' | 'qibla' | 'flight-mode' | 'prayer-spaces' | 'money' | 'halal-restaurants' | 'public-toilets' | 'car-rental' | 'public-transport' | 'taxi-services' | 'weather' | 'attractions';
@@ -293,6 +299,7 @@ let flightWatch: AppPositionWatch | undefined;
 let flightWatchSequence = 0;
 let flightLatestGps: FlightPosition | undefined;
 let flightPreviousGps: FlightPosition | undefined;
+let flightClockTimer: number | undefined;
 
 let currencies: CurrencyInfo[] = fallbackCurrencies;
 let currencySearch = '';
@@ -308,8 +315,48 @@ let historySummary: ReturnType<typeof historyStats> | null = null;
 
 const root = document.querySelector<HTMLDivElement>('#root');
 const regionOptions: Region[] = ['Europe', 'Middle East', 'Asia', 'North America', 'Africa', 'Oceania'];
-const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'] as const;
+const prayerMethods = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet', 'Muslim World League (Hanafi Asr)', 'Egyptian General Authority (Hanafi Asr)', 'Umm al-Qura (Hanafi Asr)', 'ISNA (Hanafi Asr)', 'Turkey Diyanet (Hanafi Asr)'] as const;
 const prayerOrder: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+const temporaryStorageNotice: Record<Language, string> = {
+  en: 'Temporary session storage is in use. Saved information will be lost when the app or page closes.',
+  ar: 'يُستخدم تخزين مؤقت لهذه الجلسة. ستفقد المعلومات المحفوظة عند إغلاق التطبيق أو الصفحة.',
+  ur: 'عارضی سیشن اسٹوریج استعمال ہو رہی ہے۔ ایپ یا صفحہ بند ہونے پر محفوظ معلومات ختم ہو جائیں گی۔',
+  id: 'Penyimpanan sesi sementara sedang digunakan. Data tersimpan akan hilang saat aplikasi atau halaman ditutup.',
+  ms: 'Storan sesi sementara sedang digunakan. Maklumat yang disimpan akan hilang apabila aplikasi atau halaman ditutup.',
+  tr: 'Geçici oturum depolaması kullanılıyor. Uygulama veya sayfa kapatılınca kaydedilen bilgiler silinir.',
+  fr: 'Le stockage temporaire de session est utilisé. Les informations enregistrées seront perdues à la fermeture de l’application ou de la page.',
+};
+
+const itineraryKindLabels: Record<Language, Record<ItineraryItem['kind'], string>> = {
+  en: { travel: 'Travel', attraction: 'Attraction', prayer: 'Prayer', meal: 'Meal', 'free-time': 'Free time' },
+  ar: { travel: 'انتقال', attraction: 'معلم', prayer: 'صلاة', meal: 'وجبة', 'free-time': 'وقت حر' },
+  ur: { travel: 'سفر', attraction: 'سیاحتی مقام', prayer: 'نماز', meal: 'کھانا', 'free-time': 'فارغ وقت' },
+  id: { travel: 'Perjalanan', attraction: 'Atraksi', prayer: 'Salat', meal: 'Makan', 'free-time': 'Waktu bebas' },
+  ms: { travel: 'Perjalanan', attraction: 'Tarikan', prayer: 'Solat', meal: 'Makan', 'free-time': 'Masa lapang' },
+  tr: { travel: 'Ulaşım', attraction: 'Gezi noktası', prayer: 'Namaz', meal: 'Yemek', 'free-time': 'Serbest zaman' },
+  fr: { travel: 'Trajet', attraction: 'Attraction', prayer: 'Prière', meal: 'Repas', 'free-time': 'Temps libre' },
+};
+
+const prayerMethodBaseLabels: Record<Language, Record<string, string>> = {
+  en: { 'Muslim World League': 'Muslim World League', 'Egyptian General Authority': 'Egyptian General Authority', 'Umm al-Qura': 'Umm al-Qura', ISNA: 'ISNA', 'Turkey Diyanet': 'Turkey Diyanet' },
+  ar: { 'Muslim World League': 'رابطة العالم الإسلامي', 'Egyptian General Authority': 'الهيئة المصرية العامة للمساحة', 'Umm al-Qura': 'أم القرى', ISNA: 'الجمعية الإسلامية لأمريكا الشمالية', 'Turkey Diyanet': 'رئاسة الشؤون الدينية التركية' },
+  ur: { 'Muslim World League': 'مسلم ورلڈ لیگ', 'Egyptian General Authority': 'مصری جنرل اتھارٹی', 'Umm al-Qura': 'ام القریٰ', ISNA: 'اسلامک سوسائٹی آف نارتھ امریکہ', 'Turkey Diyanet': 'ترکی دیانت' },
+  id: { 'Muslim World League': 'Liga Muslim Dunia', 'Egyptian General Authority': 'Otoritas Umum Mesir', 'Umm al-Qura': 'Umm al-Qura', ISNA: 'ISNA', 'Turkey Diyanet': 'Diyanet Turki' },
+  ms: { 'Muslim World League': 'Liga Muslim Sedunia', 'Egyptian General Authority': 'Pihak Berkuasa Am Mesir', 'Umm al-Qura': 'Umm al-Qura', ISNA: 'ISNA', 'Turkey Diyanet': 'Diyanet Turki' },
+  tr: { 'Muslim World League': 'Dünya İslam Birliği', 'Egyptian General Authority': 'Mısır Genel Otoritesi', 'Umm al-Qura': 'Ümmül Kura', ISNA: 'ISNA', 'Turkey Diyanet': 'Türkiye Diyanet' },
+  fr: { 'Muslim World League': 'Ligue islamique mondiale', 'Egyptian General Authority': 'Autorité générale égyptienne', 'Umm al-Qura': 'Umm al-Qura', ISNA: 'ISNA', 'Turkey Diyanet': 'Diyanet de Turquie' },
+};
+
+const hanafiLabels: Record<Language, string> = { en: 'Hanafi Asr', ar: 'عصر حنفي', ur: 'حنفی عصر', id: 'Asar Hanafi', ms: 'Asar Hanafi', tr: 'Hanefi İkindi', fr: 'Asr hanafite' };
+function prayerMethodLabel(method: PrayerMethod, language: Language) {
+  const hanafi = method.endsWith(' (Hanafi Asr)');
+  const base = method.replace(' (Hanafi Asr)', '');
+  return `${prayerMethodBaseLabels[language][base] ?? base}${hanafi ? ` — ${hanafiLabels[language]}` : ``}`;
+}
+function prayerMethodOptions(language: Language) {
+  return Object.fromEntries(prayerMethods.map((method) => [method, prayerMethodLabel(method, language)])) as Record<(typeof prayerMethods)[number], string>;
+}
 
 
 type MapLibreStyleLayer = { id: string; type?: string };
@@ -604,6 +651,7 @@ function staticPageUrl(page: 'privacy' | 'support') {
 
 function appFooterMarkup(copy: typeof labels[Language]) {
   return `<footer class="app-footer">
+    ${isPersistentStorageAvailable() ? `` : `<p class="warning" role="status">${esc(temporaryStorageNotice[lang])}</p>`}
     <p>${copy.developerCredit}</p>
     <nav aria-label="${copy.supportPage}">
       <a href="${staticPageUrl('privacy')}" target="_blank" rel="noopener noreferrer">${copy.privacyPolicy}</a>
@@ -614,7 +662,8 @@ function appFooterMarkup(copy: typeof labels[Language]) {
 }
 
 function field(name: keyof PlannerPreferences, value: string, label: string, type = 'text', placeholder = '') {
-  return `<label>${label}<input data-field="${String(name)}" type="${type}" value="${esc(value)}" ${placeholder ? `placeholder="${esc(placeholder)}"` : ''} /></label>`;
+  const required = ['date', 'time', 'number'].includes(type) ? 'required' : '';
+  return `<label>${label}<input data-field="${String(name)}" type="${type}" value="${esc(value)}" ${required} ${placeholder ? `placeholder="${esc(placeholder)}"` : ``} /></label>`;
 }
 
 function choiceSelect<T extends string>(name: keyof PlannerPreferences, label: string, options: readonly T[], display: Record<T, string>) {
@@ -938,6 +987,21 @@ function bindQibla() {
   document.querySelector<HTMLButtonElement>('#request-motion')?.addEventListener('click', () => void requestQiblaMotion());
 }
 
+function stopFlightClock() {
+  if (flightClockTimer) window.clearTimeout(flightClockTimer);
+  flightClockTimer = undefined;
+}
+
+function scheduleFlightClock() {
+  stopFlightClock();
+  if (view !== 'flight-mode' || !preparedFlightPlan || flightEditing || flightGpsEnabled || document.hidden) return;
+  flightClockTimer = window.setTimeout(() => {
+    if (view !== 'flight-mode' || !preparedFlightPlan || flightEditing || flightGpsEnabled) return;
+    flightManualProgress = elapsedProgress(preparedFlightPlan);
+    flightModePage();
+  }, 30_000);
+}
+
 function stopFlightGpsWatch() {
   flightWatchSequence += 1;
   if (flightWatch) {
@@ -1015,7 +1079,7 @@ function flightPlanFormMarkup(copy: typeof labels[Language]) {
         <label>${copy.flightCruiseAltitude}<input id="flight-altitude" type="number" min="0" max="60000" value="${altitudeFeet}" /></label>
         <label>${copy.flightAltitudeUnit}<select id="flight-altitude-unit"><option value="ft">${copy.flightFeet}</option><option value="m">${copy.flightMeters}</option></select></label>
       </div>
-      <label>${copy.flightMethod}<select id="flight-prayer-method">${prayerMethods.map((method) => `<option value="${esc(method)}" ${(plan?.prayerMethod ?? prefs.prayerMethod) === method ? 'selected' : ''}>${esc(method)}</option>`).join('')}</select></label>
+      <label>${copy.flightMethod}<select id="flight-prayer-method">${prayerMethods.map((method) => `<option value="${esc(method)}" ${(plan?.prayerMethod ?? prefs.prayerMethod) === method ? 'selected' : ''}>${esc(prayerMethodLabel(method, lang))}</option>`).join('')}</select></label>
       <label>${copy.flightWaypoints}<textarea id="flight-waypoints" rows="3" placeholder="${esc(copy.flightWaypointHelp)}">${esc(waypointText(plan))}</textarea></label>
       <div class="flight-actions">
         <button type="submit">${copy.flightPrepareButton}</button>
@@ -1087,7 +1151,7 @@ function flightDashboardMarkup(copy: typeof labels[Language], plan: PreparedFlig
       <div class="flight-grid">${prayerRows}</div>
       <p><strong>${copy.flightCurrentPrayer}:</strong> ${prayer?.currentWindow ? prayerLabels[lang][prayer.currentWindow.name] : copy.flightUnavailableSource}</p>
       <p><strong>${copy.flightPreviousPrayer}:</strong> ${prayer?.previousPrayer ? prayerLabels[lang][prayer.previousPrayer.name] : copy.flightUnavailableSource} · <strong>${copy.flightNextPrayer}:</strong> ${prayer?.nextPrayer ? `${prayerLabels[lang][prayer.nextPrayer.name]} (${formatFlightMinutes(Math.ceil(prayer.countdownMs / 60_000), copy)})` : copy.flightUnavailableSource}</p>
-      <p><strong>${copy.flightMethod}:</strong> ${plan.prayerMethod}</p>
+      <p><strong>${copy.flightMethod}:</strong> ${esc(prayerMethodLabel(plan.prayerMethod, lang))}</p>
     </section>
     <p class="muted">${copy.flightOfflineNotice}</p>
     <p class="muted">${copy.flightSafetyNotice}</p>
@@ -1096,6 +1160,7 @@ function flightDashboardMarkup(copy: typeof labels[Language], plan: PreparedFlig
 }
 
 function flightModePage() {
+  stopFlightClock();
   if (!root) return;
   const copy = labels[lang];
   const dir = languageDirection(lang);
@@ -1116,6 +1181,7 @@ function flightModePage() {
     ${appFooterMarkup(copy)}
   </main>`;
   bindFlightMode();
+  scheduleFlightClock();
 }
 
 function readFlightFormPlan(copy: typeof labels[Language]): { plan: PreparedFlightPlan } | { error: string } {
@@ -1261,6 +1327,7 @@ function bindFlightMode() {
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
+    stopFlightClock();
     if (qiblaAnimationFrame) {
       window.cancelAnimationFrame(qiblaAnimationFrame);
       qiblaAnimationFrame = 0;
@@ -1268,6 +1335,7 @@ document.addEventListener('visibilitychange', () => {
     return;
   }
   if (view === 'qibla') scheduleQiblaLiveUpdate();
+  if (view === 'flight-mode') scheduleFlightClock();
 });
 
 
@@ -1275,7 +1343,7 @@ type PrayerLocationStatus = 'idle' | 'requesting' | 'ready' | 'denied' | 'unavai
 type PrayerMode = 'map' | 'list';
 type PrayerFilter = 'all' | PrayerPlaceType;
 type PrayerSort = 'distance' | 'name' | 'open';
-type PrayerCenter = { latitude: number; longitude: number; label: string; timezone?: string };
+type PrayerCenter = { latitude: number; longitude: number; label: string; timezone?: string; city?: string; country?: string };
 type RestaurantStatus = PrayerLocationStatus | 'too-many' | 'cached' | 'offline' | 'timeout';
 type RestaurantMode = 'map' | 'list';
 type RestaurantSort = 'distance' | 'name' | 'status' | 'open' | 'cuisine';
@@ -1294,7 +1362,7 @@ type AttractionStatus = RestaurantStatus | 'photos' | 'history';
 
 type OverpassElementResponse = { type: string; id: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string | undefined> };
 type OverpassResponse = { elements: OverpassElementResponse[] };
-type NominatimResult = { lat: string; lon: string; display_name: string };
+type NominatimResult = { lat: string; lon: string; display_name: string; address?: { city?: string; town?: string; village?: string; municipality?: string; county?: string; state?: string; country?: string } };
 
 const prayerRadii = [1, 3, 5, 10, 25, 50] as const;
 const toiletRadii = [0.5, 1, 3, 5, 10, 25] as const;
@@ -1414,18 +1482,30 @@ let attractionSearchTimer: number | undefined;
 let attractionSearchSequence = 0;
 let attractionEnrichmentSequence = 0;
 let selectedAttractionId = '';
-const SAVED_ATTRACTIONS_KEY = 'mtp-saved-attractions-v1';
-function readSavedAttractionIds() {
+const SAVED_ATTRACTIONS_KEY = 'mtp-saved-attractions-v2';
+type SavedAttractionSnapshot = Pick<Attraction, 'id' | 'name' | 'originalName' | 'category' | 'latitude' | 'longitude' | 'address' | 'sourceUrl' | 'readMoreUrl'> & { city: string; country: string; savedAt: string };
+function readSavedAttractions() {
   try {
     const value = JSON.parse(appStorage.getItem(SAVED_ATTRACTIONS_KEY) ?? '[]') as unknown;
-    return new Set(Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []);
+    if (!Array.isArray(value)) return new Map<string, SavedAttractionSnapshot>();
+    const valid = value.filter((item): item is SavedAttractionSnapshot => Boolean(item && typeof item === 'object' && typeof (item as SavedAttractionSnapshot).id === 'string' && typeof (item as SavedAttractionSnapshot).name === 'string'));
+    return new Map(valid.map((item) => [item.id, item]));
   } catch {
-    return new Set<string>();
+    return new Map<string, SavedAttractionSnapshot>();
   }
 }
-let savedAttractionIds = readSavedAttractionIds();
-function persistSavedAttractionIds() {
-  appStorage.setItem(SAVED_ATTRACTIONS_KEY, JSON.stringify([...savedAttractionIds]));
+let savedAttractions = readSavedAttractions();
+function persistSavedAttractions() {
+  appStorage.setItem(SAVED_ATTRACTIONS_KEY, JSON.stringify([...savedAttractions.values()]));
+}
+function savedAttractionSnapshot(attraction: Attraction): SavedAttractionSnapshot {
+  const location = reportCenterDetails(attractionCenter);
+  return { id: attraction.id, name: attraction.name, originalName: attraction.originalName, category: attraction.category, latitude: attraction.latitude, longitude: attraction.longitude, address: attraction.address, sourceUrl: attraction.sourceUrl, readMoreUrl: attraction.readMoreUrl, city: location.city, country: location.country, savedAt: new Date().toISOString() };
+}
+function savedAttractionsMarkup(copy: typeof labels[Language]) {
+  const items = [...savedAttractions.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+  if (!items.length) return '';
+  return `<section class="saved-attractions"><h3>${copy.attractionsSaved}</h3><div class="place-list">${items.map((item) => `<article class="card"><div class="card-top"><span>${esc(attractionCategoryLabel(item.category, copy))}</span><span>${esc(item.city)}, ${esc(item.country)}</span></div><h4>${esc(item.name)}</h4>${item.address ? `<p>${esc(item.address)}</p>` : ``}<div class="place-actions"><button type="button" class="ghost" data-attraction-save="${esc(item.id)}" aria-pressed="true">${copy.attractionsSaved}</button><a class="map-link" href="${esc(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>${item.readMoreUrl ? `<a class="map-link" href="${esc(item.readMoreUrl)}" target="_blank" rel="noopener noreferrer">${copy.attractionsReadMore}</a>` : ``}</div></article>`).join(``)}</div></section>`;
 }
 let attractionDiagnostics: string[] = [];
 const attractionCache = new Map<string, { expires: number; results: Attraction[] }>();
@@ -1467,8 +1547,8 @@ async function requestOverpass(url: string, options: RequestInit, milliseconds: 
 function reportCenterDetails(center: PrayerCenter | undefined) {
   const parts = (center?.label ?? '').split(',').map((part) => part.trim()).filter(Boolean);
   return {
-    city: parts[0] || selectedCity().city,
-    country: parts.slice(1).join(', ') || selectedCity().country,
+    city: center?.city || parts.at(-2) || selectedCity().city,
+    country: center?.country || parts.at(-1) || selectedCity().country,
   };
 }
 
@@ -1817,13 +1897,20 @@ async function resolveRestaurantDestination(query: string): Promise<PrayerCenter
   if (city) return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone };
   const cached = destinationCache.get(trimmed.toLowerCase());
   if (cached && cached.expires > Date.now()) return cached.center;
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=en&q=${encodeURIComponent(trimmed)}`;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&accept-language=en&q=${encodeURIComponent(trimmed)}`;
   const data = await requestJson<NominatimResult[]>(url, { headers: { Accept: 'application/json' } }, 12000);
   const first = data[0];
   const latitude = first ? Number(first.lat) : Number.NaN;
   const longitude = first ? Number(first.lon) : Number.NaN;
   const center = first && Number.isFinite(latitude) && Number.isFinite(longitude)
-    ? { latitude, longitude, label: first.display_name, timezone: await resolveTimeZoneForCoordinates(latitude, longitude) }
+    ? {
+      latitude,
+      longitude,
+      label: first.display_name,
+      city: first.address?.city || first.address?.town || first.address?.village || first.address?.municipality || first.address?.county || first.address?.state,
+      country: first.address?.country,
+      timezone: await resolveTimeZoneForCoordinates(latitude, longitude),
+    }
     : undefined;
   destinationCache.set(trimmed.toLowerCase(), { expires: Date.now() + 15 * 60 * 1000, center });
   return center;
@@ -4056,7 +4143,7 @@ function attractionCard(attraction: Attraction, copy: typeof labels[Language]) {
     ${attractionDetailsRows(attraction, copy)}
     <div class="place-actions">
       <button type="button" class="ghost" data-attraction-detail="${attraction.id}">${copy.attractionsDetails}</button>
-      <button type="button" class="ghost" data-attraction-save="${attraction.id}" aria-pressed="${savedAttractionIds.has(attraction.id)}">${savedAttractionIds.has(attraction.id) ? copy.attractionsSaved : copy.attractionsSave}</button>
+      <button type="button" class="ghost" data-attraction-save="${attraction.id}" aria-pressed="${savedAttractions.has(attraction.id)}">${savedAttractions.has(attraction.id) ? copy.attractionsSaved : copy.attractionsSave}</button>
       ${attraction.readMoreUrl ? `<a class="map-link" href="${esc(attraction.readMoreUrl)}" target="_blank" rel="noopener noreferrer">${copy.attractionsReadMore}</a>` : ''}
       <a class="map-link" href="${attraction.sourceUrl}" target="_blank" rel="noopener noreferrer">${copy.prayerViewOnMap}</a>
       <a class="map-link" href="${attractionAppleMapsUrl(attraction)}" target="_blank" rel="noopener noreferrer">${copy.prayerAppleMaps}</a>
@@ -4101,6 +4188,7 @@ function attractionsPage() {
       <div class="segmented" role="tablist" aria-label="${copy.attractionsTitle}"><button type="button" class="${attractionView === 'photos' ? 'active' : 'ghost'}" data-attraction-view="photos">${copy.attractionsPhotoView}</button><button type="button" class="${attractionView === 'list' ? 'active' : 'ghost'}" data-attraction-view="list">${copy.attractionsListView}</button><button type="button" class="${attractionView === 'map' ? 'active' : 'ghost'}" data-attraction-view="map">${copy.attractionsMapView}</button></div>
       <div class="prayer-filters"><select id="attraction-category-filter"><option value="all">${copy.attractionsAll}</option>${(['historic','museum','gallery','monument','archaeological','castle','religious','viewpoint','natural','park','zoo','theme','artwork','cultural','other'] as AttractionCategory[]).map((category) => `<option value="${category}" ${attractionFilters.category === category ? 'selected' : ''}>${attractionCategoryLabel(category, copy)}</option>`).join('')}</select>${['photo','history','openNow','free','wheelchair'].map((key) => { const label = ({ photo: copy.attractionsPhotoAvailable, history: copy.attractionsHistoryAvailable, openNow: copy.toiletsOpenNow, free: copy.toiletsFree, wheelchair: copy.toiletsWheelchair } as Record<string, string>)[key]; return `<label class="inline-check"><input type="checkbox" data-attraction-filter="${key}" ${attractionFilters[key as keyof AttractionFilters] ? 'checked' : ''}/> ${label}</label>`; }).join('')}<label>${copy.carRentalSort}<select id="attraction-sort"><option value="distance" ${attractionSort === 'distance' ? 'selected' : ''}>${copy.toiletsNearest}</option><option value="name" ${attractionSort === 'name' ? 'selected' : ''}>${copy.toiletsSortName}</option><option value="category" ${attractionSort === 'category' ? 'selected' : ''}>${copy.attractionsSortCategory}</option><option value="photo" ${attractionSort === 'photo' ? 'selected' : ''}>${copy.attractionsSortPhoto}</option><option value="history" ${attractionSort === 'history' ? 'selected' : ''}>${copy.attractionsSortHistory}</option><option value="open" ${attractionSort === 'open' ? 'selected' : ''}>${copy.toiletsSortOpen}</option><option value="complete" ${attractionSort === 'complete' ? 'selected' : ''}>${copy.attractionsSortComplete}</option></select></label></div>
       <div class="place-actions"><button type="button" id="attractions-search-this-area" class="ghost" ${attractionMapMoved ? '' : 'hidden'}>${copy.attractionsSearch}</button><button type="button" id="attractions-recentre" class="ghost">${copy.toiletsRecentre}</button><button type="button" id="attractions-fit-results" class="ghost">${copy.toiletsFitResults}</button></div>
+      ${savedAttractionsMarkup(copy)}
       ${selectedAttractionDetail(copy)}
       ${attractionView === 'map' ? `<div id="attractions-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : `<div class="${attractionView === 'photos' ? 'attraction-grid' : 'place-list'}">${results.length ? results.map((attraction) => attractionCard(attraction, copy)).join('') : attractionStatus === 'ready' ? `<p>${copy.attractionsNoResults}</p>` : ''}</div>`}
       ${(['empty', 'timeout', 'service-unavailable', 'offline', 'cached'].includes(attractionStatus) || !results.length && attractionResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-attractions" class="ghost">${copy.weatherRetry}</button>${attractionStatus === 'timeout' ? '' : `<button type="button" id="increase-attraction-radius">${copy.toiletsIncreaseRadius}</button>`}<button type="button" id="another-attraction-city" class="ghost">${copy.attractionsSearchAnother}</button></div>` : ''}
@@ -4129,11 +4217,14 @@ function bindAttractionsPage() {
   document.querySelectorAll<HTMLButtonElement>('[data-attraction-save]').forEach((button) => button.addEventListener('click', () => {
     const id = button.dataset.attractionSave;
     if (!id) return;
-    if (savedAttractionIds.has(id)) savedAttractionIds.delete(id);
-    else savedAttractionIds.add(id);
-    persistSavedAttractionIds();
-    button.setAttribute('aria-pressed', String(savedAttractionIds.has(id)));
-    button.textContent = savedAttractionIds.has(id) ? labels[lang].attractionsSaved : labels[lang].attractionsSave;
+    if (savedAttractions.has(id)) savedAttractions.delete(id);
+    else {
+      const attraction = attractionResults.find((candidate) => candidate.id === id);
+      if (!attraction) return;
+      savedAttractions.set(id, savedAttractionSnapshot(attraction));
+    }
+    persistSavedAttractions();
+    attractionsPage();
   }));
   document.querySelector<HTMLButtonElement>('#retry-attractions')?.addEventListener('click', () => { if (attractionCenter) void searchAttractions(attractionCenter); else void searchAttractions(destinationAttractionCenter()); });
   document.querySelector<HTMLButtonElement>('#increase-attraction-radius')?.addEventListener('click', () => { const next = attractionRadii.find((radius) => radius > attractionRadiusKm); if (next) attractionRadiusKm = next; if (attractionCenter) void searchAttractions(attractionCenter); });
@@ -4197,9 +4288,10 @@ function saveCurrentTrip(copy: typeof labels[Language]) {
     savedTrips = savedTripRepository.upsert(savedTrip);
     openedSavedTripId = savedTrip.id;
     savedTripNameDraft = savedTrip.name;
-    savedTripStatus = 'saved';
-    savedTripMessage = copy.savedLocally;
-    plannerAnnouncement = copy.savedLocally;
+    const persistent = isPersistentStorageAvailable();
+    savedTripStatus = persistent ? 'saved' : 'unsaved';
+    savedTripMessage = persistent ? copy.savedLocally : temporaryStorageNotice[lang];
+    plannerAnnouncement = savedTripMessage;
   } catch {
     savedTripStatus = 'failed';
     savedTripMessage = copy.saveFailed;
@@ -4258,7 +4350,7 @@ function savedTripsPage() {
       <h1>${copy.savedTripsTitle}</h1>
       <p>${copy.savedTripsSubtitle}</p>
       ${connectionStatusMarkup(copy)}
-      <p class="notice">${copy.savedLocally}. ${copy.noCloudSync}.</p>
+      <p class="notice">${isPersistentStorageAvailable() ? `${copy.savedLocally}. ${copy.noCloudSync}.` : esc(temporaryStorageNotice[lang])}</p>
       <button type="button" class="ghost hero-action" id="back-from-saved-trips">${copy.savedTripsBack}</button>
     </section>
     <section class="panel results" aria-live="polite">
@@ -4272,9 +4364,13 @@ function savedTripsPage() {
 }
 
 function plannerValidationMessage(planPrefs: PlannerPreferences, copy: typeof labels[Language]) {
+  const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(new Date(`${value}T00:00:00`).getTime());
+  const validTime = (value: string) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
   if (!cityForPreferences(planPrefs)) return copy.invalidCity;
+  if (!validDate(planPrefs.startDate) || !validDate(planPrefs.endDate)) return copy.invalidEndDate;
+  if (!validTime(planPrefs.startHour) || !validTime(planPrefs.endHour)) return copy.invalidEndTime;
   if (!Number.isFinite(planPrefs.groupSize) || planPrefs.groupSize < 1) return copy.invalidGroupSize;
-  if (planPrefs.startDate && planPrefs.endDate && planPrefs.endDate < planPrefs.startDate) return copy.invalidEndDate;
+  if (planPrefs.endDate < planPrefs.startDate) return copy.invalidEndDate;
   const tripDays = itineraryDayKeys(planPrefs.startDate, planPrefs.endDate).length;
   if (tripDays > 14) return copy.invalidTripTooLong;
   if (planPrefs.startDate && planPrefs.endDate && planPrefs.startDate === planPrefs.endDate && planPrefs.endHour < planPrefs.startHour) return copy.invalidEndTime;
@@ -4318,7 +4414,7 @@ function itineraryCard(item: ItineraryItem, index: number, city: (typeof cities)
   const endTime = addMinutes(item.time, item.durationMinutes);
   const facility = item.place?.facility ? `<p class="muted">${copy.women}: ${plannerFacilityStatus(item.place.facility.womenPrayerSpace, copy)} · ${copy.wudu}: ${plannerFacilityStatus(item.place.facility.wudu, copy)} · ${copy.accessibility}: ${plannerFacilityStatus(item.place.facility.accessibility, copy)}</p>` : '';
   const map = item.place ? `<a class="map-link" href="${osmSearchUrl(item.place.name, city.city, city.country)}" target="_blank" rel="noopener noreferrer">${copy.findOnMap}</a>` : '';
-  return `<article class="card itinerary-card ${item.kind}"><div class="card-top"><span>${esc(item.time)}-${esc(endTime)} · ${item.durationMinutes} ${copy.minutesShort}</span><span>${esc(item.kind)}</span></div><h3>${esc(stripInternalPlannerText(item.title))}</h3><p>${esc(stripInternalPlannerText(item.details))}</p>${facility}<div class="itinerary-actions">${map}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></div></article>`;
+  return `<article class="card itinerary-card ${item.kind}"><div class="card-top"><span>${esc(item.time)}-${esc(endTime)} · ${item.durationMinutes} ${copy.minutesShort}</span><span>${esc(itineraryKindLabels[lang][item.kind])}</span></div><h3>${esc(stripInternalPlannerText(item.title))}</h3><p>${esc(stripInternalPlannerText(item.details))}</p>${facility}<div class="itinerary-actions">${map}<button class="ghost" data-replan="${index + 1}">${copy.replan}</button></div></article>`;
 }
 
 function itineraryGroupsMarkup(items: ItineraryItem[], city: (typeof cities)[number], copy: typeof labels[Language]) {
@@ -4442,7 +4538,7 @@ function tripHeaderMarkup(city: (typeof cities)[number], planPrefs: PlannerPrefe
       <p>${copy.tripStyle}: ${optionLabels.transportation[lang][planPrefs.transportation]} · ${optionLabels.budget[lang][planPrefs.budget]} · ${city.timezone}</p>
       <p>${copy.approximateQibla}: ${calculateQiblaBearing(city.coordinates.lat, city.coordinates.lng).toFixed(1)}°</p>
       <p class="muted">${copy.savedLocally}. ${copy.noCloudSync}. ${copy.offlineLimitNotice}</p>
-      ${savedTripStatus === 'failed' ? `<p class="error" id="saved-trip-inline-status">${esc(savedTripMessage || copy.saveFailed)}</p>` : `<p class="status" id="saved-trip-inline-status">${saved ? copy.savedStatus : unsaved ? copy.unsavedChanges : copy.savedLocally}</p>`}
+      ${!isPersistentStorageAvailable() ? `<p class="warning" id="saved-trip-inline-status">${esc(temporaryStorageNotice[lang])}</p>` : savedTripStatus === `failed` ? `<p class="error" id="saved-trip-inline-status">${esc(savedTripMessage || copy.saveFailed)}</p>` : `<p class="status" id="saved-trip-inline-status">${saved ? copy.savedStatus : unsaved ? copy.unsavedChanges : copy.savedLocally}</p>`}
     </div>
     <div class="trip-actions">
       <label>${copy.tripName}<input id="trip-name" value="${esc(name)}" maxlength="80" /></label>
@@ -5002,7 +5098,10 @@ function render() {
     return;
   }
   stopQiblaOrientation();
-  if (view !== 'flight-mode') stopFlightGpsWatch();
+  if (view !== 'flight-mode') {
+    stopFlightGpsWatch();
+    stopFlightClock();
+  }
   if (view === 'flight-mode') {
     flightModePage();
     return;
@@ -5098,7 +5197,7 @@ function render() {
         <div class="grid">${field('groupSize', String(prefs.groupSize), copy.groupSize, 'number')}${choiceSelect('budget', copy.budget, ['low', 'mid', 'high'], optionLabels.budget[lang])}</div>
         ${field('interests', prefs.interests.join(', '), copy.interests)}
         <div class="grid">${choiceSelect('walkingAbility', copy.walkingAbility, ['low', 'medium', 'high'], optionLabels.walkingAbility[lang])}${choiceSelect('transportation', copy.transportation, ['walking', 'public transport', 'taxi'], optionLabels.transportation[lang])}</div>
-        ${choiceSelect('prayerMethod', copy.prayerMethod, prayerMethods, Object.fromEntries(prayerMethods.map((method) => [method, method])) as Record<(typeof prayerMethods)[number], string>)}
+        ${choiceSelect('prayerMethod', copy.prayerMethod, prayerMethods, prayerMethodOptions(lang))}
         ${choiceSelect('prayerPreference', copy.prayerPreference, ['mosque', 'quiet prayer space', 'flexible'], optionLabels.prayerPreference[lang])}
         <div class="checks"><label><input data-field="children" type="checkbox" ${prefs.children ? 'checked' : ''}/> ${copy.children}</label><label><input data-field="womenPrayerRequired" type="checkbox" ${prefs.womenPrayerRequired ? 'checked' : ''}/> ${copy.womenPrayerRequired}</label><label><input data-field="wuduRequired" type="checkbox" ${prefs.wuduRequired ? 'checked' : ''}/> ${copy.wuduRequired}</label></div>
         ${field('accessibilityNeeds', prefs.accessibilityNeeds, copy.accessibilityNeeds)}
@@ -5124,15 +5223,7 @@ function render() {
 
 function bind() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => {
-    const nextLanguage = parseLanguage((event.target as HTMLSelectElement).value);
-    if (!nextLanguage || nextLanguage === lang) return;
-    lang = nextLanguage;
-    appStorage.setItem('mtp-language', lang);
-    athanStatus = '';
-    if (generatedPrefs) {
-      generatedItems = generateItinerary(generatedPrefs, replan, lang);
-      if (openedSavedTripId) savedTripStatus = 'unsaved';
-    }
+    if (!setAppLanguage((event.target as HTMLSelectElement).value)) return;
     render();
   });
   document.querySelector<HTMLButtonElement>('#open-saved-trips')?.addEventListener('click', () => {
@@ -5242,7 +5333,9 @@ function bind() {
       const result = await enableAthanAlarms(alarms, lang);
       athanEnabled = result.scheduled > 0 && result.permissions.notificationsAllowed;
       appStorage.setItem('athanEnabled', String(athanEnabled));
-      athanStatus = athanEnabled ? `${copy.scheduled}: ${result.scheduled}` : copy.failed;
+      athanStatus = athanEnabled
+        ? `${copy.scheduled}: ${result.scheduled}/${result.requested}`
+        : !result.permissions.exactAlarmAllowed && result.permissions.notificationsAllowed ? copy.permissionNote : copy.failed;
     } catch (error) {
       console.error(error);
       athanStatus = copy.failed;

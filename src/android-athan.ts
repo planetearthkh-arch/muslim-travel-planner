@@ -6,6 +6,7 @@ export type AndroidAthanAlarm = {
   prayer: string;
   city: string;
   audioReady?: boolean;
+  language?: string;
 };
 
 type AndroidAthanPlugin = {
@@ -14,7 +15,7 @@ type AndroidAthanPlugin = {
   schedule(options: { alarms: AndroidAthanAlarm[] }): Promise<{ scheduled: number }>;
   pending(): Promise<{ scheduled: number }>;
   cancelAll(): Promise<void>;
-  test(): Promise<void>;
+  test(options: { language: string }): Promise<void>;
   stop(): Promise<void>;
 };
 

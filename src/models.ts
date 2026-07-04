@@ -1,6 +1,6 @@
 export type VerificationStatus = 'Sample' | 'Unverified' | 'Verified';
 export type PrayerName = 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha';
-export type PrayerMethod = 'Muslim World League' | 'Egyptian General Authority' | 'Umm al-Qura' | 'ISNA' | 'Turkey Diyanet';
+export type PrayerMethod = 'Muslim World League' | 'Egyptian General Authority' | 'Umm al-Qura' | 'ISNA' | 'Turkey Diyanet' | 'Muslim World League (Hanafi Asr)' | 'Egyptian General Authority (Hanafi Asr)' | 'Umm al-Qura (Hanafi Asr)' | 'ISNA (Hanafi Asr)' | 'Turkey Diyanet (Hanafi Asr)';
 export type Region = 'Europe' | 'Middle East' | 'Asia' | 'North America' | 'Africa' | 'Oceania';
 
 export interface FacilityNote {

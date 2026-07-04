@@ -49,7 +49,7 @@ const isString = (value: unknown): value is string => typeof value === 'string';
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
 const verificationStatuses = new Set<VerificationStatus>(['Sample', 'Unverified', 'Verified']);
-const prayerMethods = new Set(['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet']);
+const prayerMethods = new Set(['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet', 'Muslim World League (Hanafi Asr)', 'Egyptian General Authority (Hanafi Asr)', 'Umm al-Qura (Hanafi Asr)', 'ISNA (Hanafi Asr)', 'Turkey Diyanet (Hanafi Asr)']);
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const timePattern = /^\d{2}:\d{2}$/;
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString);

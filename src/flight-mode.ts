@@ -324,6 +324,10 @@ export function chooseFlightProgress(plan: PreparedFlightPlan, options: { gps?: 
   const routeEstimate = positionByProgress(plan, options.manualProgress ?? elapsedProgress(plan, nowMs), nowMs);
   const gps = options.gps;
   if (!gps || !validCoordinate(gps.latitude, gps.longitude)) return routeEstimate;
+  const scheduledStart = Date.parse(plan.scheduledDepartureUtc);
+  const scheduledEnd = scheduledStart + plan.durationMinutes * 60_000;
+  const flightWindowPadding = 2 * 60 * 60 * 1000;
+  if (Number.isFinite(scheduledStart) && (nowMs < scheduledStart - flightWindowPadding || nowMs > scheduledEnd + flightWindowPadding)) return routeEstimate;
   const stale = nowMs - gps.timestamp > GPS_FRESH_MS;
   const lowAccuracy = typeof gps.accuracyMeters === 'number' && gps.accuracyMeters > LOW_ACCURACY_METERS;
   if (stale) return { ...routeEstimate, source: 'route-estimate' as const, stale: true };
@@ -412,7 +416,7 @@ export function validateFlightPlan(value: unknown): PreparedFlightPlan | null {
   const altitude = record.cruiseAltitudeMeters === undefined || record.cruiseAltitudeMeters === '' ? undefined : Number(record.cruiseAltitudeMeters);
   if (altitude !== undefined && (!Number.isFinite(altitude) || altitude < 0 || altitude > 20_000)) return null;
   const waypoints = Array.isArray(record.waypoints) ? record.waypoints.map((waypoint, index) => validateWaypoint(waypoint as Partial<FlightWaypoint>, index)).filter((waypoint): waypoint is FlightWaypoint => Boolean(waypoint)) : [];
-  const prayerMethod = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet'].includes(String(record.prayerMethod)) ? record.prayerMethod as PrayerMethod : 'Muslim World League';
+  const prayerMethod = ['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet', 'Muslim World League (Hanafi Asr)', 'Egyptian General Authority (Hanafi Asr)', 'Umm al-Qura (Hanafi Asr)', 'ISNA (Hanafi Asr)', 'Turkey Diyanet (Hanafi Asr)'].includes(String(record.prayerMethod)) ? record.prayerMethod as PrayerMethod : 'Muslim World League';
   return {
     schemaVersion: FLIGHT_PLAN_SCHEMA_VERSION,
     id: String(record.id || `flight-${Date.now().toString(36)}`),

@@ -747,12 +747,12 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   assert.equal(main.includes('function staticPageUrl'), true);
   assert.equal(main.includes('return staticLegalPageUrl(page, lang);'), true);
   assert.equal(checklist.includes('Final full-resolution App Store icon asset is still required') || checklist.includes('App Store icon'), true);
-  assert.equal(privacy.includes('Last updated: July 2, 2026'), true);
+  assert.equal(privacy.includes('Last updated: July 4, 2026'), true);
   assert.equal(privacy.includes('data-lang="ms" lang="ms" dir="ltr"'), true);
-  assert.equal(privacy.includes('Dikemas kini terakhir: 2 Julai 2026'), true);
+  assert.equal(privacy.includes('Dikemas kini terakhir: 4 Julai 2026'), true);
   assert.equal(privacy.includes('support.html?lang=ms'), true);
   assert.equal(privacy.includes('data-lang="tr" lang="tr" dir="ltr"'), true);
-  assert.equal(privacy.includes('Son güncelleme: 2 Temmuz 2026'), true);
+  assert.equal(privacy.includes('Son güncelleme: 4 Temmuz 2026'), true);
   assert.equal(privacy.includes('support.html?lang=tr'), true);
   assert.equal(privacy.includes('Firas Badran'), true);
   assert.equal(support.includes('data-lang="ms" lang="ms" dir="ltr"'), true);
@@ -2401,7 +2401,7 @@ test('geolocation callbacks are invalidated by newer searches across async featu
 test('mapped feature opening status is recalculated with captured destination timezone', async () => {
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
   const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
-  assert.equal(source.includes('type PrayerCenter = { latitude: number; longitude: number; label: string; timezone?: string }'), true);
+  assert.equal(source.includes('type PrayerCenter = { latitude: number; longitude: number; label: string; timezone?: string; city?: string; country?: string }'), true);
   assert.equal(source.includes('label: `${city.city}, ${city.country}`, timezone: city.timezone'), true);
   assert.equal(source.includes('refreshOpenState(cached.results, searchCenter.timezone)'), true);
   assert.equal(source.includes('timezone: restaurantCenter?.timezone'), true);

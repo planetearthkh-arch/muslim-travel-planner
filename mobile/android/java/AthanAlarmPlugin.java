@@ -19,6 +19,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -34,6 +35,8 @@ public class AthanAlarmPlugin extends Plugin {
     public static final String KEY_ALARMS = "scheduled_alarms";
     public static final String KEY_AUDIO_PATH = "audio_path";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 8841;
+    private static final long MIN_AUDIO_BYTES = 50_000L;
+    private static final long MAX_AUDIO_BYTES = 8_000_000L;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @PluginMethod
@@ -46,15 +49,16 @@ public class AthanAlarmPlugin extends Plugin {
         executor.execute(() -> {
             try {
                 File destination = new File(getContext().getFilesDir(), "athan.mp3");
-                if (!destination.exists() || destination.length() < 50_000) {
+                if (!isValidAudioFile(destination)) {
                     File temporary = new File(getContext().getCacheDir(), "athan-download.tmp");
-                    download(audioUrl, temporary);
-                    if (destination.exists() && !destination.delete()) {
-                        throw new IllegalStateException("Could not replace the Athan audio file.");
-                    }
-                    if (!temporary.renameTo(destination)) {
-                        copyFile(temporary, destination);
-                        temporary.delete();
+                    if (temporary.exists()) temporary.delete();
+                    try {
+                        download(audioUrl, temporary);
+                        if (!isValidAudioFile(temporary)) throw new IllegalStateException("Downloaded Athan audio is invalid.");
+                        if (destination.exists() && !destination.delete()) throw new IllegalStateException("Could not replace the Athan audio file.");
+                        if (!temporary.renameTo(destination)) copyFile(temporary, destination);
+                    } finally {
+                        if (temporary.exists()) temporary.delete();
                     }
                 }
                 preferences(getContext()).edit().putString(KEY_AUDIO_PATH, destination.getAbsolutePath()).apply();
@@ -111,8 +115,9 @@ public class AthanAlarmPlugin extends Plugin {
                 if (timestamp <= now) continue;
                 String prayer = alarm.optString("prayer", "Prayer");
                 String city = alarm.optString("city", "");
+                String language = alarm.optString("language", "en");
                 boolean audioReady = alarm.optBoolean("audioReady", false);
-                scheduleOne(getContext(), id, timestamp, prayer, city, audioReady);
+                scheduleOne(getContext(), id, timestamp, prayer, city, language, audioReady);
                 stored.put(alarm);
                 scheduled += 1;
             }
@@ -129,10 +134,19 @@ public class AthanAlarmPlugin extends Plugin {
         try {
             String encoded = preferences(getContext()).getString(KEY_ALARMS, "[]");
             JSONArray alarms = new JSONArray(encoded);
+            JSONArray active = new JSONArray();
             long now = System.currentTimeMillis();
             for (int index = 0; index < alarms.length(); index += 1) {
-                if (alarms.getJSONObject(index).optLong("timestamp", 0L) > now) scheduled += 1;
+                JSONObject alarm = alarms.getJSONObject(index);
+                int id = alarm.optInt("id", index + 1);
+                if (alarm.optLong("timestamp", 0L) <= now) continue;
+                Intent intent = new Intent(getContext(), AthanReceiver.class);
+                PendingIntent pendingIntent = PendingIntent.getBroadcast(getContext(), id, intent, PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE);
+                if (pendingIntent == null) continue;
+                active.put(alarm);
+                scheduled += 1;
             }
+            preferences(getContext()).edit().putString(KEY_ALARMS, active.toString()).apply();
         } catch (Exception ignored) {}
         call.resolve(new JSObject().put("scheduled", scheduled));
     }
@@ -155,7 +169,8 @@ public class AthanAlarmPlugin extends Plugin {
     public void test(PluginCall call) {
         Intent intent = new Intent(getContext(), AthanPlaybackService.class);
         intent.putExtra("prayer", "Test Athan");
-        intent.putExtra("city", "Muslim Travel Planner");
+        intent.putExtra("city", "SafarOne");
+        intent.putExtra("language", call.getString("language", "en"));
         ContextCompat.startForegroundService(getContext(), intent);
         call.resolve();
     }
@@ -175,18 +190,20 @@ public class AthanAlarmPlugin extends Plugin {
                     timestamp,
                     alarm.optString("prayer", "Prayer"),
                     alarm.optString("city", ""),
+                    alarm.optString("language", "en"),
                     alarm.optBoolean("audioReady", false)
                 );
             }
         } catch (Exception ignored) {}
     }
 
-    private static void scheduleOne(Context context, int id, long timestamp, String prayer, String city, boolean audioReady) {
+    private static void scheduleOne(Context context, int id, long timestamp, String prayer, String city, String language, boolean audioReady) {
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         Intent intent = new Intent(context, AthanReceiver.class);
         intent.putExtra("alarmId", id);
         intent.putExtra("prayer", prayer);
         intent.putExtra("city", city);
+        intent.putExtra("language", language);
         intent.putExtra("audioReady", audioReady);
         PendingIntent pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -241,12 +258,41 @@ public class AthanAlarmPlugin extends Plugin {
             connection.disconnect();
             throw new IllegalStateException("Audio download returned HTTP " + responseCode);
         }
+        String contentType = connection.getContentType();
+        if (contentType != null && !contentType.toLowerCase().startsWith("audio/") && !contentType.toLowerCase().contains("octet-stream")) {
+            connection.disconnect();
+            throw new IllegalStateException("Audio download returned an unexpected content type.");
+        }
+        long contentLength = connection.getContentLengthLong();
+        if (contentLength > MAX_AUDIO_BYTES) {
+            connection.disconnect();
+            throw new IllegalStateException("Athan audio file is too large.");
+        }
+        long total = 0L;
         try (InputStream input = connection.getInputStream(); FileOutputStream output = new FileOutputStream(destination)) {
             byte[] buffer = new byte[16_384];
             int length;
-            while ((length = input.read(buffer)) >= 0) output.write(buffer, 0, length);
+            while ((length = input.read(buffer)) >= 0) {
+                total += length;
+                if (total > MAX_AUDIO_BYTES) throw new IllegalStateException("Athan audio file exceeded the size limit.");
+                output.write(buffer, 0, length);
+            }
         } finally {
             connection.disconnect();
+        }
+        if (total < MIN_AUDIO_BYTES) throw new IllegalStateException("Athan audio file is incomplete.");
+    }
+
+    private static boolean isValidAudioFile(File file) {
+        if (!file.exists() || file.length() < MIN_AUDIO_BYTES || file.length() > MAX_AUDIO_BYTES) return false;
+        try (FileInputStream input = new FileInputStream(file)) {
+            byte[] header = new byte[3];
+            if (input.read(header) < 2) return false;
+            boolean id3 = header[0] == 'I' && header[1] == 'D' && header[2] == '3';
+            boolean frameSync = (header[0] & 0xFF) == 0xFF && (header[1] & 0xE0) == 0xE0;
+            return id3 || frameSync;
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
