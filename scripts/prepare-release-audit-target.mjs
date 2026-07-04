@@ -42,6 +42,11 @@ if (!toggleBlock.includes('savedAttractionIds.has(')) throw new Error('Saved att
 const patchedToggleBlock = toggleBlock.replaceAll('savedAttractionIds.has(', 'savedAttractions.has(');
 generator = generator.slice(0, toggleStart) + patchedToggleBlock + generator.slice(toggleBlockEnd);
 
+const dateMarker = "      .replaceAll('2 Juli 2026', '4 Juli 2026')\n      .replaceAll('2 Temmuz 2026', '4 Temmuz 2026');";
+const dateReplacement = "      .replaceAll('2 Juli 2026', '4 Juli 2026')\n      .replaceAll('2 Julai 2026', '4 Julai 2026')\n      .replaceAll('2 Temmuz 2026', '4 Temmuz 2026');";
+if (!generator.includes(dateMarker)) throw new Error('Could not find legal-page date replacement block');
+generator = generator.replace(dateMarker, dateReplacement);
+
 const oldTest = `  const departure = airportByIata('LHR');
   const arrival = airportByIata('JFK');
   assert.ok(departure && arrival);
