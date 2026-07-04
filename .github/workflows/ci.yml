@@ -20,7 +20,19 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - run: npm test
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: npm test > test-output.txt 2>&1
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-test-output
+          path: test-output.txt
+      - name: Fail on test error
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
       - run: npm run lint
       - run: npm run test:browser-smoke
 
