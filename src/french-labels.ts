@@ -191,7 +191,7 @@ export const frenchLabels: Record<string, string> = {
   qiblaOpen: 'Ouvrir la Qibla',
   qiblaBack: 'Retour au planificateur',
   qiblaRequestLocation: 'Utiliser ma position',
-  qiblaRequestMotion: 'Activer la boussole',
+  qiblaRequestMotion: 'Démarrer la boussole en direct',
   qiblaRetry: 'Réessayer',
   qiblaLoadingLocation: 'Recherche de votre position...',
   qiblaLocationDenied: 'L’autorisation de localisation a été refusée. Activez-la ou réessayez.',
