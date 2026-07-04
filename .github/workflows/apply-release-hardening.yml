@@ -4,8 +4,8 @@ on:
   push:
     branches: [fix-all-release-blockers]
     paths:
-      - scripts/apply-release-hardening.mjs
-      - hardening-trigger.txt
+      - scripts/apply-release-hardening-phase2.mjs
+      - hardening-trigger-phase2.txt
 
 permissions:
   contents: write
@@ -28,8 +28,8 @@ jobs:
         run: |
           set +e
           {
-            echo "== apply patch =="
-            node scripts/apply-release-hardening.mjs
+            echo "== apply phase 2 patch =="
+            node scripts/apply-release-hardening-phase2.mjs
             patch_status=$?
             if [ "$patch_status" -ne 0 ]; then
               echo "PATCH_STATUS=$patch_status"
@@ -62,11 +62,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ "${{ steps.hardening.outputs.status }}" = "0" ]; then
-            rm -f hardening-run.log
-            rm -f hardening-trigger.txt
-            message="Harden app correctness, security, and release checks"
+            rm -f hardening-run.log hardening-trigger.txt hardening-trigger-phase2.txt
+            message="Complete release hardening and validation"
           else
-            message="Record release hardening failure diagnostics"
+            message="Record release hardening phase 2 diagnostics"
           fi
           git add -A
           if git diff --cached --quiet; then
