@@ -2,9 +2,9 @@ file:///home/runner/work/muslim-travel-planner/muslim-travel-planner/scripts/app
   if (count !== 1) throw new Error(`Expected one match for ${label}; found ${count}`);
                          ^
 
-Error: Expected one match for required planner fields; found 0
+Error: Expected one match for trip header storage warning; found 0
     at exact (file:///home/runner/work/muslim-travel-planner/muslim-travel-planner/scripts/apply-release-audit-fixes.mjs:22:26)
-    at file:///home/runner/work/muslim-travel-planner/muslim-travel-planner/scripts/apply-release-audit-fixes.mjs:458:12
+    at file:///home/runner/work/muslim-travel-planner/muslim-travel-planner/scripts/apply-release-audit-fixes.mjs:531:12
     at edit (file:///home/runner/work/muslim-travel-planner/muslim-travel-planner/scripts/apply-release-audit-fixes.mjs:15:17)
     at async file:///home/runner/work/muslim-travel-planner/muslim-travel-planner/scripts/apply-release-audit-fixes.mjs:283:1
 
