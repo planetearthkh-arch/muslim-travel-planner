@@ -1,5 +1,5 @@
 import type { CityData } from './models.js';
-import type { Language } from './i18n.js';
+import type { Language } from './app-language.js';
 
 export interface CurrencyInfo {
   code: string;

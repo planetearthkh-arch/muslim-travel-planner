@@ -194,16 +194,61 @@ export function positionByDistance(points: RoutePoint[], distanceKm: number) {
   if (!segments.length) return { point: points[0], trackDegrees: Number.NaN, progress: 0, totalDistanceKm: 0 };
   const target = Math.min(total, Math.max(0, Number.isFinite(distanceKm) ? distanceKm : 0));
   let traversed = 0;
-  for (const segment of segments) {
-    if (target <= traversed + segment.distanceKm) {
-      const fraction = segment.distanceKm ? (target - traversed) / segment.distanceKm : 0;
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const isLast = index === segments.length - 1;
+    if (target < traversed + segment.distanceKm || isLast) {
+      const fraction = segment.distanceKm ? Math.min(1, Math.max(0, (target - traversed) / segment.distanceKm)) : 0;
       const point = greatCircleInterpolate(segment.from, segment.to, fraction);
-      return { point, trackDegrees: initialTrueBearing(point, segment.to), progress: total ? target / total : 0, totalDistanceKm: total };
+      const trackDegrees = fraction >= 1 - 1e-9
+        ? initialTrueBearing(segment.from, segment.to)
+        : initialTrueBearing(point, segment.to);
+      return { point, trackDegrees, progress: total ? target / total : 0, totalDistanceKm: total };
     }
     traversed += segment.distanceKm;
   }
   const last = segments[segments.length - 1];
   return { point: last.to, trackDegrees: initialTrueBearing(last.from, last.to), progress: 1, totalDistanceKm: total };
+}
+
+export function projectPositionOntoRoute(points: RoutePoint[], position: RoutePoint) {
+  if (!validCoordinate(position.latitude, position.longitude)) return null;
+  const segments = routeSegments(points);
+  const totalDistanceKm = segments.reduce((sum, segment) => sum + segment.distanceKm, 0);
+  if (!segments.length || totalDistanceKm <= 0) return null;
+  let traversed = 0;
+  let best: { progress: number; distanceKm: number; crossTrackDistanceKm: number; trackDegrees: number } | null = null;
+
+  segments.forEach((segment, index) => {
+    const meanLatitude = toRadians((segment.from.latitude + segment.to.latitude + position.latitude) / 3);
+    const xy = (point: RoutePoint) => ({
+      x: toRadians(normalizeLongitude(point.longitude - segment.from.longitude)) * Math.cos(meanLatitude) * EARTH_RADIUS_KM,
+      y: toRadians(point.latitude - segment.from.latitude) * EARTH_RADIUS_KM,
+    });
+    const end = xy(segment.to);
+    const current = xy(position);
+    const denominator = end.x * end.x + end.y * end.y;
+    const fraction = denominator > 0 ? Math.min(1, Math.max(0, (current.x * end.x + current.y * end.y) / denominator)) : 0;
+    const projected = greatCircleInterpolate(segment.from, segment.to, fraction);
+    const crossTrackDistanceKm = haversineDistanceKm(projected, position);
+    const distanceKm = traversed + segment.distanceKm * fraction;
+    const trackDegrees = fraction >= 1 - 1e-9
+      ? initialTrueBearing(segment.from, segment.to)
+      : initialTrueBearing(projected, segment.to);
+    if (!best || crossTrackDistanceKm < best.crossTrackDistanceKm) {
+      best = {
+        progress: Math.min(1, Math.max(0, distanceKm / totalDistanceKm)),
+        distanceKm,
+        crossTrackDistanceKm,
+        trackDegrees: index < segments.length - 1 && fraction >= 1 - 1e-9
+          ? initialTrueBearing(segments[index + 1].from, segments[index + 1].to)
+          : trackDegrees,
+      };
+    }
+    traversed += segment.distanceKm;
+  });
+
+  return best ? { ...best, totalDistanceKm } : null;
 }
 
 export function elapsedProgress(plan: PreparedFlightPlan, nowMs = Date.now()) {
@@ -257,12 +302,13 @@ export function chooseFlightProgress(plan: PreparedFlightPlan, options: { gps?: 
   const stale = nowMs - gps.timestamp > GPS_FRESH_MS;
   const lowAccuracy = typeof gps.accuracyMeters === 'number' && gps.accuracyMeters > LOW_ACCURACY_METERS;
   if (stale) return { ...routeEstimate, source: 'route-estimate' as const, stale: true };
-  const track = deriveTrackFromFixes(options.previousGps, gps) ?? routeEstimate.trackDegrees;
-  const routeDistance = routeEstimate.routeDistanceKm;
-  const progress = Math.min(1, Math.max(0, options.manualProgress ?? elapsedProgress(plan, nowMs)));
+  const projection = projectPositionOntoRoute(routePoints(plan), gps);
+  const progress = projection?.progress ?? routeEstimate.progress;
+  const routeDistance = projection?.totalDistanceKm ?? routeEstimate.routeDistanceKm;
+  const track = deriveTrackFromFixes(options.previousGps, gps) ?? projection?.trackDegrees ?? routeEstimate.trackDegrees;
   return {
-    position: { ...gps, trackDegrees: track, source: gps.trackDegrees === track ? 'gps' : 'derived-gps' },
-    source: gps.trackDegrees === track ? 'gps' : 'derived-gps',
+    position: { ...gps, trackDegrees: track, source: typeof gps.trackDegrees === 'number' ? 'gps' : 'derived-gps' },
+    source: typeof gps.trackDegrees === 'number' ? 'gps' as const : 'derived-gps' as const,
     progress,
     distanceKm: routeDistance * progress,
     routeDistanceKm: routeDistance,

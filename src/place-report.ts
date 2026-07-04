@@ -1,4 +1,4 @@
-import type { Language } from './i18n.js';
+import type { Language } from './app-language.js';
 import { safeExternalUrl } from './urls.js';
 
 export type ReportReason = 'wrong-name' | 'wrong-location' | 'closed' | 'wrong-category' | 'hours' | 'contact' | 'accessibility' | 'halal' | 'other';

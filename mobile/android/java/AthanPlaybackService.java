@@ -66,7 +66,7 @@ public class AthanPlaybackService extends Service {
         String body = city.isEmpty() ? "The Athan is playing." : city;
         return new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(prayer + " prayer")
+            .setContentTitle(prayer)
             .setContentText(body)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)

@@ -1,6 +1,5 @@
 import type { CityData, ItineraryItem, PlannerPreferences } from './models.js';
-import type { Language } from './i18n.js';
-import { labels } from './i18n.js';
+import { labels, type Language } from './app-language.js';
 import { travelDetailEndDate, travelDetailPrimaryDate, travelDetailTimeZone, type TravelDetailEntry, type TravelDetailsSnapshot } from './travel-details.js';
 import { addMinutesToLocalDateTime, formatUtcForIcs, zonedDateTimeToUtc } from './time-zones.js';
 
