@@ -45,9 +45,10 @@ jobs:
       - name: Commit test diagnostics
         if: steps.tests.outcome == 'failure'
         run: |
+          grep -E '^not ok|^# tests |^# pass |^# fail ' audit-tests.log > audit-test-summary.log || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add audit-tests.log
+          git add audit-tests.log audit-test-summary.log
           git commit -m "Record release audit test failure" --allow-empty
           git push origin HEAD:${{ github.head_ref }}
       - name: Stop after test failure
@@ -89,7 +90,7 @@ jobs:
           rm scripts/patch-release-audit-generator.mjs
           rm scripts/prepare-release-audit-target.mjs
           rm .github/workflows/apply-release-audit-fixes.yml
-          rm -f audit-generator.log audit-tests.log audit-lint.log audit-build.log
+          rm -f audit-generator.log audit-tests.log audit-test-summary.log audit-lint.log audit-build.log
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
