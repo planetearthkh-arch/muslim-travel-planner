@@ -42,4 +42,7 @@ npm run typecheck
 npm run test
 npm run lint
 npm run build
+npm run test:browser-smoke
 ```
+
+CI also compiles Android debug and release packages and verifies both an iOS simulator build and an unsigned device archive.
