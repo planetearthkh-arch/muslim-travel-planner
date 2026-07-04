@@ -59,4 +59,5 @@ gzip --test /tmp/final-hardening.patch.gz
 gzip --decompress --stdout /tmp/final-hardening.patch.gz > /tmp/final-hardening.patch
 patch --dry-run -p2 --batch --forward < /tmp/final-hardening.patch
 patch -p2 --batch --forward < /tmp/final-hardening.patch
+sed -i 's#https://packages\.applied-caas-gateway1\.internal\.api\.openai\.org/artifactory/api/npm/npm-public/#https://registry.npmjs.org/#g' package-lock.json
 rm -f temp/noop.txt
