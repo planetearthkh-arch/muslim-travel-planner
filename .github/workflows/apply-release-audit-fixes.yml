@@ -20,8 +20,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Patch generator matching
-        run: node scripts/patch-release-audit-generator.mjs
+      - name: Prepare generator target
+        run: node scripts/prepare-release-audit-target.mjs
       - name: Run release-audit generator
         id: generator
         continue-on-error: true
@@ -45,6 +45,7 @@ jobs:
         run: |
           rm scripts/apply-release-audit-fixes.mjs
           rm scripts/patch-release-audit-generator.mjs
+          rm scripts/prepare-release-audit-target.mjs
           rm .github/workflows/apply-release-audit-fixes.yml
           rm -f audit-generator.log
           git config user.name "github-actions[bot]"
