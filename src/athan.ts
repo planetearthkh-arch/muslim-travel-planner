@@ -134,10 +134,10 @@ async function showBrowserAlert(alarm: PrayerAlarm, language: Language) {
     const copy = notificationCopy[language];
     new Notification(`${copy.prayer[alarm.prayer]} ${copy.title}`, {
       body: `${alarm.city} · ${alarm.formattedTime}`,
-      icon: './icon-192.png',
+      icon: './icons/icon.svg',
     });
   }
-  await playTestAthan();
+  await playTestAthan(language);
 }
 
 function scheduleBrowserFallback(alarms: PrayerAlarm[], language: Language) {
@@ -223,13 +223,14 @@ export async function playTestAthan(language: Language = 'en') {
   if (Capacitor.isNativePlatform()) {
     const permissions = await LocalNotifications.requestPermissions();
     if (permissions.display !== 'granted') return;
+    const exactAlarmAllowed = Capacitor.getPlatform() !== 'android' || (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === 'granted';
     await LocalNotifications.schedule({
       notifications: [{
         id: NATIVE_TEST_NOTIFICATION_ID,
         title: notificationCopy[language].testTitle,
         body: notificationCopy[language].testBody,
         sound: NATIVE_DEFAULT_SOUND,
-        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
+        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: exactAlarmAllowed },
         extra: { safarOne: true, test: true },
       }],
     });

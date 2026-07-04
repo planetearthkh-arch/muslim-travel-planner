@@ -148,8 +148,9 @@ export function parseAmountInput(raw: string, language?: Language): { value: num
         if (integer.length > 3) return { value: null, error: 'invalid' };
         if (language) {
           const parts = new Intl.NumberFormat(localeFor(language)).formatToParts(12345.6);
-          const localeDecimal = parts.find((part) => part.type === 'decimal')?.value || '.';
-          const localeGroup = parts.find((part) => part.type === 'group')?.value || ',';
+          const normalizeSeparator = (value: string) => value.replace(/٬/g, ',').replace(/٫/g, '.');
+          const localeDecimal = normalizeSeparator(parts.find((part) => part.type === 'decimal')?.value || '.');
+          const localeGroup = normalizeSeparator(parts.find((part) => part.type === 'group')?.value || ',');
           numeric = separator === localeGroup ? integer + fraction : separator === localeDecimal ? integer + '.' + fraction : integer + '.' + fraction;
         } else numeric = integer + fraction;
       } else numeric = integer + '.' + fraction;

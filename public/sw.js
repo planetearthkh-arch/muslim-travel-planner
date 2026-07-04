@@ -29,10 +29,11 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || !isSameOrigin(request) || isLiveApi(request)) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then((response) => {
+    event.respondWith(fetch(request).then(async (response) => {
       if (response.ok) {
         const copy = response.clone();
-        caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+        const cache = await caches.open(CACHE_VERSION);
+        await cache.put(request, copy);
       }
       return response;
     }).catch(async () => (await caches.match(request)) ?? (await caches.match(APP_HOME)) ?? Response.error()));
