@@ -374,7 +374,8 @@ test('travel details are included in sharing and calendar export without private
   const ics = buildIcsCalendar(snapshot);
   assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, itinerary.length + 1);
   assert.equal(ics.includes('SECRET-FLIGHT'), false);
-  assert.equal(ics.includes('DTSTART;TZID=Europe/London:20260701T223000'), true);
+  assert.equal(ics.includes('DTSTART:20260701T213000Z'), true);
+  assert.equal(ics.includes('DTEND:20260702T012000Z'), true);
 });
 
 test('travel details UI labels, print rules, and local handlers are wired', async () => {
