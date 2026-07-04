@@ -1,5 +1,6 @@
 import type { PrayerMethod } from './models.js';
 import type { FlightDetail, TravelDetailsSnapshot } from './travel-details.js';
+import { zonedDateTimeToUtc } from './time-zones.js';
 
 export const FLIGHT_PLAN_SCHEMA_VERSION = 1;
 export const FLIGHT_ESTIMATE_WORDING = 'Best available estimate based on live GPS or the stored flight route.';
@@ -382,8 +383,9 @@ export function flightPlanFromTravelDetails(snapshot: TravelDetailsSnapshot, pra
   const departure = airportByIata(flight.departureAirport);
   const arrival = airportByIata(flight.arrivalAirport);
   if (!departure || !arrival) return null;
-  const start = new Date(flight.departureDateTime.endsWith('Z') ? flight.departureDateTime : `${flight.departureDateTime}:00Z`);
-  const end = new Date(flight.arrivalDateTime.endsWith('Z') ? flight.arrivalDateTime : `${flight.arrivalDateTime}:00Z`);
+  const start = zonedDateTimeToUtc(flight.departureDateTime, flight.departureTimeZone || 'UTC');
+  const end = zonedDateTimeToUtc(flight.arrivalDateTime, flight.arrivalTimeZone || 'UTC');
+  if (!start || !end) return null;
   const durationMinutes = Math.round((end.getTime() - start.getTime()) / 60_000);
   return createPreparedFlightPlan({
     departure,

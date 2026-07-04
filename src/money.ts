@@ -104,59 +104,64 @@ export const normalizeCurrencies = (payload: unknown): CurrencyInfo[] => {
   return normalized;
 };
 
-export const parseAmountInput = (raw: string): { value: number | null; error?: 'empty' | 'negative' | 'invalid' | 'tooLarge' } => {
+export function parseAmountInput(raw: string, language?: Language): { value: number | null; error?: 'empty' | 'negative' | 'invalid' | 'tooLarge' } {
   const trimmed = raw.trim();
   if (!trimmed) return { value: null, error: 'empty' };
-  if (/^-/.test(trimmed) || /−/.test(trimmed)) return { value: null, error: 'negative' };
-  const normalizedDigits = trimmed
-    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
-    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-    .replace(/٬/g, ',')
-    .replace(/٫/g, '.');
-  const compact = normalizedDigits.replace(/[^\d.,]/g, '');
-  const numeric = [...compact].filter((char, index) => /\d/.test(char) || ((char === ',' || char === '.') && /\d/.test(compact[index - 1] ?? '') && /\d/.test(compact[index + 1] ?? ''))).join('');
-  if (!numeric || !/\d/.test(numeric)) return { value: null, error: 'invalid' };
+  if (/(?:^|\s)[-−]|[-−]\s*\d/.test(trimmed)) return { value: null, error: 'negative' };
 
-  const validGroupedInteger = (value: string, separator: string) => {
+  const normalizedText = trimmed
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/٬/g, ',')
+    .replace(/٫/g, '.')
+    .replace(/[\u0000-\u001f\u007f]/g, '');
+  const numericToken = normalizedText.match(/[+]?\d[\d.,' \u00a0\u202f]*/)?.[0] ?? '';
+  const normalized = numericToken.replace(/[ '’\u00a0\u202f]/g, '').replace(/^\+/, '');
+  if (!normalized || !/^[0-9][0-9.,]*$/.test(normalized)) return { value: null, error: 'invalid' };
+
+  const grouped = (value: string, separator: string) => {
     const groups = value.split(separator);
-    return groups.length > 1
-      && /^[0-9]{1,3}$/.test(groups[0])
-      && groups.slice(1).every((group) => /^[0-9]{3}$/.test(group));
+    return /^[0-9]{1,3}$/.test(groups[0] || '') && groups.length > 1 && groups.slice(1).every((group) => /^[0-9]{3}$/.test(group));
   };
-  const buildNumberText = (): string | null => {
-    const separators = [...numeric].filter((char) => char === ',' || char === '.');
-    if (!separators.length) return /^\d+$/.test(numeric) ? numeric : null;
-    const hasComma = numeric.includes(',');
-    const hasDot = numeric.includes('.');
-    if (hasComma && hasDot) {
-      const decimalIndex = Math.max(numeric.lastIndexOf(','), numeric.lastIndexOf('.'));
-      const decimalSeparator = numeric[decimalIndex];
-      const groupingSeparator = decimalSeparator === ',' ? '.' : ',';
-      const integerPart = numeric.slice(0, decimalIndex);
-      const fractionPart = numeric.slice(decimalIndex + 1);
-      if (!/^\d+$/.test(fractionPart)) return null;
-      if (integerPart.includes(decimalSeparator)) return null;
-      if (!validGroupedInteger(integerPart, groupingSeparator)) return null;
-      return `${integerPart.replaceAll(groupingSeparator, '')}.${fractionPart}`;
+
+  let numeric = normalized;
+  const hasDot = normalized.includes('.');
+  const hasComma = normalized.includes(',');
+  if (hasDot && hasComma) {
+    const decimal = normalized.lastIndexOf('.') > normalized.lastIndexOf(',') ? '.' : ',';
+    const group = decimal === '.' ? ',' : '.';
+    const decimalIndex = normalized.lastIndexOf(decimal);
+    const integer = normalized.slice(0, decimalIndex);
+    const fraction = normalized.slice(decimalIndex + 1);
+    if (!/^\d+$/.test(fraction) || fraction.length > 12 || integer.includes(decimal) || !grouped(integer, group)) return { value: null, error: 'invalid' };
+    numeric = integer.replaceAll(group, '') + '.' + fraction;
+  } else if (hasDot || hasComma) {
+    const separator = hasDot ? '.' : ',';
+    const occurrences = normalized.split(separator).length - 1;
+    if (occurrences > 1) {
+      if (!grouped(normalized, separator)) return { value: null, error: 'invalid' };
+      numeric = normalized.replaceAll(separator, '');
+    } else {
+      const [integer, fraction = ''] = normalized.split(separator);
+      if (!/^\d+$/.test(integer) || !/^\d+$/.test(fraction)) return { value: null, error: 'invalid' };
+      if (fraction.length === 3 && integer !== '0') {
+        if (integer.length > 3) return { value: null, error: 'invalid' };
+        if (language) {
+          const parts = new Intl.NumberFormat(localeFor(language)).formatToParts(12345.6);
+          const normalizeSeparator = (value: string) => value.replace(/٬/g, ',').replace(/٫/g, '.');
+          const localeDecimal = normalizeSeparator(parts.find((part) => part.type === 'decimal')?.value || '.');
+          const localeGroup = normalizeSeparator(parts.find((part) => part.type === 'group')?.value || ',');
+          numeric = separator === localeGroup ? integer + fraction : separator === localeDecimal ? integer + '.' + fraction : integer + '.' + fraction;
+        } else numeric = integer + fraction;
+      } else numeric = integer + '.' + fraction;
     }
-    const separator = hasComma ? ',' : '.';
-    const parts = numeric.split(separator);
-    if (parts.some((part) => part === '' || !/^\d+$/.test(part))) return null;
-    if (parts.length > 2) {
-      return validGroupedInteger(numeric, separator) ? numeric.replaceAll(separator, '') : null;
-    }
-    const [integerPart, tail] = parts;
-    if (tail.length === 3 && /^[0-9]{1,3}$/.test(integerPart)) return `${integerPart}${tail}`;
-    if (tail.length === 1 || tail.length === 2) return `${integerPart}.${tail}`;
-    return null;
-  };
-  const cleaned = buildNumberText();
-  if (!cleaned) return { value: null, error: 'invalid' };
-  const value = Number(cleaned);
+  }
+  if (!/^\d+(?:\.\d+)?$/.test(numeric)) return { value: null, error: 'invalid' };
+  const value = Number(numeric);
   if (!Number.isFinite(value)) return { value: null, error: 'invalid' };
   if (value > 1_000_000_000_000_000) return { value: null, error: 'tooLarge' };
   return { value };
-};
+}
 
 export const convertAmount = (amount: number, rate: number): ConversionResult => {
   if (!Number.isFinite(amount) || !Number.isFinite(rate) || rate <= 0) throw new Error('Invalid conversion input');

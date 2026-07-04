@@ -1,4 +1,5 @@
-const CACHE_VERSION = 'mtp-app-shell-v9';
+const CACHE_PREFIX = 'mtp-app-shell-';
+const CACHE_VERSION = 'mtp-app-shell-v13';
 const APP_SCOPE = new URL(self.registration.scope);
 const APP_HOME = new URL('./', APP_SCOPE).toString();
 const APP_SHELL = [
@@ -20,7 +21,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', (event) => {
@@ -28,21 +29,29 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || !isSameOrigin(request) || isLiveApi(request)) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then((response) => {
+    event.respondWith(fetch(request).then(async (response) => {
       if (response.ok) {
         const copy = response.clone();
-        caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+        const cache = await caches.open(CACHE_VERSION);
+        await cache.put(request, copy);
       }
       return response;
     }).catch(async () => (await caches.match(request)) ?? (await caches.match(APP_HOME)) ?? Response.error()));
     return;
   }
 
-  event.respondWith(caches.match(request).then((cached) => cached ?? fetch(request).then((response) => {
-    if (response.ok && ['script', 'style', 'image', 'font'].includes(request.destination)) {
-      const copy = response.clone();
-      caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+  event.respondWith(caches.match(request).then(async (cached) => {
+    const network = fetch(request).then((response) => {
+      if (response.ok && ['script', 'style', 'image', 'font'].includes(request.destination)) {
+        const copy = response.clone();
+        void caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+      }
+      return response;
+    });
+    if (cached) {
+      event.waitUntil(network.then(() => undefined).catch(() => undefined));
+      return cached;
     }
-    return response;
-  })));
+    return network;
+  }));
 });

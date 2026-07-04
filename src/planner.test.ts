@@ -374,7 +374,8 @@ test('travel details are included in sharing and calendar export without private
   const ics = buildIcsCalendar(snapshot);
   assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, itinerary.length + 1);
   assert.equal(ics.includes('SECRET-FLIGHT'), false);
-  assert.equal(ics.includes('DTSTART;TZID=Europe/London:20260701T223000'), true);
+  assert.equal(ics.includes('DTSTART:20260701T213000Z'), true);
+  assert.equal(ics.includes('DTEND:20260702T012000Z'), true);
 });
 
 test('travel details UI labels, print rules, and local handlers are wired', async () => {
@@ -2482,8 +2483,8 @@ test('mapped feature cards omit missing optional rows and avoid duplicate openin
   const taxiDetails = source.slice(source.indexOf('function taxiDetails'), source.indexOf('function taxiCard'));
   const publicTransportDetails = source.slice(source.indexOf('function publicTransportDetails'), source.indexOf('function publicTransportCard'));
   const carRentalDetails = source.slice(source.indexOf('function carRentalDetails'), source.indexOf('function carRentalCard'));
-  assert.equal(taxiDetails.includes('[copy.transportOperator, item.operator]'), true);
-  assert.equal(taxiDetails.includes('[copy.prayerOpeningHours, item.openingHours]'), true);
+  assert.equal(taxiDetails.includes('[copy.transportOperator, esc(item.operator)]'), true);
+  assert.equal(taxiDetails.includes('[copy.prayerOpeningHours, esc(item.openingHours)]'), true);
   assert.equal(taxiDetails.includes('item.openingHours || copy.halalOpeningUnavailable'), false);
   assert.equal(publicTransportDetails.includes('stop.openingHours || copy.halalOpeningUnavailable'), false);
   assert.equal(carRentalDetails.includes('office.openingHours || copy.halalOpeningUnavailable'), false);

@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { generateItinerary } from './planner.js';
 import { RequestError, classifyRequestError, requestJson, retryOnceForTemporary } from './http.js';
+import { availableServiceEndpoints, recordServiceFailure, recordServiceSuccess } from './provider-health.js';
 import { requestHalalWithFailover } from './halal-overpass.js';
 import { calculateQiblaBearing, formatCoordinate, normalizeDegrees } from './qibla.js';
 import {
@@ -182,6 +183,7 @@ import { isAppGeolocationAvailable, requestCurrentAppPosition, watchAppPosition,
 import { copyText, exportTripCalendarFile, shareText } from './native-share.js';
 import { bindNativeExternalLinks, staticLegalPageUrl } from './native-links.js';
 import { deleteTravelDetail, emptyTravelDetails, sortTravelDetails, upsertTravelDetail, validateTravelDetailInput, validateTravelDetailsSnapshot, type TravelDetailEntry, type TravelDetailInput, type TravelDetailsSnapshot, type TravelDetailType } from './travel-details.js';
+import { dateTimeForZone } from './time-zones.js';
 
 (window as unknown as { maplibregl?: typeof maplibregl }).maplibregl = maplibregl;
 
@@ -204,14 +206,19 @@ let qiblaOrientationListenersActive = false;
 let qiblaAnimationFrame = 0;
 let qiblaLastRenderedHeading: number | undefined;
 const QIBLA_HEADING_THRESHOLD = 1;
+const todayIso = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
 let replan = 0;
 let selectedRegion: Region | '' = '';
 let athanEnabled = localStorage.getItem('athanEnabled') === 'true';
 let athanStatus = '';
 let prefs: PlannerPreferences = {
   city: 'London',
-  startDate: '2026-07-01',
-  endDate: '2026-07-01',
+  startDate: todayIso(),
+  endDate: todayIso(),
   startHour: '09:00',
   endHour: '18:00',
   interests: ['history', 'culture', 'family'],
@@ -1910,13 +1917,13 @@ function initializeRestaurantMap() {
 
 function restaurantDetails(place: HalalRestaurant, copy: typeof labels[Language]) {
   const rows = [
-    [copy.halalCuisineLabel, place.cuisine.join(', ')],
-    [copy.prayerAddress, place.address],
-    [copy.prayerOpeningHours, place.openingHours],
-    [copy.prayerTelephone, place.phone],
+    [copy.halalCuisineLabel, esc(place.cuisine.join(', '))],
+    [copy.prayerAddress, esc(place.address)],
+    [copy.prayerOpeningHours, esc(place.openingHours)],
+    [copy.prayerTelephone, esc(place.phone)],
     [copy.prayerWebsite, place.website ? `<a href="${esc(place.website)}" target="_blank" rel="noopener noreferrer">${esc(place.website)}</a>` : ''],
     [copy.halalMenu, place.menu ? `<a href="${esc(place.menu)}" target="_blank" rel="noopener noreferrer">${esc(place.menu)}</a>` : ''],
-    [copy.halalPrice, place.price],
+    [copy.halalPrice, esc(place.price)],
     [copy.halalTakeaway, place.takeaway ? copy.prayerVerified : ''],
     [copy.halalDelivery, place.delivery ? copy.prayerVerified : ''],
     [copy.halalOutdoor, place.outdoorSeating ? copy.prayerVerified : ''],
@@ -2226,10 +2233,10 @@ function toiletDetails(toilet: PublicToilet, copy: typeof labels[Language]) {
   const fee = toilet.fee === 'free' ? copy.toiletsFree : toilet.fee === 'paid' ? `${copy.toiletsPaid}${toilet.feeAmount ? `: ${esc(toilet.feeAmount)}` : ''}` : copy.toiletsFeeUnknown;
   const wheelchair = toilet.wheelchair === 'yes' ? copy.toiletsWheelchair : toilet.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : toilet.wheelchair === 'no' ? copy.toiletsWheelchairNo : copy.toiletsWheelchairUnknown;
   const rows = [
-    [copy.toiletsInside, toilet.inside],
-    [copy.prayerAddress, toilet.address],
+    [copy.toiletsInside, esc(toilet.inside)],
+    [copy.prayerAddress, esc(toilet.address)],
     [copy.toiletsFeeUnknown, fee],
-    [copy.prayerOpeningHours, toilet.openingHours],
+    [copy.prayerOpeningHours, esc(toilet.openingHours)],
     [copy.toiletsWheelchair, wheelchair],
     [copy.toiletsChanging, toilet.changingTable === 'yes' ? `${copy.toiletsChanging}${toilet.changingLocation ? `: ${esc(toilet.changingLocation)}` : ''}` : toilet.changingTable === 'limited' ? copy.toiletsWheelchairLimited : ''],
     [copy.toiletsFemale, toilet.female ? copy.prayerVerified : ''],
@@ -2244,10 +2251,10 @@ function toiletDetails(toilet: PublicToilet, copy: typeof labels[Language]) {
     [copy.toiletsSeated, toilet.seated ? copy.prayerVerified : ''],
     [copy.toiletsSquat, toilet.squat ? copy.prayerVerified : ''],
     [copy.toiletsUrinal, toilet.urinal ? copy.prayerVerified : ''],
-    [copy.toiletsOperator, toilet.operator],
+    [copy.toiletsOperator, esc(toilet.operator)],
     [copy.toiletsSupervised, toilet.supervised ? copy.prayerVerified : ''],
     [copy.prayerWebsite, toilet.website ? `<a href="${esc(toilet.website)}" target="_blank" rel="noopener noreferrer">${esc(toilet.website)}</a>` : ''],
-    [copy.prayerTelephone, toilet.phone],
+    [copy.prayerTelephone, esc(toilet.phone)],
   ].filter(([, value]) => Boolean(value));
   return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
 }
@@ -2536,18 +2543,18 @@ function carRentalDetails(office: CarRentalOffice, copy: typeof labels[Language]
   const website = office.website ? `<a href="${esc(office.website)}" target="_blank" rel="noopener noreferrer">${copy.carRentalOfficialWebsiteListed}</a>` : '';
   const booking = office.bookingUrl ? `<a href="${esc(office.bookingUrl)}" target="_blank" rel="noopener noreferrer">${copy.carRentalOfficialBookingListed}</a>` : '';
   const rows = [
-    [copy.carRentalBrand, office.brand],
-    [copy.carRentalOperator, office.operator],
+    [copy.carRentalBrand, esc(office.brand)],
+    [copy.carRentalOperator, esc(office.operator)],
     [copy.carRentalLocationType, carRentalTypeLabel(office.locationType, copy)],
-    [copy.carRentalLocationContext, office.locationContext],
-    [copy.prayerAddress, office.address],
-    [copy.prayerOpeningHours, office.openingHours],
-    [copy.prayerTelephone, office.phone],
+    [copy.carRentalLocationContext, esc(office.locationContext)],
+    [copy.prayerAddress, esc(office.address)],
+    [copy.prayerOpeningHours, esc(office.openingHours)],
+    [copy.prayerTelephone, esc(office.phone)],
     [copy.carRentalEmail, office.email ? `<a href="mailto:${esc(office.email)}">${esc(office.email)}</a>` : ''],
     [copy.prayerWebsite, website],
     [copy.carRentalBookingWebsite, booking],
     [copy.toiletsWheelchair, wheelchair],
-    [copy.carRentalBranchRef, office.branchRef],
+    [copy.carRentalBranchRef, esc(office.branchRef)],
   ].filter(([, value]) => Boolean(value));
   return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
 }
@@ -2847,17 +2854,17 @@ function publicTransportDetails(stop: PublicTransportStop, copy: typeof labels[L
   const wheelchair = stop.wheelchair === 'yes' ? copy.toiletsWheelchair : stop.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : stop.wheelchair === 'no' ? copy.toiletsWheelchairNo : '';
   const rows = [
     [copy.transportType, publicTransportTypeLabel(stop.type, copy)],
-    [copy.prayerAddress, stop.address],
-    [copy.transportOperator, stop.operator],
-    [copy.transportNetwork, stop.network],
-    [copy.transportReference, stop.ref],
-    [copy.transportLines, stop.routes],
-    [copy.prayerOpeningHours, stop.openingHours],
+    [copy.prayerAddress, esc(stop.address)],
+    [copy.transportOperator, esc(stop.operator)],
+    [copy.transportNetwork, esc(stop.network)],
+    [copy.transportReference, esc(stop.ref)],
+    [copy.transportLines, esc(stop.routes)],
+    [copy.prayerOpeningHours, esc(stop.openingHours)],
     [copy.toiletsWheelchair, wheelchair],
     [copy.transportShelter, stop.shelter === 'yes' ? copy.available : stop.shelter === 'no' ? copy.notAvailable : ''],
     [copy.transportSeating, stop.seating === 'yes' ? copy.available : stop.seating === 'no' ? copy.notAvailable : ''],
     [copy.transportToilets, stop.toilets === 'yes' ? copy.available : stop.toilets === 'no' ? copy.notAvailable : ''],
-    [copy.prayerTelephone, stop.phone],
+    [copy.prayerTelephone, esc(stop.phone)],
     [copy.prayerWebsite, stop.website ? `<a href="${esc(stop.website)}" target="_blank" rel="noopener noreferrer">${copy.transportOfficialWebsite}</a>` : ''],
   ].filter(([, value]) => Boolean(value));
   return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
@@ -3146,15 +3153,15 @@ function taxiDetails(item: TaxiService, copy: typeof labels[Language]) {
   const wheelchair = item.wheelchair === 'yes' ? copy.toiletsWheelchair : item.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : item.wheelchair === 'no' ? copy.toiletsWheelchairNo : '';
   const rows = [
     [copy.taxiType, taxiTypeLabel(item.type, copy)],
-    [copy.prayerAddress, item.address],
-    [copy.transportOperator, item.operator],
-    [copy.prayerOpeningHours, item.openingHours],
-    [copy.taxiCapacity, item.capacity],
-    [copy.taxiVehicle, item.vehicle],
+    [copy.prayerAddress, esc(item.address)],
+    [copy.transportOperator, esc(item.operator)],
+    [copy.prayerOpeningHours, esc(item.openingHours)],
+    [copy.taxiCapacity, esc(item.capacity)],
+    [copy.taxiVehicle, esc(item.vehicle)],
     [copy.toiletsWheelchair, wheelchair],
     [copy.transportShelter, item.shelter === 'yes' ? copy.available : item.shelter === 'no' ? copy.notAvailable : ''],
     [copy.taxiLit, item.lit === 'yes' ? copy.available : item.lit === 'no' ? copy.notAvailable : ''],
-    [copy.taxiFee, item.fee],
+    [copy.taxiFee, esc(item.fee)],
     [copy.prayerTelephone, item.callHref ? `<a href="${esc(item.callHref)}">${esc(item.phone)}</a>` : esc(item.phone)],
     [copy.prayerWebsite, item.website ? `<a href="${esc(item.website)}" target="_blank" rel="noopener noreferrer">${copy.transportOfficialWebsite}</a>` : ''],
   ].filter(([, value]) => Boolean(value));
@@ -3371,7 +3378,10 @@ async function searchWeatherDestination() {
 
 function formatWeatherTime(value: string, options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }) {
   if (!value) return '';
-  return new Intl.DateTimeFormat(localeForLanguage(lang), options).format(new Date(value));
+  const timeZone = weatherForecast?.timezone || weatherLocation?.timezone || selectedCity().timezone;
+  const date = dateTimeForZone(value, timeZone);
+  if (!date) return '';
+  return new Intl.DateTimeFormat(localeForLanguage(lang), { ...options, timeZone }).format(date);
 }
 
 const formatPercent = (value: number | null, copy: typeof labels[Language]) => value === null ? copy.weatherValueUnavailable : `${value}%`;
@@ -3383,7 +3393,7 @@ function weatherRows(forecast: WeatherForecast, copy: typeof labels[Language]) {
   const currentWet = sumAvailable(forecast.current.rain, forecast.current.showers, forecast.current.snowfall, forecast.current.precipitation);
   const rainSnow = currentWet === null ? copy.weatherValueUnavailable : formatPrecipitation(currentWet, weatherUnits, copy.weatherValueUnavailable);
   const currentUv = selectHourlyForecast(forecast.hourly, forecast.current.time, 1)[0]?.uvIndex ?? null;
-  const firstVisibility = forecast.hourly[0]?.visibility ?? null;
+  const firstVisibility = selectHourlyForecast(forecast.hourly, forecast.current.time, 1)[0]?.visibility ?? null;
   const rows = [
     [copy.weatherCondition, `${condition.icon} ${condition.label}`],
     [copy.weatherFeelsLike, formatTemperature(forecast.current.apparentTemperature, weatherUnits, copy.weatherValueUnavailable)],
@@ -3437,7 +3447,9 @@ function travelWeatherSection(forecast: WeatherForecast, copy: typeof labels[Lan
 
 function prayerWeatherSection(forecast: WeatherForecast, copy: typeof labels[Language]) {
   const city = selectedWeatherCity();
-  const prayerTimes = calculatePrayerDisplay(city, prefs.prayerMethod, prefs.startDate, localeForLanguage(lang));
+  const prayerCity = { ...city, coordinates: { lat: forecast.latitude, lng: forecast.longitude }, timezone: forecast.timezone || city.timezone };
+  const prayerDate = weatherSelectedDay || forecast.daily[0]?.date || todayIso();
+  const prayerTimes = calculatePrayerDisplay(prayerCity, prefs.prayerMethod, prayerDate, localeForLanguage(lang));
   const matches = matchPrayerWeather(prayerTimes, forecast.hourly).filter((item) => item.prayer !== 'Sunrise');
   if (!matches.length) return '';
   return `<section class="destination-box"><h2>${copy.weatherPrayer}</h2><div class="place-list">${matches.map((item) => {
@@ -3564,7 +3576,7 @@ function overpassPostOptions(query: string): RequestInit {
 function overpassEndpoints() {
   const configured = localStorage.getItem('mtp-overpass-endpoint');
   const fallback = localStorage.getItem('mtp-overpass-fallback-endpoint') ?? 'https://overpass.kumi.systems/api/interpreter';
-  return [...new Set([configured || overpassUrl(), fallback].filter(Boolean))];
+  return availableServiceEndpoints([configured || overpassUrl(), fallback]);
 }
 
 function isTemporaryOverpassError(error: unknown) {
@@ -3603,9 +3615,13 @@ async function requestAttractionBatch(batch: AttractionQueryBatch, signal?: Abor
   const endpoints = overpassEndpoints();
   for (const endpoint of endpoints) {
     try {
-      return await requestOverpass(endpoint, { ...overpassPostOptions(batch.query), signal }, 9000);
+      const result = await requestOverpass(endpoint, { ...overpassPostOptions(batch.query), signal }, 9000);
+      recordServiceSuccess(endpoint);
+      return result;
     } catch (error) {
       lastError = error;
+      const classified = classifyRequestError(error);
+      recordServiceFailure(endpoint, classified.kind, classified.retryAfterMs);
       recordAttractionDiagnostic(`Overpass ${batch.label} via ${new URL(endpoint).hostname}`, error);
       if (!isTemporaryOverpassError(error)) break;
     }
@@ -3946,14 +3962,14 @@ function attractionPhoto(attraction: Attraction, copy: typeof labels[Language], 
 function attractionDetailsRows(attraction: Attraction, copy: typeof labels[Language]) {
   const rows = [
     [copy.attractionsCategory, attractionCategoryLabel(attraction.category, copy)],
-    [copy.prayerAddress, attraction.address],
-    [copy.prayerOpeningHours, attraction.openingHours],
+    [copy.prayerAddress, esc(attraction.address)],
+    [copy.prayerOpeningHours, esc(attraction.openingHours)],
     [copy.halalOpen, openingStatusLabel(attraction.openState, copy)],
     [copy.prayerWebsite, attraction.website ? `<a href="${esc(attraction.website)}" target="_blank" rel="noopener noreferrer">${esc(attraction.website)}</a>` : ''],
-    [copy.prayerTelephone, attraction.phone],
+    [copy.prayerTelephone, esc(attraction.phone)],
     [copy.toiletsWheelchair, attraction.wheelchair === 'yes' ? copy.toiletsWheelchair : attraction.wheelchair === 'limited' ? copy.toiletsWheelchairLimited : ''],
     [copy.attractionsAdmission, attraction.fee === 'free' ? copy.toiletsFree : attraction.fee === 'paid' ? copy.toiletsPaid : ''],
-    [copy.attractionsInfoSource, attraction.historySource],
+    [copy.attractionsInfoSource, esc(attraction.historySource)],
   ].filter(([, value]) => Boolean(value));
   return `<dl class="place-details">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
 }
@@ -4613,7 +4629,7 @@ async function loadHistory(historyFromCurrency = fromCurrency, historyToCurrency
     render();
   }
   try {
-    const body = await requestJson<Array<{ date: string; base: string; quote: string; rate: number }>>(`${FRANKFURTER_BASE_URL}/rates?from=${startIso}&to=${endIso}`, { headers: { Accept: 'application/json' } }, 7000);
+    const body = await requestJson<Array<{ date: string; base: string; quote: string; rate: number }>>(`${FRANKFURTER_BASE_URL}/rates?from=${startIso}&to=${endIso}&base=${historyFromCurrency}&quotes=${historyToCurrency}`, { headers: { Accept: 'application/json' } }, 7000);
     if (!isCurrentHistoryRequest()) return;
     historySummary = historyStats(body, historyToCurrency, historyFromCurrency);
     writeJsonCache(localStorage, cacheKey, historySummary);
@@ -4657,7 +4673,7 @@ function moneyStatusText(copy: typeof labels[Language]) {
 function moneyConversionMarkup(copy: typeof labels[Language]) {
   const from = currencyByCode(fromCurrency);
   const to = currencyByCode(toCurrency);
-  const parsed = parseAmountInput(amountInput);
+  const parsed = parseAmountInput(amountInput, lang);
   const result = parsed.value !== null && rate ? convertAmount(parsed.value, rate.rate) : null;
   return `
     <span>${from.flag} ${from.code} ${from.name[lang]} · ${from.symbol}</span>
@@ -4667,13 +4683,14 @@ function moneyConversionMarkup(copy: typeof labels[Language]) {
 
 function currencySelectOptions() {
   const searchable = searchCurrencies(currencies, currencySearch);
-  const options = searchable.map((currency) => `<option value="${currency.code}">${currencyOption(currency)}</option>`).join('');
-  return { from: `<option value="${fromCurrency}">${currencyOption(currencyByCode(fromCurrency))}</option>${options}`, to: `<option value="${toCurrency}">${currencyOption(currencyByCode(toCurrency))}</option>${options}` };
+  const fromOptions = searchable.filter((currency) => currency.code !== fromCurrency).map((currency) => `<option value="${currency.code}">${currencyOption(currency)}</option>`).join('');
+  const toOptions = searchable.filter((currency) => currency.code !== toCurrency).map((currency) => `<option value="${currency.code}">${currencyOption(currency)}</option>`).join('');
+  return { from: `<option value="${fromCurrency}">${currencyOption(currencyByCode(fromCurrency))}</option>${fromOptions}`, to: `<option value="${toCurrency}">${currencyOption(currencyByCode(toCurrency))}</option>${toOptions}` };
 }
 
 function updateMoneyDynamicSections() {
   const copy = labels[lang];
-  const parsed = parseAmountInput(amountInput);
+  const parsed = parseAmountInput(amountInput, lang);
   if (parsed.error && parsed.error !== 'empty') {
     moneyStatus = 'invalidAmount';
   } else if (moneyStatus === 'invalidAmount' || moneyStatus === 'copied') {
@@ -4715,7 +4732,7 @@ function moneyPage() {
   const dir = languageDirection(lang);
   const city = selectedCity();
   const local = city.money.localCurrencies[0];
-  const parsed = parseAmountInput(amountInput);
+  const parsed = parseAmountInput(amountInput, lang);
   const sameCurrency = fromCurrency === toCurrency;
   const popularButtons = popularCurrencyCodes.map((code) => `<button class="chip" type="button" data-quick="${code}">${code}</button>`).join('');
   const options = currencySelectOptions();
@@ -4816,7 +4833,7 @@ function bindMoneyPage() {
   document.querySelector<HTMLButtonElement>('#refresh-rate')?.addEventListener('click', () => void loadPairRate(false));
   document.querySelector<HTMLButtonElement>('#retry-rate')?.addEventListener('click', () => void loadPairRate());
   document.querySelector<HTMLButtonElement>('#copy-result')?.addEventListener('click', async () => {
-    const parsed = parseAmountInput(amountInput);
+    const parsed = parseAmountInput(amountInput, lang);
     if (parsed.value === null || !rate) return;
     const result = convertAmount(parsed.value, rate.rate);
     await copyText(`${parsed.value} ${fromCurrency} = ${result.converted} ${toCurrency}`);
@@ -5132,10 +5149,10 @@ function bind() {
         render();
         return;
       }
-      const result = await enableAthanAlarms(alarms);
-      athanEnabled = true;
-      localStorage.setItem('athanEnabled', 'true');
-      athanStatus = `${copy.scheduled}: ${result.scheduled}`;
+      const result = await enableAthanAlarms(alarms, lang);
+      athanEnabled = result.scheduled > 0 && result.permissions.notificationsAllowed;
+      localStorage.setItem('athanEnabled', String(athanEnabled));
+      athanStatus = athanEnabled ? `${copy.scheduled}: ${result.scheduled}` : copy.failed;
     } catch (error) {
       console.error(error);
       athanStatus = copy.failed;
@@ -5149,7 +5166,7 @@ function bind() {
     athanStatus = athanLabels[lang].disabled;
     render();
   });
-  document.querySelector<HTMLButtonElement>('#test-athan')?.addEventListener('click', () => void playTestAthan().catch((error) => {
+  document.querySelector<HTMLButtonElement>('#test-athan')?.addEventListener('click', () => void playTestAthan(lang).catch((error) => {
     console.error(error);
     athanStatus = athanLabels[lang].failed;
     render();

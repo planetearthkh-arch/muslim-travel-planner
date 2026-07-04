@@ -1,4 +1,5 @@
 import { safeExternalUrl } from './urls.js';
+import { addMinutesToLocalDateTime, parseLocalDateTime, zonedDateTimeToUtc } from './time-zones.js';
 
 export const TRAVEL_DETAILS_VERSION = 1;
 const MAX_TEXT = 180;
@@ -98,13 +99,16 @@ export function isValidTimeZone(value = '') {
 }
 
 function validDateTime(value = '') {
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) && Number.isFinite(new Date(value).getTime());
+  return Boolean(parseLocalDateTime(value));
 }
 
-function ordered(start: string, end?: string) {
-  if (!end) return true;
-  if (!validDateTime(start) || !validDateTime(end)) return false;
-  return new Date(end).getTime() > new Date(start).getTime();
+function dateRangeStatus(start: string, end: string | undefined, timeZone: string): 'valid' | 'date' | 'range' {
+  const startInstant = zonedDateTimeToUtc(start, timeZone);
+  if (!startInstant) return 'date';
+  if (!end) return 'valid';
+  const endInstant = zonedDateTimeToUtc(end, timeZone);
+  if (!endInstant) return 'date';
+  return endInstant.getTime() > startInstant.getTime() ? 'valid' : 'range';
 }
 
 function base(input: TravelDetailInput, now: string) {
@@ -128,8 +132,11 @@ export function validateTravelDetailInput(input: TravelDetailInput, defaultTimeZ
     const arrivalTimeZone = timeZone(input.arrivalTimeZone);
     if (!departureAirport || !arrivalAirport) return { ok: false, error: 'required' };
     if (!validDateTime(departureDateTime) || !validDateTime(arrivalDateTime)) return { ok: false, error: 'date' };
-    if (!ordered(departureDateTime, arrivalDateTime)) return { ok: false, error: 'range' };
     if (!isValidTimeZone(departureTimeZone) || !isValidTimeZone(arrivalTimeZone)) return { ok: false, error: 'timezone' };
+    const departureInstant = zonedDateTimeToUtc(departureDateTime, departureTimeZone);
+    const arrivalInstant = zonedDateTimeToUtc(arrivalDateTime, arrivalTimeZone);
+    if (!departureInstant || !arrivalInstant) return { ok: false, error: 'date' };
+    if (arrivalInstant.getTime() <= departureInstant.getTime()) return { ok: false, error: 'range' };
     return { ok: true, entry: { ...base(input, now), type: 'flight', airline: normalizeTravelText(input.airline), flightNumber: normalizeTravelText(input.flightNumber), departureAirport, arrivalAirport, departureDateTime, arrivalDateTime, departureTimeZone, arrivalTimeZone, bookingReference: normalizeTravelText(input.bookingReference), notes: note(input.notes) } };
   }
   if (input.type === 'accommodation') {
@@ -139,8 +146,9 @@ export function validateTravelDetailInput(input: TravelDetailInput, defaultTimeZ
     const tz = timeZone(input.timeZone);
     if (!propertyName) return { ok: false, error: 'required' };
     if (!validDateTime(checkInDateTime) || !validDateTime(checkOutDateTime)) return { ok: false, error: 'date' };
-    if (!ordered(checkInDateTime, checkOutDateTime)) return { ok: false, error: 'range' };
     if (!isValidTimeZone(tz)) return { ok: false, error: 'timezone' };
+    const range = dateRangeStatus(checkInDateTime, checkOutDateTime, tz);
+    if (range !== 'valid') return { ok: false, error: range };
     return { ok: true, entry: { ...base(input, now), type: 'accommodation', propertyName, address: normalizeTravelText(input.address), checkInDateTime, checkOutDateTime, timeZone: tz, phone: normalizeTravelText(input.phone), bookingReference: normalizeTravelText(input.bookingReference), notes: note(input.notes) } };
   }
   if (input.type === 'reservation') {
@@ -150,8 +158,9 @@ export function validateTravelDetailInput(input: TravelDetailInput, defaultTimeZ
     const tz = timeZone(input.timeZone);
     if (!title) return { ok: false, error: 'required' };
     if (!validDateTime(startDateTime) || endDateTime && !validDateTime(endDateTime)) return { ok: false, error: 'date' };
-    if (!ordered(startDateTime, endDateTime || undefined)) return { ok: false, error: 'range' };
     if (!isValidTimeZone(tz)) return { ok: false, error: 'timezone' };
+    const range = dateRangeStatus(startDateTime, endDateTime || undefined, tz);
+    if (range !== 'valid') return { ok: false, error: range };
     return { ok: true, entry: { ...base(input, now), type: 'reservation', title, provider: normalizeTravelText(input.provider), startDateTime, endDateTime, timeZone: tz, meetingPoint: normalizeTravelText(input.meetingPoint), phone: normalizeTravelText(input.phone), bookingReference: normalizeTravelText(input.bookingReference), notes: note(input.notes) } };
   }
   const name = normalizeTravelText(input.name);
@@ -221,7 +230,5 @@ export function travelDetailTimeZone(entry: TravelDetailEntry, fallback: string)
 }
 
 export function addMinutesToLocal(value: string, minutes: number) {
-  const date = new Date(value);
-  date.setMinutes(date.getMinutes() + minutes);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return addMinutesToLocalDateTime(value, minutes);
 }

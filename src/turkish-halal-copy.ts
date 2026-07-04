@@ -2,6 +2,8 @@ import { labels } from './i18n.js';
 import './turkish-car-rental-copy.js';
 import './turkish-travel-tools-copy.js';
 import './weather-layout-bootstrap.js';
+import './money-currency-picker-bootstrap.js';
+import './money-popular-currencies-bootstrap.js';
 
 Object.assign(labels.tr, {
   halalRestaurantsTitle: 'Helal Restoranlar',

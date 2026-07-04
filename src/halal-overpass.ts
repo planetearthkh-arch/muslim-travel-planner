@@ -1,4 +1,5 @@
 import { RequestError, classifyRequestError } from './http.js';
+import { availableServiceEndpoints, recordServiceFailure, recordServiceSuccess, uniqueServiceEndpoints } from './provider-health.js';
 
 export const HALAL_OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
@@ -7,9 +8,7 @@ export const HALAL_OVERPASS_ENDPOINTS = [
 
 export function halalOverpassEndpoints(primary?: string | null) {
   const candidates = [primary?.trim(), ...HALAL_OVERPASS_ENDPOINTS];
-  return [...new Set(
-    candidates.filter((value): value is string => Boolean(value)),
-  )];
+  return uniqueServiceEndpoints(candidates);
 }
 
 export function halalEndpointTimeout(totalMilliseconds: number, endpointCount: number) {
@@ -22,7 +21,7 @@ export async function requestHalalWithFailover<T>(
   totalMilliseconds: number,
   operation: (endpoint: string, timeoutMilliseconds: number) => Promise<T>,
 ): Promise<T> {
-  const endpoints = halalOverpassEndpoints(primary);
+  const endpoints = availableServiceEndpoints(halalOverpassEndpoints(primary));
   const timeoutMilliseconds = halalEndpointTimeout(
     totalMilliseconds,
     endpoints.length,
@@ -32,7 +31,9 @@ export async function requestHalalWithFailover<T>(
 
   for (const endpoint of endpoints) {
     try {
-      return await operation(endpoint, timeoutMilliseconds);
+      const result = await operation(endpoint, timeoutMilliseconds);
+      recordServiceSuccess(endpoint);
+      return result;
     } catch (error) {
       const classified = classifyRequestError(error);
 
@@ -45,6 +46,7 @@ export async function requestHalalWithFailover<T>(
         throw classified;
       }
 
+      recordServiceFailure(endpoint, classified.kind, classified.retryAfterMs);
       lastError = classified;
     }
   }
