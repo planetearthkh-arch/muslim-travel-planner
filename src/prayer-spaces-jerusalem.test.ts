@@ -52,11 +52,12 @@ test('Al-Aqsa parent objects without normal mosque tags are still accepted', () 
   assert.equal(normalizePrayerPlace(parent, origin)?.name, 'Al-Aqsa Mosque');
 });
 
-test('Al-Aqsa multilingual name selectors are added only for nearby searches', () => {
+test('Al-Aqsa multilingual name selectors are valid and added only for nearby searches', () => {
   const jerusalemQuery = buildOverpassQuery(origin.latitude, origin.longitude, 5);
   const londonQuery = buildOverpassQuery(51.5074, -0.1278, 5);
   assert.equal(jerusalemQuery.includes('["name:ar"~'), true);
   assert.equal(jerusalemQuery.includes('Aqsa'), true);
+  assert.equal(jerusalemQuery.includes('(?:'), false);
   assert.equal(londonQuery.includes('["name:ar"~'), false);
 });
 
