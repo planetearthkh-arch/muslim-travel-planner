@@ -6,12 +6,16 @@ async function repoFile(path: string) {
   return load('node:fs/promises').then((fs) => fs.readFile(new URL('../' + path, import.meta.url), 'utf8'));
 }
 
-test('all maps install RTL shaping with a safe Latin fallback', async () => {
+test('all maps install eager RTL shaping with a safe Latin fallback', async () => {
   const source = await repoFile('src/map-rtl-bootstrap.ts');
 
   assert.equal(source.includes('@mapbox/mapbox-gl-rtl-text@0.3.0'), true);
-  assert.equal(source.includes('setRTLTextPlugin(RTL_PLUGIN_URL, true)'), true);
+  assert.equal(source.includes('setRTLTextPlugin(RTL_PLUGIN_URL, false)'), true);
+  assert.equal(source.includes('setRTLTextPlugin(RTL_PLUGIN_URL, true)'), false);
   assert.equal(source.includes("map.on('style.load'"), true);
+  assert.equal(source.includes('relayoutRtlText(map)'), true);
+  assert.equal(source.includes('refreshLiveMapsAfterPluginLoad()'), true);
+  assert.equal(source.includes('waitForExistingPluginLoad()'), true);
   assert.equal(source.includes('activateLatinFallback()'), true);
   assert.equal(source.includes("language !== 'ar'"), false);
 
