@@ -3,6 +3,7 @@ import test from 'node:test';
 import { labels, languages, languageDirection, localeForLanguage } from './app-language.js';
 import './turkish-halal-copy.js';
 
+// Release guard: every supported language must remain complete and professionally named.
 const expectedIdentity = {
   en: ['SafarOne', 'Muslim Travel Planner'],
   ar: ['SafarOne', 'مخطط سفر للمسلمين'],
