@@ -21,9 +21,17 @@ if (!testFiles.length) {
 
 console.log(`Discovered ${testFiles.length} compiled test file${testFiles.length === 1 ? '' : 's'}.`);
 
-const child = spawn(process.execPath, ['--test', ...testFiles], { stdio: 'inherit' });
+const child = spawn(process.execPath, ['--test', ...testFiles], { stdio: ['ignore', 'pipe', 'pipe'] });
+const lines = [];
+const collect = (chunk) => {
+  lines.push(...String(chunk).split(/\r?\n/));
+  if (lines.length > 220) lines.splice(0, lines.length - 220);
+};
+child.stdout.on('data', collect);
+child.stderr.on('data', collect);
 
 child.on('exit', (code, signal) => {
+  console.log(lines.join('\n'));
   if (signal) {
     console.error(`Test runner stopped by ${signal}.`);
     process.exit(1);
