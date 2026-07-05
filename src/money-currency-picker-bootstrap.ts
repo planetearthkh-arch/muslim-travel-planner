@@ -13,6 +13,8 @@ const pickerCopy: Record<string, PickerCopy> = {
   id: { search: 'Cari mata uang', close: 'Tutup', noResults: 'Mata uang tidak ditemukan' },
   ms: { search: 'Cari mata wang', close: 'Tutup', noResults: 'Tiada mata wang ditemui' },
   tr: { search: 'Para birimi ara', close: 'Kapat', noResults: 'Para birimi bulunamadı' },
+  fr: { search: 'Rechercher une devise', close: 'Fermer', noResults: 'Aucune devise trouvée' },
+  ur: { search: 'کرنسی تلاش کریں', close: 'بند کریں', noResults: 'کوئی کرنسی نہیں ملی' },
 };
 
 function installStyles() {
@@ -20,125 +22,20 @@ function installStyles() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    body.currency-picker-open {
-      overflow: hidden;
-    }
-
-    .money-app .currency-picker-trigger {
-      width: 100%;
-      min-height: 48px;
-      text-align: start;
-      white-space: normal;
-      overflow-wrap: anywhere;
-    }
-
-    .currency-picker-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 10000;
-      display: grid;
-      place-items: end center;
-      padding: 16px;
-      background: rgba(15, 23, 42, 0.58);
-    }
-
-    .currency-picker {
-      box-sizing: border-box;
-      width: min(100%, 560px);
-      max-height: min(82vh, 680px);
-      display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr) auto;
-      gap: 12px;
-      padding: 18px;
-      border-radius: 22px 22px 14px 14px;
-      background: #ffffff;
-      color: #0f172a;
-      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3);
-    }
-
-    .currency-picker-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      min-width: 0;
-    }
-
-    .currency-picker-header h2 {
-      margin: 0;
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
-
-    .currency-picker-close {
-      width: 44px;
-      min-width: 44px;
-      height: 44px;
-      padding: 0;
-      font-size: 1.6rem;
-      line-height: 1;
-    }
-
-    .currency-picker-search-label {
-      display: grid;
-      gap: 6px;
-      min-width: 0;
-    }
-
-    .currency-picker-search {
-      box-sizing: border-box;
-      width: 100%;
-      min-width: 0;
-    }
-
-    .currency-picker-list {
-      min-height: 0;
-      max-height: min(55vh, 430px);
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-      display: grid;
-      gap: 8px;
-      padding-inline-end: 2px;
-    }
-
-    .currency-picker-option {
-      width: 100%;
-      min-width: 0;
-      min-height: 48px;
-      text-align: start;
-      white-space: normal;
-      overflow-wrap: anywhere;
-      background: #f8fafc;
-      color: #0f172a;
-      border: 1px solid #cbd5e1;
-    }
-
-    .currency-picker-option.selected {
-      border-color: #0f766e;
-      background: #ccfbf1;
-      color: #134e4a;
-      font-weight: 700;
-    }
-
-    .currency-picker-empty {
-      margin: 0;
-      text-align: center;
-    }
-
-    @media (min-width: 700px) {
-      .currency-picker-backdrop {
-        place-items: center;
-      }
-
-      .currency-picker {
-        border-radius: 22px;
-      }
-
-      .currency-picker-list {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
+    body.currency-picker-open { overflow: hidden; }
+    .money-app .currency-picker-trigger { width: 100%; min-height: 48px; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+    .currency-picker-backdrop { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: end center; padding: 16px; background: rgba(15, 23, 42, 0.58); }
+    .currency-picker { box-sizing: border-box; width: min(100%, 560px); max-height: min(82vh, 680px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 12px; padding: 18px; border-radius: 22px 22px 14px 14px; background: #ffffff; color: #0f172a; box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3); }
+    .currency-picker-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+    .currency-picker-header h2 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+    .currency-picker-close { width: 44px; min-width: 44px; height: 44px; padding: 0; font-size: 1.6rem; line-height: 1; }
+    .currency-picker-search-label { display: grid; gap: 6px; min-width: 0; }
+    .currency-picker-search { box-sizing: border-box; width: 100%; min-width: 0; }
+    .currency-picker-list { min-height: 0; max-height: min(55vh, 430px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; display: grid; gap: 8px; padding-inline-end: 2px; }
+    .currency-picker-option { width: 100%; min-width: 0; min-height: 48px; text-align: start; white-space: normal; overflow-wrap: anywhere; background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; }
+    .currency-picker-option.selected { border-color: #0f766e; background: #ccfbf1; color: #134e4a; font-weight: 700; }
+    .currency-picker-empty { margin: 0; text-align: center; }
+    @media (min-width: 700px) { .currency-picker-backdrop { place-items: center; } .currency-picker { border-radius: 22px; } .currency-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   `;
   document.head.append(style);
 }
@@ -176,22 +73,29 @@ function openPicker(select: HTMLSelectElement, trigger: HTMLButtonElement, title
     <section class="currency-picker" role="dialog" aria-modal="true" aria-labelledby="currency-picker-title">
       <div class="currency-picker-header">
         <h2 id="currency-picker-title"></h2>
-        <button type="button" class="ghost currency-picker-close" aria-label="${copy.close}">×</button>
+        <button type="button" class="ghost currency-picker-close">×</button>
       </div>
       <label class="currency-picker-search-label">
-        <span>${copy.search}</span>
-        <input class="currency-picker-search" type="search" autocomplete="off" inputmode="search" placeholder="${copy.search}" />
+        <span class="currency-picker-search-copy"></span>
+        <input class="currency-picker-search" type="search" autocomplete="off" inputmode="search" />
       </label>
-      <div class="currency-picker-list" role="listbox" aria-label="${title}"></div>
-      <p class="currency-picker-empty" hidden>${copy.noResults}</p>
+      <div class="currency-picker-list" role="listbox"></div>
+      <p class="currency-picker-empty" hidden></p>
     </section>`;
 
   const heading = backdrop.querySelector<HTMLElement>('#currency-picker-title');
+  const close = backdrop.querySelector<HTMLButtonElement>('.currency-picker-close');
+  const searchCopy = backdrop.querySelector<HTMLElement>('.currency-picker-search-copy');
   const search = backdrop.querySelector<HTMLInputElement>('.currency-picker-search');
   const list = backdrop.querySelector<HTMLElement>('.currency-picker-list');
   const empty = backdrop.querySelector<HTMLElement>('.currency-picker-empty');
-  if (!heading || !search || !list || !empty) return;
+  if (!heading || !close || !searchCopy || !search || !list || !empty) return;
   heading.textContent = title;
+  close.setAttribute('aria-label', copy.close);
+  searchCopy.textContent = copy.search;
+  search.placeholder = copy.search;
+  list.setAttribute('aria-label', title);
+  empty.textContent = copy.noResults;
 
   const renderOptions = (query = '') => {
     const locale = document.documentElement.lang || 'en';
@@ -221,13 +125,9 @@ function openPicker(select: HTMLSelectElement, trigger: HTMLButtonElement, title
   };
 
   search.addEventListener('input', () => renderOptions(search.value));
-  backdrop.querySelector<HTMLButtonElement>('.currency-picker-close')?.addEventListener('click', () => closePicker(backdrop, trigger));
-  backdrop.addEventListener('click', (event) => {
-    if (event.target === backdrop) closePicker(backdrop, trigger);
-  });
-  backdrop.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closePicker(backdrop, trigger);
-  });
+  close.addEventListener('click', () => closePicker(backdrop, trigger));
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closePicker(backdrop, trigger); });
+  backdrop.addEventListener('keydown', (event) => { if (event.key === 'Escape') closePicker(backdrop, trigger); });
 
   document.body.append(backdrop);
   document.body.classList.add('currency-picker-open');

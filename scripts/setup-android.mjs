@@ -24,5 +24,6 @@ const javaTarget = join(mainDir, 'java', 'com', 'planetearthkids', 'muslimtravel
 mkdirSync(javaTarget, { recursive: true });
 cpSync(join(templateDir, 'AndroidManifest.xml'), join(mainDir, 'AndroidManifest.xml'));
 cpSync(join(templateDir, 'java'), javaTarget, { recursive: true });
+cpSync(join(templateDir, 'res'), join(mainDir, 'res'), { recursive: true });
 
 console.log('\nAndroid Athan alarms are installed. Run: npm run android:open');
