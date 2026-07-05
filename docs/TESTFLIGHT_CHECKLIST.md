@@ -15,7 +15,7 @@ This checklist is for the app owner. Do not commit Apple IDs, certificates, prov
 9. Confirm marketing version is `1.0.0`.
 10. For the first upload, use build number `1`.
 11. Before every later upload, check the highest build number already visible in App Store Connect.
-12. Set the new build number to a strictly higher unused number; never reuse an uploaded build number.
+12. Increment the build number to a strictly higher unused number; never reuse an uploaded build number.
 
 ## Archive and Upload
 
