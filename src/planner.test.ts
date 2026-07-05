@@ -1466,7 +1466,7 @@ test('normalization keeps original name internally but displays Latin only', () 
 
 test('OSM-derived feature links reject unsafe protocols', () => {
   const origin = { latitude: 0, longitude: 0 };
-  const unsafePrayer = normalizePrayerPlace({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'Mosque', website: 'javascript:alert(1)' } }, origin);
+  const unsafePrayer = normalizePrayerPlace({ type: 'node', id: 1, lat: 0, lon: 0, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'Test Mosque', website: 'javascript:alert(1)' } }, origin);
   const unsafeRestaurant = normalizeHalalRestaurant({ type: 'node', id: 2, lat: 0, lon: 0, tags: { amenity: 'restaurant', 'diet:halal': 'yes', name: 'Food', website: 'data:text/html,x', menu: 'file:///tmp/menu' } }, origin, true);
   const unsafeToilet = normalizePublicToilet({ type: 'node', id: 3, lat: 0, lon: 0, tags: { amenity: 'toilets', website: 'vbscript:msgbox(1)' } }, origin);
   const unsafeAttraction = normalizeAttraction({ type: 'node', id: 4, lat: 0, lon: 0, tags: { tourism: 'museum', name: 'Museum', website: 'blob:https://example.com/id' } }, origin);
