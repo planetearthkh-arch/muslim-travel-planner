@@ -76,9 +76,9 @@ const canonicalLatinNameMap: Array<[RegExp, string]> = [
   [/\b(?:said|saeed)\s+(?:wa|and)\s+su['’]?(?:ayd|aid|eed)\b/i, "Said wa Su'ayd Mosque"],
   [/\b(?:al[-\s]*)?far(?:ouq|ooq|uq)\b/i, 'Al-Farouq Mosque'],
   [/\b(?:al[-\s]*)?abrar\b/i, 'Al-Abrar Mosque'],
-  [/\bsalah\s+(?:al[-\s]*)?d(?:i|ee)n\b/i, 'Salah al-Din Mosque'],
+  [/\bsalah\s+(?:(?:al|el)[-\s]*)?d(?:i|ee)n\b/i, 'Salah al-Din Mosque'],
   [/\b(?:othman|uthman|osman)(?:\s+(?:ibn|bin)\s+affan)?\b/i, 'Othman ibn Affan Mosque'],
-  [/\b(?:al[-\s]*)?nah?y+y?an\b/i, 'Al-Nahyan Mosque'],
+  [/\b(?:al[-\s]*)?(?:nahyan|nhayyan|nahayyan|nehayan)\b/i, 'Al-Nahyan Mosque'],
   [/\b(?:al[-\s]*)?marwani\b/i, 'Al-Marwani Prayer Hall'],
   [/\b(?:throne\s+of\s+solomon|solomon'?s\s+throne)\b/i, 'Throne of Solomon'],
 ];
