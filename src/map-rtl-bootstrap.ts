@@ -13,7 +13,7 @@ export const LATIN_MAP_NAME_EXPRESSION = [
   ['get', 'ref'],
 ] as const;
 
-const unshapedNameFields = new Set([
+const rtlNameFields = new Set([
   'name',
   'name:ar',
   'name_ar',
@@ -25,10 +25,10 @@ const unshapedNameFields = new Set([
   'name_ur',
 ]);
 
-export function containsUnshapedMapName(value: unknown): boolean {
+export function containsRtlMapName(value: unknown): boolean {
   if (!Array.isArray(value)) return false;
-  if (value[0] === 'get' && typeof value[1] === 'string' && unshapedNameFields.has(value[1])) return true;
-  return value.some(containsUnshapedMapName);
+  if (value[0] === 'get' && typeof value[1] === 'string' && rtlNameFields.has(value[1])) return true;
+  return value.some(containsRtlMapName);
 }
 
 let latinFallbackActive = false;
@@ -39,19 +39,19 @@ const originalSetStyle = maplibregl.Map.prototype.setStyle;
 const originalSetLayoutProperty = maplibregl.Map.prototype.setLayoutProperty;
 const originalRemove = maplibregl.Map.prototype.remove;
 
-function applyLatinFallback(map: maplibregl.Map) {
-  let layers: ReturnType<maplibregl.Map['getStyle']>['layers'];
+function symbolLayers(map: maplibregl.Map) {
   try {
-    layers = map.getStyle().layers;
+    return map.getStyle().layers?.filter((layer) => layer.type === 'symbol') ?? [];
   } catch {
-    return;
+    return [];
   }
+}
 
-  for (const layer of layers ?? []) {
-    if (layer.type !== 'symbol') continue;
+function applyLatinFallback(map: maplibregl.Map) {
+  for (const layer of symbolLayers(map)) {
     try {
       const textField = map.getLayoutProperty(layer.id, 'text-field');
-      if (!containsUnshapedMapName(textField)) continue;
+      if (!containsRtlMapName(textField)) continue;
       originalSetLayoutProperty.call(map, layer.id, 'text-field', LATIN_MAP_NAME_EXPRESSION);
     } catch {
       // Icon-only and special symbol layers do not need a text fallback.
@@ -59,12 +59,34 @@ function applyLatinFallback(map: maplibregl.Map) {
   }
 }
 
+function relayoutRtlText(map: maplibregl.Map) {
+  for (const layer of symbolLayers(map)) {
+    try {
+      const textField = map.getLayoutProperty(layer.id, 'text-field');
+      if (!containsRtlMapName(textField)) continue;
+      // Re-applying the expression forces MapLibre to rebuild the symbol buckets
+      // after the RTL plugin is fully loaded, including in iOS WKWebView.
+      originalSetLayoutProperty.call(map, layer.id, 'text-field', textField);
+    } catch {
+      // Ignore icon-only and special symbol layers.
+    }
+  }
+}
+
+function refreshLiveMapsAfterPluginLoad() {
+  for (const map of liveMaps) relayoutRtlText(map);
+}
+
 function trackMap(map: maplibregl.Map) {
   if (trackedMaps.has(map)) return;
   trackedMaps.add(map);
   liveMaps.add(map);
   map.on('style.load', () => {
-    if (latinFallbackActive) applyLatinFallback(map);
+    if (latinFallbackActive) {
+      applyLatinFallback(map);
+      return;
+    }
+    if (maplibregl.getRTLTextPluginStatus() === 'loaded') relayoutRtlText(map);
   });
 }
 
@@ -74,16 +96,43 @@ function activateLatinFallback() {
   for (const map of liveMaps) applyLatinFallback(map);
 }
 
+function waitForExistingPluginLoad() {
+  return new Promise<boolean>((resolve) => {
+    const started = Date.now();
+    const check = () => {
+      const status = maplibregl.getRTLTextPluginStatus();
+      if (status === 'loaded') {
+        refreshLiveMapsAfterPluginLoad();
+        resolve(true);
+        return;
+      }
+      if (status === 'error' || Date.now() - started > 10000) {
+        activateLatinFallback();
+        resolve(false);
+        return;
+      }
+      window.setTimeout(check, 50);
+    };
+    check();
+  });
+}
+
 export function ensureRtlMapSupport() {
   const status = maplibregl.getRTLTextPluginStatus();
-  if (status === 'loaded' || status === 'loading') return Promise.resolve(true);
+  if (status === 'loaded') return Promise.resolve(true);
+  if (status === 'loading') return installPromise ?? waitForExistingPluginLoad();
   if (status !== 'unavailable') {
     activateLatinFallback();
     return Promise.resolve(false);
   }
 
-  installPromise ??= maplibregl.setRTLTextPlugin(RTL_PLUGIN_URL, true)
-    .then(() => true)
+  // Load eagerly. Lazy loading was unreliable in iOS WKWebView and allowed
+  // Arabic labels to render before shaping was ready.
+  installPromise ??= maplibregl.setRTLTextPlugin(RTL_PLUGIN_URL, false)
+    .then(() => {
+      refreshLiveMapsAfterPluginLoad();
+      return true;
+    })
     .catch(() => {
       activateLatinFallback();
       return false;
@@ -110,7 +159,7 @@ if (!globalState.__safarOneMapTextPolicyInstalled) {
     ...args: Parameters<typeof originalSetLayoutProperty>
   ): ReturnType<typeof originalSetLayoutProperty> {
     const [layerId, property, value, ...rest] = args;
-    const safeValue = latinFallbackActive && property === 'text-field' && containsUnshapedMapName(value)
+    const safeValue = latinFallbackActive && property === 'text-field' && containsRtlMapName(value)
       ? LATIN_MAP_NAME_EXPRESSION
       : value;
     return originalSetLayoutProperty.call(this, layerId, property, safeValue, ...rest);
