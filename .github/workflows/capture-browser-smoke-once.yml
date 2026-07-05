@@ -1,0 +1,40 @@
+name: Capture Browser Smoke Once
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/capture-browser-smoke-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Capture browser smoke output
+        run: npm run test:browser-smoke > /tmp/browser-smoke-output.txt 2>&1 || true
+      - name: Save browser report to verification branch
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git checkout "$HEAD_BRANCH"
+          cp /tmp/browser-smoke-output.txt browser-smoke-output.txt
+          rm .github/workflows/capture-browser-smoke-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add browser-smoke-output.txt .github/workflows/capture-browser-smoke-once.yml
+          git commit -m "Record browser smoke failure"
+          git push origin HEAD:"$HEAD_BRANCH"
