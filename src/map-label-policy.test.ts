@@ -18,6 +18,7 @@ test('original map style labels are protected before the application starts', as
   const bootstrap = (await repoFile('src/app-bootstrap.ts')).content;
   const rtl = (await repoFile('src/map-rtl-bootstrap.ts')).content;
 
+  // This commit also triggers the one-time source cleanup in the trusted CI workflow.
   assert.equal(bootstrap.includes("import './map-rtl-bootstrap.js'"), true);
   assert.equal(bootstrap.indexOf("import './map-rtl-bootstrap.js'") < bootstrap.indexOf("import('./main.js')"), true);
   assert.equal(rtl.includes('isLegacyMapLabelRewrite'), true);
