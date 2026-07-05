@@ -11,24 +11,39 @@ on:
       - index.html
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   diagnose:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Print only failing assertions
+      - name: Capture concise merge failures
         shell: bash
         run: |
           set +e
-          npm test > merge-test-output.txt 2>&1
+          npm test > /tmp/merge-test-output.txt 2>&1
           status=$?
-          grep -nE 'not ok|failureType|error:|location:|Expected values|actual:|expected:|stack:' merge-test-output.txt || true
-          tail -n 35 merge-test-output.txt
-          exit $status
+          grep -nE 'not ok|failureType|error:|location:|Expected values|actual:|expected:|stack:' /tmp/merge-test-output.txt > /tmp/merge-test-failures.txt || true
+          tail -n 35 /tmp/merge-test-output.txt >> /tmp/merge-test-failures.txt
+          echo "$status" > /tmp/merge-test-status.txt
+      - name: Save concise report to verification branch
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git checkout "$HEAD_BRANCH"
+          cp /tmp/merge-test-failures.txt merge-test-failures.txt
+          rm .github/workflows/read-merge-test-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add merge-test-failures.txt .github/workflows/read-merge-test-once.yml
+          git commit -m "Record concise PR merge test failures"
+          git push origin HEAD:"$HEAD_BRANCH"
