@@ -1,0 +1,40 @@
+name: Export Source Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/export-source-audit.yml'
+      - 'src/**'
+      - 'public/**'
+      - 'ios/**'
+      - 'android/**'
+      - 'scripts/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.ts'
+      - 'vite*.ts'
+      - 'tsconfig.json'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create source bundle
+        shell: bash
+        run: |
+          mkdir source-bundle
+          cp -R src public ios android scripts docs .github source-bundle/
+          cp index.html package.json package-lock.json capacitor.config.ts tsconfig.json vite.config.ts vite.native.config.ts source-bundle/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-audit-bundle
+          path: source-bundle
+          if-no-files-found: error
+          retention-days: 3
