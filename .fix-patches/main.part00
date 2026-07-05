@@ -1,0 +1,165 @@
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -2,6 +2,7 @@
+ import { cities } from './data.js';
+ import maplibregl from 'maplibre-gl';
+ import 'maplibre-gl/dist/maplibre-gl.css';
++import { mapStyleForLanguage } from './map-style.js';
+ import { generateItinerary } from './planner.js';
+ import { RequestError, classifyRequestError, requestJson, retryOnceForTemporary } from './http.js';
+ import { availableServiceEndpoints, recordServiceFailure, recordServiceSuccess } from './provider-health.js';
+@@ -364,13 +365,9 @@
+ }
+ 
+ 
+-type MapLibreStyleLayer = { id: string; type?: string };
+ type MapLibreMap = {
+   remove: () => void;
+   on: (event: string, handler: () => void) => MapLibreMap;
+-  getStyle: () => { layers?: MapLibreStyleLayer[] };
+-  getLayoutProperty: (layerId: string, property: string) => unknown;
+-  setLayoutProperty: (layerId: string, property: string, value: unknown) => void;
+   addControl: (control: unknown, position?: string) => MapLibreMap;
+   resize: () => void;
+   getCenter?: () => { lat: number; lng: number };
+@@ -385,7 +382,7 @@
+ type MapLibreGlobal = {
+   Map: new (options: {
+     container: HTMLElement;
+-    style: string;
++    style: string | object;
+     center: [number, number];
+     zoom: number;
+     attributionControl?: boolean;
+@@ -405,17 +402,7 @@
+ let publicTransportMap: MapLibreMap | undefined;
+ let taxiMap: MapLibreMap | undefined;
+ let attractionsMap: MapLibreMap | undefined;
+-const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
+ const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
+-const englishMapNameExpression = [
+-  'coalesce',
+-  ['get', 'name:en'],
+-  ['get', 'name_en'],
+-  ['get', 'name:latin'],
+-  ['get', 'name'],
+-  ['get', 'ref'],
+-];
+-
+ const esc = (value: string) => value.replace(/[&<>\"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[character] ?? character);
+ const addMinutes = (time: string, minutes: number) => {
+   const [h, m] = time.split(':').map(Number);
+@@ -444,7 +431,7 @@
+ 
+ function reportActionMarkup(place: ReportablePlace, includeHalal = false) {
+   const payload = encodeURIComponent(JSON.stringify(place));
+-  return `<button type="button" class="ghost report-action" data-report-place="${payload}" data-report-halal="${includeHalal ? 'true' : 'false'}">${labels[lang].reportProblem}</button>`;
++  return `<button type="button" class="ghost report-action" data-report-place="${payload}" data-report-halal="${includeHalal ? 'true' : 'false'}">${esc(labels[lang].reportProblem)}</button>`;
+ }
+ 
+ function openReportDialog(place: ReportablePlace, includeHalal = false, trigger?: HTMLElement) {
+@@ -455,17 +442,17 @@
+   const backdrop = document.createElement('div');
+   backdrop.className = 'report-dialog-backdrop';
+   backdrop.innerHTML = `<div class="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title" aria-describedby="report-description" dir="${languageDirection(lang)}">
+-    <div class="card-top"><h2 id="report-title">${copy.reportProblem}</h2><button type="button" class="ghost" data-report-close>${copy.reportClose}</button></div>
++    <div class="card-top"><h2 id="report-title">${esc(copy.reportProblem)}</h2><button type="button" class="ghost" data-report-close>${esc(copy.reportClose)}</button></div>
+     <p id="report-description">${esc(place.name)} · ${esc(place.feature)}</p>
+-    <label>${copy.reportWhatWrong}<select id="report-reason">${reasons.map((reason) => `<option value="${reason}">${reportReasonLabel(reason, copy)}</option>`).join('')}</select></label>
+-    <label>${copy.reportOptionalNote}<textarea id="report-note" maxlength="500"></textarea></label>
+-    <p class="muted">${copy.reportOsmAccount} ${copy.reportGithubAccount} ${copy.reportExternalNotice}</p>
++    <label>${esc(copy.reportWhatWrong)}<select id="report-reason">${reasons.map((reason) => `<option value="${reason}">${esc(reportReasonLabel(reason, copy))}</option>`).join('')}</select></label>
++    <label>${esc(copy.reportOptionalNote)}<textarea id="report-note" maxlength="500"></textarea></label>
++    <p class="muted">${esc(copy.reportOsmAccount)} ${esc(copy.reportGithubAccount)} ${esc(copy.reportExternalNotice)}</p>
+     <div class="toolbar report-actions">
+-      <a class="map-link" data-report-source target="_blank" rel="noopener noreferrer">${copy.reportOpenSource}</a>
+-      <a class="map-link" data-report-osm target="_blank" rel="noopener noreferrer">${copy.reportOsm}</a>
+-      <a class="map-link" data-report-github target="_blank" rel="noopener noreferrer">${copy.reportAppProblem}</a>
+-      <button type="button" class="ghost" data-report-copy>${copy.reportCopy}</button>
+-      <button type="button" class="ghost" data-report-share>${copy.reportShare}</button>
++      <a class="map-link" data-report-source target="_blank" rel="noopener noreferrer">${esc(copy.reportOpenSource)}</a>
++      <a class="map-link" data-report-osm target="_blank" rel="noopener noreferrer">${esc(copy.reportOsm)}</a>
++      <a class="map-link" data-report-github target="_blank" rel="noopener noreferrer">${esc(copy.reportAppProblem)}</a>
++      <button type="button" class="ghost" data-report-copy>${esc(copy.reportCopy)}</button>
++      <button type="button" class="ghost" data-report-share>${esc(copy.reportShare)}</button>
+     </div>
+     <p class="status" data-report-status role="status" aria-live="polite"></p>
+   </div>`;
+@@ -718,30 +705,33 @@
+   </section>`;
+ }
+ 
++function replaceMapFallback(element: HTMLElement, message: string) {
++  const paragraph = document.createElement('p');
++  paragraph.className = 'map-fallback';
++  paragraph.textContent = message;
++  element.replaceChildren(paragraph);
++}
++
+ function showMapFallback(element: HTMLElement, status: HTMLElement, message: string) {
+-  element.innerHTML = `<p class="map-fallback">${esc(message)}</p>`;
++  replaceMapFallback(element, message);
+   status.textContent = message;
+ }
+ 
+-function applyEnglishMapLabels(map: MapLibreMap) {
+-  const layers = map.getStyle().layers ?? [];
+-  for (const layer of layers) {
+-    if (layer.type !== 'symbol') continue;
+-    try {
+-      const textField = map.getLayoutProperty(layer.id, 'text-field');
+-      if (typeof textField === 'undefined' || !JSON.stringify(textField).includes('name')) continue;
+-      map.setLayoutProperty(layer.id, 'text-field', englishMapNameExpression);
+-    } catch {
+-      // Some symbol layers contain icons or special text expressions and should remain unchanged.
+-    }
+-  }
++let mapInitializationSequence = 0;
++async function prepareMapLanguage() {
++  const sequence = ++mapInitializationSequence;
++  const requestedLanguage = lang;
++  const style = await mapStyleForLanguage(requestedLanguage);
++  return sequence === mapInitializationSequence && requestedLanguage === lang ? style : undefined;
+ }
+ 
+-function initializeMap(copy: typeof labels[Language]) {
++async function initializeMap(copy: typeof labels[Language]) {
+   cityMap?.remove();
+   cityMap = undefined;
+   publicTransportMap?.remove();
+   publicTransportMap = undefined;
++  const mapStyle = await prepareMapLanguage();
++  if (!mapStyle) return;
+   const element = document.querySelector<HTMLElement>('#city-map');
+   const status = document.querySelector<HTMLElement>('#map-status');
+   if (!element || !status) return;
+@@ -758,7 +748,7 @@
+     status.textContent = '';
+     cityMap = new maplibre.Map({
+       container: element,
+-      style: openFreeMapStyle,
++      style: mapStyle,
+       center: [lng, lat],
+       zoom: 13,
+       attributionControl: true,
+@@ -772,8 +762,6 @@
+       .setPopup(new maplibre.Popup({ offset: 22 }).setText(title))
+       .addTo(cityMap);
+     cityMap.on('load', () => {
+-      if (!cityMap) return;
+-      applyEnglishMapLabels(cityMap);
+       window.requestAnimationFrame(() => cityMap?.resize());
+     });
+   } catch {
+@@ -1719,18 +1707,20 @@
+   prayerSearchTimer = window.setTimeout(() => void searchPrayerPlaces(center), 450);
+ }
+ 
+-function initializePrayerMap() {
++async function initializePrayerMap() {
+   prayerMap?.remove();
+   prayerMap = undefined;
+   publicTransportMap?.remove();
+   publicTransportMap = undefined;
++  const mapStyle = await prepareMapLanguage();
++  if (!mapStyle) return;
