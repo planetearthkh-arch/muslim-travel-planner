@@ -116,6 +116,7 @@ const ignoredLatinWords = new Set(['mosque', 'masjid', 'jami', 'grand', 'prayer'
 
 const hasAffirmingValue = (value: string | undefined) => !!value && /^(yes|designated|available|separate|female|true|1)$/i.test(value);
 const hasMuslimSignal = (tags: OsmTags) => tags.religion === 'muslim' || tags.denomination === 'sunni' || tags.denomination === 'shia' || tags.muslim === 'yes';
+const alAqsaMainNamePattern = /\bal[-\s]?aqsa\b|\bmasjid\s+(?:al[-\s]?)?aqsa\b|المسجد\s+الأقصى|المسجد\s+الاقصى|مسجد\s+الأقصى|مسجد\s+الاقصى/iu;
 
 const AL_AQSA_COMPOUND_BOUNDS = {
   south: 31.7758,
@@ -164,7 +165,7 @@ function isClearlyNonMuslimNamed(tags: OsmTags) {
 }
 
 function isMainAlAqsaName(tags: OsmTags) {
-  return prayerPlaceSearchableNames(tags).some((name) => /\bal[-\s]?aqsa\b|المسجد\s+الأقصى|المسجد\s+الاقصى|مسجد\s+الأقصى|مسجد\s+الاقصى/iu.test(name));
+  return prayerPlaceSearchableNames(tags).some((name) => alAqsaMainNamePattern.test(name));
 }
 
 export function isAlAqsaCompoundSubstructure(tags: OsmTags, latitude: number, longitude: number) {
@@ -300,6 +301,7 @@ export function classifyPrayerPlace(tags: OsmTags): PrayerPlaceType | undefined 
     tags.description,
   ].filter(Boolean).join(' ').toLowerCase();
 
+  if (isMainAlAqsaName(tags)) return 'mosque';
   if (amenity === 'place_of_worship' && hasMuslimSignal(tags)) return 'mosque';
   if (amenity === 'community_centre' && hasMuslimSignal(tags)) return 'islamic-centre';
   if (amenity === 'prayer_room' || room === 'prayer' || tags.prayer_room === 'yes') return 'prayer-room';
@@ -391,6 +393,7 @@ export function normalizePrayerPlace(element: OverpassElement, origin: { latitud
 export function buildOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
   const radiusMeters = Math.round(radiusKm * 1000);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
+  const alAqsaOverpassNamePattern = 'Al[- ]?Aqsa|Masjid[ -]?(?:al[- ]?)?Aqsa|الأقصى|الاقصى';
   const selectors = [
     `node["amenity"="place_of_worship"]["religion"="muslim"]${around}`,
     `way["amenity"="place_of_worship"]["religion"="muslim"]${around}`,
@@ -407,6 +410,15 @@ export function buildOverpassQuery(latitude: number, longitude: number, radiusKm
     `node["prayer_room"="yes"]${around}`,
     `way["prayer_room"="yes"]${around}`,
     `relation["prayer_room"="yes"]${around}`,
+    `node["name"~"${alAqsaOverpassNamePattern}",i]${around}`,
+    `way["name"~"${alAqsaOverpassNamePattern}",i]${around}`,
+    `relation["name"~"${alAqsaOverpassNamePattern}",i]${around}`,
+    `node["name:en"~"${alAqsaOverpassNamePattern}",i]${around}`,
+    `way["name:en"~"${alAqsaOverpassNamePattern}",i]${around}`,
+    `relation["name:en"~"${alAqsaOverpassNamePattern}",i]${around}`,
+    `node["name:ar"~"${alAqsaOverpassNamePattern}",i]${around}`,
+    `way["name:ar"~"${alAqsaOverpassNamePattern}",i]${around}`,
+    `relation["name:ar"~"${alAqsaOverpassNamePattern}",i]${around}`,
   ];
   return `[out:json][timeout:25];(${selectors.join(';')};);out center tags;`;
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAlAqsaCompoundSubstructure, normalizePrayerPlace, type OverpassElement } from './prayer-spaces.js';
+import { buildOverpassQuery, classifyPrayerPlace, isAlAqsaCompoundSubstructure, normalizePrayerPlace, type OverpassElement } from './prayer-spaces.js';
 
 const origin = { latitude: 31.778, longitude: 35.235 };
 
@@ -78,4 +78,25 @@ test('duplicate OSM records receive the same Jerusalem identity', () => {
   const second = normalizePrayerPlace(place(71, 'Al-Farouq Mosque', 31.7904, 35.2204, 'way'), origin);
   if (!first || !second) throw new Error('Expected both duplicate records to normalize');
   assert.equal(first.id, second.id);
+});
+
+
+test('Al-Aqsa is accepted even when the OSM parent object lacks amenity and religion tags', () => {
+  const parent: OverpassElement = {
+    type: 'relation',
+    id: 999,
+    center: { lat: 31.7780, lon: 35.2354 },
+    tags: { name: 'Al-Aqsa Mosque', 'name:ar': 'المسجد الأقصى' },
+  };
+  assert.equal(classifyPrayerPlace(parent.tags ?? {}), 'mosque');
+  assert.equal(normalizePrayerPlace(parent, origin)?.name, 'Al-Aqsa Mosque');
+});
+
+test('the Overpass query explicitly requests Al-Aqsa parent objects by multilingual name', () => {
+  const query = buildOverpassQuery(origin.latitude, origin.longitude, 5);
+  assert.equal(query.includes('["name"~'), true);
+  assert.equal(query.includes('["name:en"~'), true);
+  assert.equal(query.includes('["name:ar"~'), true);
+  assert.equal(query.includes('Aqsa'), true);
+  assert.equal(query.includes('الأقصى'), true);
 });
