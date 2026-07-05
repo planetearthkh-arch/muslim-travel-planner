@@ -1,0 +1,27 @@
+name: Diagnose Jerusalem typecheck
+
+on:
+  push:
+    branches:
+      - codex/clean-jerusalem-mosque-list
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Capture typecheck output
+        run: npm run typecheck > typecheck.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jerusalem-typecheck-log
+          path: typecheck.log
