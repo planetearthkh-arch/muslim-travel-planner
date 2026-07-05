@@ -36,11 +36,17 @@ jobs:
           sed -E -i '' 's/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = 110;/g' ios/App/App.xcodeproj/project.pbxproj
           test "$(grep -c 'CURRENT_PROJECT_VERSION = 110;' ios/App/App.xcodeproj/project.pbxproj)" -eq 2
 
+      - name: Verify iOS version guard
+        run: npm run ios:version-verify
+
       - name: Run tests
         run: npm test
 
-      - name: Sync web assets into iOS
-        run: npm run ios:sync
+      - name: Build native web assets
+        run: npm run build:native
+
+      - name: Sync Capacitor iOS project
+        run: npx cap sync ios
 
       - name: Verify release archive
         run: npm run ios:archive-verify
