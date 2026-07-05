@@ -1,7 +1,7 @@
 name: Prepare iOS Build 110
 
 on:
-  push:
+  pull_request:
     branches:
       - main
     paths:
@@ -16,10 +16,10 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
-      - name: Check out repository
+      - name: Check out pull-request branch
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Set up Node.js
@@ -46,10 +46,12 @@ jobs:
         run: npm run ios:archive-verify
 
       - name: Commit release-ready iOS project
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           rm .github/workflows/prepare-ios-build-110.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Prepare iOS build 110 with RTL map fix"
-          git push origin HEAD:main
+          git push origin HEAD:"$HEAD_BRANCH"
