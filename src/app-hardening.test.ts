@@ -31,7 +31,7 @@ test('iOS launch screen uses the committed transparent multi-scale logo', async 
 
 test('offline navigation caches each page separately', async () => {
   const source = await repoFile('public/sw.js');
-  assert.equal(source.includes("const CACHE_VERSION = 'mtp-app-shell-v16'"), true);
+  assert.equal(source.includes("const CACHE_VERSION = 'mtp-app-shell-v17'"), true);
   assert.equal(source.includes('./vendor/mapbox-gl-rtl-text.js'), true);
   assert.equal(source.includes('cache.put(request, copy)'), true);
   assert.equal(source.includes('cache.put(APP_HOME, copy)'), false);
