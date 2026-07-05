@@ -14,12 +14,13 @@ async function repoFile(path: string) {
   };
 }
 
-test('app waits for bundled RTL shaping before loading map code', async () => {
+test('app starts bundled RTL shaping before map code without blocking render', async () => {
   const bootstrap = (await repoFile('src/app-bootstrap.ts')).content;
   const rtl = (await repoFile('src/map-rtl-bootstrap.ts')).content;
 
-  assert.equal(bootstrap.includes('await ensureRtlMapSupport()'), true);
-  assert.equal(bootstrap.indexOf('await ensureRtlMapSupport()') < bootstrap.indexOf("import('./main.js')"), true);
+  assert.equal(bootstrap.includes('void ensureRtlMapSupport().then'), true);
+  assert.equal(bootstrap.includes('await ensureRtlMapSupport()'), false);
+  assert.equal(bootstrap.indexOf('ensureRtlMapSupport()') < bootstrap.indexOf("import('./main.js')"), true);
   assert.equal(rtl.includes("new URL('./vendor/mapbox-gl-rtl-text.js', document.baseURI)"), true);
   assert.equal(rtl.includes('setRTLTextPlugin(RTL_PLUGIN_URL, false)'), true);
   assert.equal(rtl.includes('LATIN_MAP_NAME_EXPRESSION'), false);
