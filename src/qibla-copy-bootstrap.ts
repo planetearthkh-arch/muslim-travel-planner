@@ -2,7 +2,7 @@ export {};
 
 const qiblaEnhancementLabels = {
   en: { liveCompass: 'Start Live Compass', fixedBearing: 'Fixed bearing' },
-  fr: { liveCompass: 'Démarrer la boussole en direct', fixedBearing: 'Fixed bearing' },
+  fr: { liveCompass: 'Démarrer la boussole en direct', fixedBearing: 'Direction fixe' },
   ar: { liveCompass: 'ابدأ البوصلة المباشرة', fixedBearing: 'اتجاه ثابت' },
   ur: { liveCompass: 'براہِ راست قطب نما شروع کریں', fixedBearing: 'مقررہ سمت' },
   id: { liveCompass: 'Mulai Kompas Langsung', fixedBearing: 'Arah tetap' },
