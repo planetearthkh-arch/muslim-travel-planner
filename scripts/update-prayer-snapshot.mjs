@@ -12,30 +12,42 @@ const endpoints = [
 const center = { latitude: 31.7783, longitude: 35.2354 };
 const radiusKm = 25;
 const around = `(around:${radiusKm * 1000},${center.latitude},${center.longitude})`;
-const selectors = [
-  `node["amenity"="place_of_worship"]["religion"="muslim"]${around}`,
-  `way["amenity"="place_of_worship"]["religion"="muslim"]${around}`,
-  `relation["amenity"="place_of_worship"]["religion"="muslim"]${around}`,
-  `node["amenity"="community_centre"]["religion"="muslim"]${around}`,
-  `way["amenity"="community_centre"]["religion"="muslim"]${around}`,
-  `relation["amenity"="community_centre"]["religion"="muslim"]${around}`,
-  `node["amenity"="prayer_room"]${around}`,
-  `way["amenity"="prayer_room"]${around}`,
-  `relation["amenity"="prayer_room"]${around}`,
-  `node["room"="prayer"]${around}`,
-  `way["room"="prayer"]${around}`,
-  `relation["room"="prayer"]${around}`,
-  `node["prayer_room"="yes"]${around}`,
-  `way["prayer_room"="yes"]${around}`,
-  `relation["prayer_room"="yes"]${around}`,
-];
+const aqsaBox = '(31.7758,35.2325,31.7809,35.2375)';
 const aqsaPattern = 'Al[- ]?Aqsa|Masjid[ -]?Al[- ]?Aqsa|Masjid[ -]?Aqsa|الأقصى|الاقصى';
-for (const key of ['name', 'name:en', 'name:ar', 'official_name', 'official_name:en', 'official_name:ar']) {
-  selectors.push(`node["${key}"~"${aqsaPattern}",i]${around}`);
-  selectors.push(`way["${key}"~"${aqsaPattern}",i]${around}`);
-  selectors.push(`relation["${key}"~"${aqsaPattern}",i]${around}`);
-}
-const query = `[out:json][timeout:25];(${selectors.join(';')};);out center tags;`;
+
+const batches = [
+  {
+    name: 'mosques',
+    required: true,
+    selectors: [`nwr["amenity"="place_of_worship"]["religion"="muslim"]${around}`],
+  },
+  {
+    name: 'islamic-centres',
+    required: false,
+    selectors: [`nwr["amenity"="community_centre"]["religion"="muslim"]${around}`],
+  },
+  {
+    name: 'prayer-room-amenities',
+    required: false,
+    selectors: [`nwr["amenity"="prayer_room"]${around}`],
+  },
+  {
+    name: 'prayer-room-rooms',
+    required: false,
+    selectors: [`nwr["room"="prayer"]${around}`],
+  },
+  {
+    name: 'prayer-room-flags',
+    required: false,
+    selectors: [`nwr["prayer_room"="yes"]${around}`],
+  },
+  {
+    name: 'al-aqsa-parent',
+    required: false,
+    selectors: ['name', 'name:en', 'name:ar', 'official_name', 'official_name:en', 'official_name:ar']
+      .map((key) => `nwr["${key}"~"${aqsaPattern}",i]${aqsaBox}`),
+  },
+];
 
 const allowedTags = new Set([
   'amenity', 'religion', 'denomination', 'muslim', 'room', 'prayer_room',
@@ -65,9 +77,13 @@ function cleanElement(value) {
   return element;
 }
 
-async function fetchSnapshot(endpoint) {
+function batchQuery(selectors) {
+  return `[out:json][timeout:25];(${selectors.join(';')};);out center tags;`;
+}
+
+async function requestBatch(endpoint, selectors) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 20000);
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -75,7 +91,7 @@ async function fetchSnapshot(endpoint) {
         Accept: 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
       },
-      body: `data=${encodeURIComponent(query)}`,
+      body: `data=${encodeURIComponent(batchQuery(selectors))}`,
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -86,12 +102,27 @@ async function fetchSnapshot(endpoint) {
       const element = cleanElement(raw);
       if (element) unique.set(`${element.type}/${element.id}`, element);
     }
-    const elements = [...unique.values()];
-    if (elements.length < 5) throw new Error(`Only ${elements.length} usable prayer places returned`);
-    return elements;
+    return [...unique.values()];
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchBatch(batch) {
+  let lastError;
+  for (const endpoint of endpoints) {
+    try {
+      const elements = await requestBatch(endpoint, batch.selectors);
+      console.log(`Prayer snapshot ${batch.name}: ${elements.length} records from ${new URL(endpoint).hostname}`);
+      return elements;
+    } catch (error) {
+      lastError = error;
+      console.warn(`Prayer snapshot ${batch.name} provider failed: ${new URL(endpoint).hostname} (${error instanceof Error ? error.message : String(error)})`);
+    }
+  }
+  if (batch.required) throw lastError ?? new Error(`No provider returned ${batch.name}`);
+  console.warn(`Prayer snapshot optional batch skipped: ${batch.name}`);
+  return [];
 }
 
 function moduleSource(elements) {
@@ -116,22 +147,20 @@ async function hasUsableCommittedSnapshot() {
   }
 }
 
-let elements;
-for (const endpoint of endpoints) {
-  try {
-    elements = await fetchSnapshot(endpoint);
-    console.log(`Prayer snapshot: ${elements.length} records from ${new URL(endpoint).hostname}`);
-    break;
-  } catch (error) {
-    console.warn(`Prayer snapshot provider failed: ${new URL(endpoint).hostname} (${error instanceof Error ? error.message : String(error)})`);
+try {
+  const unique = new Map();
+  for (const batch of batches) {
+    for (const element of await fetchBatch(batch)) unique.set(`${element.type}/${element.id}`, element);
   }
-}
-
-if (elements) {
+  const elements = [...unique.values()];
+  if (elements.length < 5) throw new Error(`Only ${elements.length} usable prayer places collected`);
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, moduleSource(elements), 'utf8');
-} else if (await hasUsableCommittedSnapshot()) {
-  console.warn('Prayer snapshot refresh failed; preserving the usable committed snapshot.');
-} else {
-  throw new Error('Refusing to ship an empty Jerusalem prayer snapshot.');
+  console.log(`Prayer snapshot complete: ${elements.length} unique records.`);
+} catch (error) {
+  if (await hasUsableCommittedSnapshot()) {
+    console.warn(`Prayer snapshot refresh failed; preserving the usable committed snapshot (${error instanceof Error ? error.message : String(error)}).`);
+  } else {
+    throw new Error(`Refusing to ship an empty Jerusalem prayer snapshot: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
