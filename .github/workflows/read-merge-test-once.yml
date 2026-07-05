@@ -1,11 +1,14 @@
 name: Read Merge Test Once
 
 on:
-  push:
+  pull_request:
     branches:
-      - codex/verify-bundled-arabic-map
+      - main
     paths:
       - .github/workflows/read-merge-test-once.yml
+      - src/**/*.ts
+      - public/**
+      - index.html
 
 permissions:
   contents: read
@@ -15,16 +18,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: b2736941a4b650cdc0d5480f9573a326d6940824
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Capture exact merge tests
-        run: npm test > merge-test-output.txt 2>&1 || true
-      - uses: actions/upload-artifact@v4
-        with:
-          name: merge-test-output
-          path: merge-test-output.txt
+      - name: Print only failing assertions
+        shell: bash
+        run: |
+          set +e
+          npm test > merge-test-output.txt 2>&1
+          status=$?
+          grep -nE 'not ok|failureType|error:|location:|Expected values|actual:|expected:|stack:' merge-test-output.txt || true
+          tail -n 35 merge-test-output.txt
+          exit $status
