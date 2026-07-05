@@ -1,0 +1,36 @@
+name: Inspect OpenFreeMap Style
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/inspect-openfreemap-style.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download current Bright style
+        run: curl --fail --location --retry 3 https://tiles.openfreemap.org/styles/bright -o openfreemap-bright.json
+      - name: Extract label layer report
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const style = JSON.parse(fs.readFileSync('openfreemap-bright.json', 'utf8'));
+          const layers = (style.layers ?? []).filter((layer) => layer.type === 'symbol' && layer.layout?.['text-field'] !== undefined).map((layer) => ({ id: layer.id, sourceLayer: layer['source-layer'], textField: layer.layout['text-field'] }));
+          fs.writeFileSync('openfreemap-label-layers.json', JSON.stringify(layers, null, 2));
+          console.log(`Found ${layers.length} text symbol layers.`);
+          console.log(layers.map((layer) => layer.id).join('\n'));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openfreemap-style-inspection
+          path: |
+            openfreemap-bright.json
+            openfreemap-label-layers.json
+          retention-days: 3
