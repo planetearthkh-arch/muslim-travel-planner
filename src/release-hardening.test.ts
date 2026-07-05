@@ -56,7 +56,8 @@ test('external map fields are escaped before insertion', async () => {
 test('service worker deletes only SafarOne caches and invalidates the previous shell', async () => {
   const worker = await repoFile('public/sw.js');
   assert.match(worker, /key\.startsWith\(CACHE_PREFIX\)/);
-  assert.match(worker, /mtp-app-shell-v15/);
+  assert.match(worker, /mtp-app-shell-v16/);
+  assert.match(worker, /mapbox-gl-rtl-text\.js/);
   assert.match(worker, /await cache\.put\(request, copy\)/);
 });
 
@@ -65,6 +66,7 @@ test('a restrictive content security policy is present', async () => {
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /object-src 'none'/);
   assert.match(html, /worker-src 'self' blob:/);
+  assert.equal(html.includes('unpkg.com'), false);
   assert.equal(html.includes('https://overpass-api.de'), true);
   assert.equal(html.includes('https://overpass.private.coffee'), true);
   assert.equal(html.includes('https://overpass.kumi.systems'), true);
@@ -73,12 +75,17 @@ test('a restrictive content security policy is present', async () => {
   assert.equal(html.includes('https://geocoding-api.open-meteo.com'), true);
 });
 
-test('prayer reliability layer loads before the application and release builds generate a snapshot', async () => {
+test('ordered app bootstrap loads prayer reliability and RTL support before the application', async () => {
   const html = await repoFile('index.html');
+  const bootstrap = await repoFile('src/app-bootstrap.ts');
   const packageJson = await repoFile('package.json');
   const deployment = await repoFile('.github/workflows/deploy.yml');
   const snapshotScript = await repoFile('scripts/update-prayer-snapshot.mjs');
-  assert.equal(html.indexOf('/src/prayer-search-bootstrap.ts') < html.indexOf('/src/main.ts'), true);
+
+  assert.equal(html.includes('/src/app-bootstrap.ts'), true);
+  assert.equal(html.includes('/src/main.ts'), false);
+  assert.equal(bootstrap.indexOf("import './prayer-search-bootstrap.js'") < bootstrap.indexOf("await import('./main.js')"), true);
+  assert.equal(bootstrap.indexOf('await installRtlMapSupport()') < bootstrap.indexOf("await import('./main.js')"), true);
   assert.equal(packageJson.includes('"prayer:snapshot"'), true);
   assert.equal(packageJson.includes('"build:deploy": "npm run prayer:snapshot && npm run build"'), true);
   assert.equal(deployment.includes('npm run build:deploy'), true);
