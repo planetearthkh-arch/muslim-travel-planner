@@ -64,7 +64,7 @@ const arabicPhraseMap: Array<[RegExp, string]> = [
 const facilityWordMap: Array<[RegExp, string]> = [
   [/\bمسجد\b|\bمسجد/u, 'Mosque'],
   [/\bجامع\b|\bجامع/u, 'Grand Mosque'],
-  [/\bمصلى\b|\bمصلّى\b/u, 'Prayer Room'],
+  [/\bمصلى\b|\bمصلّى/u, 'Prayer Room'],
   [/\bغرفة\s+صلاة\b|\bغرفة\s+الصلاة\b/u, 'Prayer Room'],
   [/\bمركز\s+إسلامي\b|\bمركز\s+اسلامي\b/u, 'Islamic Centre'],
   [/\bالمطار\b/u, 'Airport'],
@@ -87,6 +87,35 @@ const fallbackForType = (type: PrayerPlaceType | undefined) => {
 
 const hasAffirmingValue = (value: string | undefined) => !!value && /^(yes|designated|available|separate|female|true|1)$/i.test(value);
 const hasMuslimSignal = (tags: OsmTags) => tags.religion === 'muslim' || tags.denomination === 'sunni' || tags.denomination === 'shia' || tags.muslim === 'yes';
+
+const AL_AQSA_COMPOUND_BOUNDS = {
+  south: 31.7758,
+  north: 31.7809,
+  west: 35.2325,
+  east: 35.2375,
+};
+
+const alAqsaSubstructureNamePattern = /^(?:the\s+)?(?:dome|qubbat|qubba)\b|^قبة(?:\s|$)/iu;
+
+function prayerPlaceSearchableNames(tags: OsmTags) {
+  return [
+    tags['name:en'],
+    tags.name,
+    tags.official_name,
+    tags.short_name,
+    tags.alt_name,
+    tags.loc_name,
+  ].filter((value): value is string => Boolean(value)).map((value) => value.trim());
+}
+
+export function isAlAqsaCompoundSubstructure(tags: OsmTags, latitude: number, longitude: number) {
+  const insideCompound = latitude >= AL_AQSA_COMPOUND_BOUNDS.south
+    && latitude <= AL_AQSA_COMPOUND_BOUNDS.north
+    && longitude >= AL_AQSA_COMPOUND_BOUNDS.west
+    && longitude <= AL_AQSA_COMPOUND_BOUNDS.east;
+  if (!insideCompound) return false;
+  return prayerPlaceSearchableNames(tags).some((name) => alAqsaSubstructureNamePattern.test(name));
+}
 
 function cleanLatinName(value: string) {
   return value
@@ -230,6 +259,7 @@ export function normalizePrayerPlace(element: OverpassElement, origin: { latitud
   const longitude = element.lon ?? element.center?.lon;
   const type = classifyPrayerPlace(tags);
   if (!type || typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
+  if (isAlAqsaCompoundSubstructure(tags, latitude, longitude)) return undefined;
 
   const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
   return {
