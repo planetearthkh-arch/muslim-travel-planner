@@ -14,6 +14,15 @@ export class RequestError extends Error {
   }
 }
 
+export const PRAYER_OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+] as const;
+
+const badAqsaPattern = 'Masjid[ -]?(?:al[- ]?)?Aqsa';
+const goodAqsaPattern = 'Masjid[ -]?Al[- ]?Aqsa|Masjid[ -]?Aqsa';
+
 export function classifyHttpStatus(status: number): RequestFailureKind {
   if (status === 429) return 'rate-limited';
   if ([500, 502, 503, 504].includes(status)) return 'temporary';
@@ -58,7 +67,7 @@ function timeoutSignal(milliseconds: number, externalSignal?: AbortSignal) {
   };
 }
 
-export async function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14_000): Promise<T> {
+async function requestJsonOnce<T>(url: string, options: RequestInit, milliseconds: number): Promise<T> {
   const { signal, cleanup } = timeoutSignal(milliseconds, options.signal ?? undefined);
   try {
     const response = await fetch(url, { ...options, signal });
@@ -79,6 +88,139 @@ export async function requestJson<T>(url: string, options: RequestInit = {}, mil
   } finally {
     cleanup();
   }
+}
+
+function bodyText(body: BodyInit | null | undefined) {
+  return typeof body === 'string' ? body : '';
+}
+
+export function isPrayerOverpassRequest(url: string, options: RequestInit = {}) {
+  if ((options.method ?? 'GET').toUpperCase() !== 'POST') return false;
+  const body = bodyText(options.body);
+  if (!body.includes('place_of_worship') || !body.includes('prayer_room')) return false;
+  try {
+    return /(?:\/api)?\/interpreter\/?$/.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function normalizePrayerOverpassBody(body: string) {
+  const normalized = body.split(badAqsaPattern).join(goodAqsaPattern);
+  if (normalized.includes('(?:')) throw new RequestError('http', 'Unsupported Overpass regular expression', 400);
+  return normalized;
+}
+
+export function prayerOverpassEndpoints(primary: string) {
+  const endpoints: string[] = [];
+  for (const value of [primary, ...PRAYER_OVERPASS_ENDPOINTS]) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:') continue;
+      const normalized = url.toString();
+      if (!endpoints.includes(normalized)) endpoints.push(normalized);
+    } catch {
+      // Ignore invalid custom endpoints.
+    }
+  }
+  return endpoints;
+}
+
+function prayerOptions(options: RequestInit) {
+  const query = normalizePrayerOverpassBody(bodyText(options.body));
+  const headers = new Headers(options.headers);
+  headers.set('Accept', 'application/json');
+  headers.set('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+  return { ...options, body: `data=${encodeURIComponent(query)}`, headers } satisfies RequestInit;
+}
+
+async function requestPrayerJson<T>(url: string, options: RequestInit, milliseconds: number): Promise<T> {
+  const endpoints = prayerOverpassEndpoints(url);
+  const timeout = Math.max(10_000, Math.ceil(milliseconds / Math.max(1, endpoints.length)));
+  let lastError: RequestError | undefined;
+  for (const endpoint of endpoints) {
+    try {
+      return await requestJsonOnce<T>(endpoint, prayerOptions(options), timeout);
+    } catch (error) {
+      const classified = classifyRequestError(error);
+      if (classified.kind === 'aborted' || classified.kind === 'offline') throw classified;
+      if (classified.kind === 'http' && classified.status && classified.status < 500 && classified.status !== 429) throw classified;
+      lastError = classified;
+    }
+  }
+  throw lastError ?? new RequestError('temporary', 'Map data services are unavailable');
+}
+
+function isDestinationSearch(url: string, options: RequestInit) {
+  if ((options.method ?? 'GET').toUpperCase() !== 'GET') return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 'nominatim.openstreetmap.org' && parsed.pathname.replace(/\/+$/, '') === '/search';
+  } catch {
+    return false;
+  }
+}
+
+function destinationFallbackUrl(primaryUrl: string) {
+  const query = new URL(primaryUrl).searchParams.get('q')?.trim();
+  if (!query) return '';
+  const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+  url.searchParams.set('name', query);
+  url.searchParams.set('count', '1');
+  url.searchParams.set('language', 'en');
+  url.searchParams.set('format', 'json');
+  return url.toString();
+}
+
+function destinationFallbackResult(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return [];
+  const results = (payload as { results?: unknown }).results;
+  if (!Array.isArray(results) || !results.length || !results[0] || typeof results[0] !== 'object') return [];
+  const item = results[0] as Record<string, unknown>;
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
+  const city = typeof item.name === 'string' ? item.name : '';
+  const state = typeof item.admin1 === 'string' ? item.admin1 : '';
+  const country = typeof item.country === 'string' ? item.country : '';
+  const displayName = [city, state, country].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join(', ');
+  return [{ lat: String(latitude), lon: String(longitude), display_name: displayName || `${latitude}, ${longitude}`, address: { city, state, country } }];
+}
+
+async function requestDestinationJson<T>(url: string, options: RequestInit, milliseconds: number): Promise<T> {
+  let primary: unknown = [];
+  let primaryError: RequestError | undefined;
+  try {
+    primary = await requestJsonOnce<unknown>(url, options, milliseconds);
+    if (!Array.isArray(primary)) throw new RequestError('malformed', 'Received invalid geocoding data');
+    if (primary.length) return primary as T;
+  } catch (error) {
+    const classified = classifyRequestError(error);
+    if (classified.kind === 'aborted' || classified.kind === 'offline') throw classified;
+    primaryError = classified;
+  }
+
+  const fallbackUrl = destinationFallbackUrl(url);
+  if (!fallbackUrl) {
+    if (primaryError) throw primaryError;
+    return primary as T;
+  }
+
+  try {
+    const fallback = await requestJsonOnce<unknown>(fallbackUrl, { headers: { Accept: 'application/json' }, signal: options.signal }, milliseconds);
+    const normalized = destinationFallbackResult(fallback);
+    if (normalized.length || primaryError) return normalized as T;
+    return primary as T;
+  } catch {
+    if (primaryError) throw primaryError;
+    return primary as T;
+  }
+}
+
+export async function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14_000): Promise<T> {
+  if (isPrayerOverpassRequest(url, options)) return requestPrayerJson<T>(url, options, milliseconds);
+  if (isDestinationSearch(url, options)) return requestDestinationJson<T>(url, options, milliseconds);
+  return requestJsonOnce<T>(url, options, milliseconds);
 }
 
 function abortableDelay(milliseconds: number, signal?: AbortSignal) {

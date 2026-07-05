@@ -68,6 +68,9 @@ test('a restrictive content security policy is present', async () => {
   assert.equal(html.includes('https://overpass-api.de'), true);
   assert.equal(html.includes('https://overpass.private.coffee'), true);
   assert.equal(html.includes('https://overpass.kumi.systems'), true);
+  assert.equal(html.includes('https://maps.mail.ru'), true);
+  assert.equal(html.includes('https://nominatim.openstreetmap.org'), true);
+  assert.equal(html.includes('https://geocoding-api.open-meteo.com'), true);
 });
 
 test('prayer notification fallbacks use bundled assets and exact-alarm state', async () => {
