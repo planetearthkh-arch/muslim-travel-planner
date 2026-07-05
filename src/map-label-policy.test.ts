@@ -6,17 +6,27 @@ async function repoFile(path: string) {
   return load('node:fs/promises').then((fs) => fs.readFile(new URL('../' + path, import.meta.url), 'utf8'));
 }
 
-test('map label policy keeps Latin fields and blocks the raw name getter', async () => {
+test('all maps install RTL shaping with a safe Latin fallback', async () => {
   const source = await repoFile('src/map-rtl-bootstrap.ts');
+
+  assert.equal(source.includes('@mapbox/mapbox-gl-rtl-text@0.3.0'), true);
+  assert.equal(source.includes('setRTLTextPlugin(RTL_PLUGIN_URL, true)'), true);
+  assert.equal(source.includes("map.on('style.load'"), true);
+  assert.equal(source.includes('activateLatinFallback()'), true);
+  assert.equal(source.includes("language !== 'ar'"), false);
+
   for (const field of ['name:en', 'name_en', 'name:latin', 'int_name', 'official_name:en', 'short_name:en', 'ref']) {
     assert.equal(source.includes(field), true);
   }
-  assert.equal(source.includes("value[0] === 'get' && value[1] === 'name'"), true);
-  assert.equal(source.includes('setRTLTextPlugin'), false);
-  assert.equal(source.includes('fetch('), false);
+  for (const rtlField of ['name:ar', 'name_ar', 'name:fa', 'name:he', 'name:ur']) {
+    assert.equal(source.includes(rtlField), true);
+  }
 });
 
-test('map label policy is installed before the application entry point', async () => {
+test('map text policy loads before the application and permits the pinned plugin', async () => {
   const html = await repoFile('index.html');
   assert.equal(html.indexOf('/src/map-rtl-bootstrap.ts') < html.indexOf('/src/main.ts'), true);
+  assert.equal(html.includes("script-src 'self' https://unpkg.com"), true);
+  assert.equal(html.includes("worker-src 'self' blob: https://unpkg.com"), true);
+  assert.equal(html.includes("connect-src 'self' https://unpkg.com"), true);
 });
