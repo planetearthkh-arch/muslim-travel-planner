@@ -28,13 +28,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Create source bundle
         shell: bash
-        run: |
-          mkdir source-bundle
-          cp -R src public ios android scripts docs .github source-bundle/
-          cp index.html package.json package-lock.json capacitor.config.ts tsconfig.json vite.config.ts vite.native.config.ts source-bundle/ 2>/dev/null || true
+        run: git ls-files -z | tar --null -T - -czf source-audit-bundle.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: source-audit-bundle
-          path: source-bundle
+          path: source-audit-bundle.tar.gz
           if-no-files-found: error
           retention-days: 3
