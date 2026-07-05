@@ -20,16 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - name: Run tests
-        shell: bash
-        run: set -o pipefail; npm test 2>&1 | tee test-output.txt
-      - name: Upload test diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-test-output
-          path: test-output.txt
-          if-no-files-found: error
+      - run: npm test
       - run: npm run lint
       - run: npm run test:browser-smoke
 
