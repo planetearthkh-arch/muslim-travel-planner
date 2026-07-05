@@ -1,0 +1,24 @@
+name: Snapshot Capture
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run prayer:snapshot
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jerusalem-prayer-snapshot
+          path: src/generated/jerusalem-prayer-snapshot.ts
+          if-no-files-found: error
