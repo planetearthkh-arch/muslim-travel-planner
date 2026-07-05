@@ -107,9 +107,9 @@ function moduleSource(elements) {
 async function hasUsableCommittedSnapshot() {
   try {
     const source = await readFile(outputPath, 'utf8');
-    const hasTimestamp = /(?:generatedAt|"generatedAt")\s*:\s*['"][^'"]+['"]/.test(source);
-    const emptyElements = /(?:elements|"elements")\s*:\s*\[\s*\]/.test(source);
-    const recordCount = (source.match(/"type"\s*:\s*"(?:node|way|relation)"/g) ?? []).length;
+    const hasTimestamp = /(generatedAt|"generatedAt")\s*:\s*['"][^'"]+['"]/.test(source);
+    const emptyElements = /(elements|"elements")\s*:\s*\[\s*\]/.test(source);
+    const recordCount = (source.match(/"type"\s*:\s*"(node|way|relation)"/g) ?? []).length;
     return hasTimestamp && !emptyElements && recordCount >= 5;
   } catch {
     return false;
