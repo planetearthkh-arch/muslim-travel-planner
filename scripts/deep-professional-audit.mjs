@@ -51,7 +51,7 @@ const locations = (regex, options = {}) => {
 const readJson = async (file) => {
   try { return JSON.parse(await fs.readFile(path.join(root, file), 'utf8')); } catch { return null; }
 };
-const hasFile = (file) => texts.has(file) || await fs.access(path.join(root, file)).then(() => true).catch(() => false);
+const hasFile = async (file) => texts.has(file) || await fs.access(path.join(root, file)).then(() => true).catch(() => false);
 const severityRank = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 
 // Release/version hygiene.
