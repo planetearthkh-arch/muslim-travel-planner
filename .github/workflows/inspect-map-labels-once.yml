@@ -1,0 +1,28 @@
+name: Inspect Map Labels Once
+
+on:
+  push:
+    branches:
+      - codex/clean-map-label-restoration
+    paths:
+      - .github/workflows/inspect-map-labels-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/clean-map-label-restoration
+      - name: Print map label and map creation sites
+        shell: bash
+        run: |
+          echo '=== label definitions and calls ==='
+          grep -nE 'englishMapNameExpression|applyEnglishMapLabels|setLayoutProperty|text-field' src/main.ts src/map-rtl-bootstrap.ts || true
+          echo '=== map constructors ==='
+          grep -nE 'new maplibre\.Map|\.on\(.load.|\.on\(.style\.load.' src/main.ts src/map-rtl-bootstrap.ts || true
+          echo '=== startup entries ==='
+          grep -nE 'map-rtl-bootstrap|app-bootstrap|main\.ts|ensureRtlMapSupport' index.html src/app-bootstrap.ts src/map-rtl-bootstrap.ts || true
