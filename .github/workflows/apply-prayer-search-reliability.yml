@@ -1,0 +1,47 @@
+name: Apply prayer search reliability fix
+
+on:
+  push:
+    branches:
+      - codex/permanent-prayer-search-reliability
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/permanent-prayer-search-reliability
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply reliability patch
+        run: python3 scripts/apply-prayer-search-reliability.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate web and unit tests
+        run: |
+          npm run typecheck
+          npm test
+          npm run lint
+          npm run build
+
+      - name: Commit validated fix
+        run: |
+          rm -f .github/workflows/apply-prayer-search-reliability.yml
+          rm -f scripts/apply-prayer-search-reliability.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Make mosque and prayer-space search resilient"
+          git push origin HEAD:codex/permanent-prayer-search-reliability
