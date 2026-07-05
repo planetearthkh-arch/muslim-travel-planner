@@ -1,0 +1,47 @@
+name: Set iOS Build Number
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: New App Store build number
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Validate build number
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          case "$BUILD_NUMBER" in
+            ''|*[!0-9]*) echo "Build number must be a positive integer"; exit 1 ;;
+          esac
+          test "$BUILD_NUMBER" -gt 0
+      - name: Update iOS project
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          sed -E -i "s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = ${BUILD_NUMBER};/g" ios/App/App.xcodeproj/project.pbxproj
+          test "$(grep -c "CURRENT_PROJECT_VERSION = ${BUILD_NUMBER};" ios/App/App.xcodeproj/project.pbxproj)" -eq 2
+      - name: Commit build number
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ios/App/App.xcodeproj/project.pbxproj
+          if git diff --cached --quiet; then
+            echo "Build number is already ${BUILD_NUMBER}."
+            exit 0
+          fi
+          git commit -m "Set iOS build number to ${BUILD_NUMBER}"
+          git push origin HEAD:${{ github.ref_name }}

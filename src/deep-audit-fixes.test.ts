@@ -89,12 +89,15 @@ test('native and UI safeguards remain wired', async () => {
     repoFile('ios/App/App.xcodeproj/project.pbxproj'),
     repoFile('index.html'),
   ]);
+  const buildVersions = [...project.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map((match) => Number(match[1]));
   assert.equal(main.includes('generatedItems = generateItinerary(generatedPrefs, replan, lang);'), true);
   assert.equal(main.includes('const alarmPrefs = generatedPrefs ?? prefs;'), true);
   assert.equal(main.includes('language: trip.language'), true);
   assert.equal(athan.includes('AndroidAthan.schedule'), true);
   assert.match(manifest, /android:allowBackup="false"/);
-  assert.match(project, /CURRENT_PROJECT_VERSION = 103;/);
+  assert.equal(buildVersions.length, 2);
+  assert.equal(new Set(buildVersions).size, 1);
+  assert.equal(buildVersions[0] >= 109, true);
   assert.match(project, /ur InfoPlist.strings/);
   assert.equal(index.includes('urdu-runtime.ts'), false);
 });
