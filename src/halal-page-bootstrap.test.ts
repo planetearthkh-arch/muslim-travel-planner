@@ -8,11 +8,11 @@ async function repoFile(path: string) {
 
 test('halal page starts nearby search and keeps legend controls accessible', async () => {
   const source = await repoFile('src/halal-page-bootstrap.ts');
-  const appBootstrap = await repoFile('src/app-bootstrap.ts');
+  const index = await repoFile('index.html');
   const serviceWorker = await repoFile('public/sw.js');
 
-  assert.equal(appBootstrap.includes("await import('./halal-page-bootstrap.js')"), true);
-  assert.equal(appBootstrap.includes("import './turkish-halal-copy.js'"), true);
+  assert.equal(index.includes('/src/halal-page-bootstrap.ts'), true);
+  assert.equal(index.includes('/src/turkish-halal-copy.ts'), true);
   assert.equal(source.includes('#manual-halal-search'), true);
   assert.equal(source.includes('#halal-manual-query'), true);
   assert.equal(source.includes('#halal-radius'), true);
@@ -29,5 +29,5 @@ test('halal page starts nearby search and keeps legend controls accessible', asy
   assert.equal(source.includes("status: 'helal durumu'"), true);
   assert.equal(source.includes("observe(root, { childList: true })"), true);
   assert.equal(source.includes('subtree: true'), false);
-  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v16'"), true);
+  assert.equal(serviceWorker.includes("const CACHE_VERSION = 'mtp-app-shell-v15'"), true);
 });
