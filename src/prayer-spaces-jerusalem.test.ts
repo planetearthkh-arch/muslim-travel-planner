@@ -76,7 +76,6 @@ test('common Jerusalem mosque names are normalized consistently', () => {
 test('duplicate OSM records receive the same Jerusalem identity', () => {
   const first = normalizePrayerPlace(place(70, 'Al Farooq Masjid', 31.7901, 35.2201, 'node'), origin);
   const second = normalizePrayerPlace(place(71, 'Al-Farouq Mosque', 31.7904, 35.2204, 'way'), origin);
-  assert.ok(first);
-  assert.ok(second);
+  if (!first || !second) throw new Error('Expected both duplicate records to normalize');
   assert.equal(first.id, second.id);
 });
