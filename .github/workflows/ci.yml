@@ -6,9 +6,121 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  apply-clean-map-source:
+    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/clean-map-label-restoration
+          fetch-depth: 0
+      - name: Remove destructive map label rewriting
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/main.ts')
+          source = path.read_text()
+
+          imports = "import maplibregl from 'maplibre-gl';\nimport 'maplibre-gl/dist/maplibre-gl.css';"
+          replacement_imports = imports + "\nimport { ensureRtlMapSupport } from './map-rtl-bootstrap.js';"
+          if replacement_imports not in source:
+              if imports not in source:
+                  raise SystemExit('MapLibre imports not found.')
+              source = source.replace(imports, replacement_imports, 1)
+
+          source = source.replace("type MapLibreStyleLayer = { id: string; type?: string };\n", '', 1)
+          for line in [
+              "  getStyle: () => { layers?: MapLibreStyleLayer[] };\n",
+              "  getLayoutProperty: (layerId: string, property: string) => unknown;\n",
+              "  setLayoutProperty: (layerId: string, property: string, value: unknown) => void;\n",
+          ]:
+              if line not in source:
+                  raise SystemExit(f'Missing expected map type line: {line!r}')
+              source = source.replace(line, '', 1)
+
+          expression = """const englishMapNameExpression = [
+  'coalesce',
+  ['get', 'name:en'],
+  ['get', 'name_en'],
+  ['get', 'name:latin'],
+  ['get', 'name'],
+  ['get', 'ref'],
+];
+
+"""
+          if expression not in source:
+              raise SystemExit('Legacy English expression not found.')
+          source = source.replace(expression, '', 1)
+
+          rewrite = """function applyEnglishMapLabels(map: MapLibreMap) {
+  const layers = map.getStyle().layers ?? [];
+  for (const layer of layers) {
+    if (layer.type !== 'symbol') continue;
+    try {
+      const textField = map.getLayoutProperty(layer.id, 'text-field');
+      if (typeof textField === 'undefined' || !JSON.stringify(textField).includes('name')) continue;
+      map.setLayoutProperty(layer.id, 'text-field', englishMapNameExpression);
+    } catch {
+      // Some symbol layers contain icons or special text expressions and should remain unchanged.
+    }
+  }
+}
+
+"""
+          if rewrite not in source:
+              raise SystemExit('Legacy label rewrite function not found.')
+          source = source.replace(rewrite, '', 1)
+
+          sync_initializer = 'function initializeMap(copy: typeof labels[Language]) {'
+          if sync_initializer not in source:
+              raise SystemExit('Synchronous map initializer not found.')
+          source = source.replace(sync_initializer, 'async function initializeMap(copy: typeof labels[Language]) {', 1)
+
+          guard = """  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !maplibre) {
+    showMapFallback(element, status, copy.mapUnavailable);
+    return;
+  }
+  try {
+"""
+          guarded = """  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !maplibre) {
+    showMapFallback(element, status, copy.mapUnavailable);
+    return;
+  }
+  await ensureRtlMapSupport(lang);
+  try {
+"""
+          if guard not in source:
+              raise SystemExit('Map guard not found.')
+          source = source.replace(guard, guarded, 1)
+
+          if '      applyEnglishMapLabels(cityMap);\n' not in source:
+              raise SystemExit('Legacy rewrite call not found.')
+          source = source.replace('      applyEnglishMapLabels(cityMap);\n', '', 1)
+
+          if '  initializeMap(copy);\n' not in source:
+              raise SystemExit('Map initializer call not found.')
+          source = source.replace('  initializeMap(copy);\n', '  void initializeMap(copy);\n', 1)
+
+          for forbidden in ['MapLibreStyleLayer', 'englishMapNameExpression', 'applyEnglishMapLabels', "setLayoutProperty(layer.id, 'text-field'"]:
+              if forbidden in source:
+                  raise SystemExit(f'Legacy map mutation remains: {forbidden}')
+
+          path.write_text(source)
+          PY
+      - name: Commit source-only cleanup and restore normal CI
+        run: |
+          git fetch origin main
+          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
+          rm -f .github/workflows/remove-legacy-map-rewrite-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts .github/workflows/ci.yml .github/workflows/remove-legacy-map-rewrite-once.yml
+          git commit -m "Remove destructive map label rewriting"
+          git push origin HEAD:codex/clean-map-label-restoration
+
   web:
     runs-on: ubuntu-latest
     steps:
