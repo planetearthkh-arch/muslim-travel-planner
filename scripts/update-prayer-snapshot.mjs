@@ -1,7 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const outputPath = new URL('../src/generated/jerusalem-prayer-snapshot.ts', import.meta.url);
+const outputUrl = new URL('../src/generated/jerusalem-prayer-snapshot.ts', import.meta.url);
+const outputPath = fileURLToPath(outputUrl);
 const endpoints = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
@@ -114,7 +116,7 @@ for (const endpoint of endpoints) {
 }
 
 if (elements) {
-  await mkdir(dirname(outputPath.pathname), { recursive: true });
+  await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, moduleSource(elements), 'utf8');
 } else {
   try {
