@@ -6,23 +6,43 @@ import {
   prayerFallbackPayload,
   prayerJsonResponse,
   prayerQueryFromBody,
-  validPrayerPayload,
   writePrayerSearchCache,
 } from './prayer-search-fallback.js';
+import { sanitizePrayerPayload } from './prayer-payload-sanitizer.js';
 import { getSafeStorage } from './safe-storage.js';
 
 const globalState = globalThis as typeof globalThis & { __safarOnePrayerFetchInstalled?: boolean };
+
+function livePrayerJsonResponse(payload: { elements: unknown[] }, response: Response) {
+  const headers = new Headers(response.headers);
+  headers.set('Content-Type', 'application/json');
+  headers.set('X-SafarOne-Prayer-Source', 'live-sanitized');
+  return new Response(JSON.stringify(payload), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 if (!globalState.__safarOnePrayerFetchInstalled) {
   globalState.__safarOnePrayerFetchInstalled = true;
   const originalFetch = globalThis.fetch.bind(globalThis);
   const storage = getSafeStorage();
 
-  const saveLivePayload = (query: string, response: Response) => {
-    if (!response.ok) return;
-    void response.clone().json().then((payload: unknown) => {
-      if (validPrayerPayload(payload)) writePrayerSearchCache(storage, query, payload);
-    }).catch(() => undefined);
+  const sanitizeLiveResponse = async (query: string, response: Response) => {
+    if (!response.ok) return response;
+    try {
+      const payload = sanitizePrayerPayload(await response.clone().json());
+      if (!payload) return response;
+      if (payload.elements.length) writePrayerSearchCache(storage, query, payload);
+      return livePrayerJsonResponse(payload, response);
+    } catch {
+      return response;
+    }
+  };
+
+  const sanitizedFallback = (query: string) => {
+    return sanitizePrayerPayload(prayerFallbackPayload(storage, query, JERUSALEM_PRAYER_SNAPSHOT));
   };
 
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -30,29 +50,26 @@ if (!globalState.__safarOnePrayerFetchInstalled) {
     const query = prayerQueryFromBody(init?.body);
     if (!isPrayerOverpassQuery(query)) return originalFetch(input, init);
 
-    const fallbackPayload = prayerFallbackPayload(storage, query, JERUSALEM_PRAYER_SNAPSHOT);
-    if (fallbackPayload) {
-      void originalFetch(input, init).then((response) => saveLivePayload(query, response)).catch(() => undefined);
+    const fallbackPayload = sanitizedFallback(query);
+    if (fallbackPayload?.elements.length) {
+      void originalFetch(input, init).then((response) => sanitizeLiveResponse(query, response)).catch(() => undefined);
       return prayerJsonResponse(fallbackPayload);
     }
 
     try {
       const response = await originalFetch(input, init);
-      if (response.ok) {
-        saveLivePayload(query, response);
-        return response;
-      }
+      if (response.ok) return sanitizeLiveResponse(query, response);
 
       if (isFinalPrayerProvider(url) && isRetryablePrayerFailure(response.status)) {
-        const payload = prayerFallbackPayload(storage, query, JERUSALEM_PRAYER_SNAPSHOT);
-        return payload ? prayerJsonResponse(payload) : response;
+        const payload = sanitizedFallback(query);
+        return payload?.elements.length ? prayerJsonResponse(payload) : response;
       }
       return response;
     } catch (error) {
       const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
       if (offline || isFinalPrayerProvider(url)) {
-        const payload = prayerFallbackPayload(storage, query, JERUSALEM_PRAYER_SNAPSHOT);
-        if (payload) return prayerJsonResponse(payload);
+        const payload = sanitizedFallback(query);
+        if (payload?.elements.length) return prayerJsonResponse(payload);
       }
       throw error;
     }
