@@ -1,0 +1,220 @@
+   const element = document.querySelector<HTMLElement>('#prayer-map');
+   if (!element || !prayerCenter || !window.maplibregl) return;
+   try {
+     element.replaceChildren();
+     prayerMap = new window.maplibregl.Map({
+       container: element,
+-      style: openFreeMapStyle,
++      style: mapStyle,
+       center: [prayerCenter.longitude, prayerCenter.latitude],
+       zoom: prayerRadiusKm <= 5 ? 12 : prayerRadiusKm <= 10 ? 11 : 9,
+       attributionControl: true,
+@@ -1747,7 +1737,7 @@
+       if (button) button.hidden = false;
+     });
+   } catch {
+-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
++    replaceMapFallback(element, labels[lang].mapUnavailable);
+   }
+ }
+ 
+@@ -1826,7 +1816,7 @@
+       </section>
+     </main>`;
+   bindPrayerPage();
+-  if (prayerMode === 'map') initializePrayerMap();
++  if (prayerMode === 'map') void initializePrayerMap();
+ }
+ 
+ function bindPrayerPage() {
+@@ -2044,18 +2034,20 @@
+   restaurantSearchTimer = window.setTimeout(() => void searchHalalRestaurants(center), 450);
+ }
+ 
+-function initializeRestaurantMap() {
++async function initializeRestaurantMap() {
+   restaurantMap?.remove();
+   restaurantMap = undefined;
+   publicTransportMap?.remove();
+   publicTransportMap = undefined;
++  const mapStyle = await prepareMapLanguage();
++  if (!mapStyle) return;
+   const element = document.querySelector<HTMLElement>('#halal-map');
+   if (!element || !restaurantCenter || !window.maplibregl) return;
+   try {
+     element.replaceChildren();
+     restaurantMap = new window.maplibregl.Map({
+       container: element,
+-      style: openFreeMapStyle,
++      style: mapStyle,
+       center: [restaurantCenter.longitude, restaurantCenter.latitude],
+       zoom: restaurantRadiusKm <= 3 ? 13 : restaurantRadiusKm <= 10 ? 11 : 9,
+       attributionControl: true,
+@@ -2082,7 +2074,7 @@
+       if (button) button.hidden = false;
+     });
+   } catch {
+-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
++    replaceMapFallback(element, labels[lang].mapUnavailable);
+   }
+ }
+ 
+@@ -2182,7 +2174,7 @@
+       </section>
+     </main>`;
+   bindHalalRestaurantsPage();
+-  if (restaurantMode === 'map') initializeRestaurantMap();
++  if (restaurantMode === 'map') void initializeRestaurantMap();
+ }
+ 
+ function bindHalalRestaurantsPage() {
+@@ -2367,18 +2359,20 @@
+   return `https://www.openstreetmap.org/directions?to=${toilet.latitude},${toilet.longitude}#map=17/${toilet.latitude}/${toilet.longitude}`;
+ }
+ 
+-function initializeToiletMap() {
++async function initializeToiletMap() {
+   toiletMap?.remove();
+   toiletMap = undefined;
+   publicTransportMap?.remove();
+   publicTransportMap = undefined;
++  const mapStyle = await prepareMapLanguage();
++  if (!mapStyle) return;
+   const element = document.querySelector<HTMLElement>('#toilet-map');
+   if (!element || !toiletCenter || !window.maplibregl) return;
+   try {
+     element.replaceChildren();
+     toiletMap = new window.maplibregl.Map({
+       container: element,
+-      style: openFreeMapStyle,
++      style: mapStyle,
+       center: [toiletCenter.longitude, toiletCenter.latitude],
+       zoom: toiletRadiusKm <= 1 ? 14 : toiletRadiusKm <= 5 ? 12 : 10,
+       attributionControl: true,
+@@ -2396,7 +2390,7 @@
+       if (button) button.hidden = false;
+     });
+   } catch {
+-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
++    replaceMapFallback(element, labels[lang].mapUnavailable);
+   }
+ }
+ 
+@@ -2506,7 +2500,7 @@
+       </section>
+     </main>`;
+   bindPublicToiletsPage();
+-  if (toiletMode === 'map') initializeToiletMap();
++  if (toiletMode === 'map') void initializeToiletMap();
+ }
+ 
+ function bindPublicToiletsPage() {
+@@ -2676,18 +2670,20 @@
+   return `https://www.openstreetmap.org/directions?to=${office.latitude},${office.longitude}#map=17/${office.latitude}/${office.longitude}`;
+ }
+ 
+-function initializeCarRentalMap() {
++async function initializeCarRentalMap() {
+   carRentalMap?.remove();
+   carRentalMap = undefined;
+   publicTransportMap?.remove();
+   publicTransportMap = undefined;
++  const mapStyle = await prepareMapLanguage();
++  if (!mapStyle) return;
+   const element = document.querySelector<HTMLElement>('#car-rental-map');
+   if (!element || !carRentalCenter || !window.maplibregl) return;
+   try {
+     element.replaceChildren();
+     carRentalMap = new window.maplibregl.Map({
+       container: element,
+-      style: openFreeMapStyle,
++      style: mapStyle,
+       center: [carRentalCenter.longitude, carRentalCenter.latitude],
+       zoom: carRentalRadiusKm <= 5 ? 12 : carRentalRadiusKm <= 25 ? 10 : 8,
+       attributionControl: true,
+@@ -2705,7 +2701,7 @@
+       if (button) button.hidden = false;
+     });
+   } catch {
+-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
++    replaceMapFallback(element, labels[lang].mapUnavailable);
+   }
+ }
+ 
+@@ -2817,7 +2813,7 @@
+       </section>
+     </main>`;
+   bindCarRentalPage();
+-  if (carRentalMode === 'map') initializeCarRentalMap();
++  if (carRentalMode === 'map') void initializeCarRentalMap();
+ }
+ 
+ function bindCarRentalPage() {
+@@ -2991,16 +2987,18 @@
+   return `https://www.openstreetmap.org/directions?to=${stop.latitude},${stop.longitude}#map=17/${stop.latitude}/${stop.longitude}`;
+ }
+ 
+-function initializePublicTransportMap() {
++async function initializePublicTransportMap() {
+   publicTransportMap?.remove();
+   publicTransportMap = undefined;
++  const mapStyle = await prepareMapLanguage();
++  if (!mapStyle) return;
+   const element = document.querySelector<HTMLElement>('#public-transport-map');
+   if (!element || !publicTransportCenter || !window.maplibregl) return;
+   try {
+     element.replaceChildren();
+     publicTransportMap = new window.maplibregl.Map({
+       container: element,
+-      style: openFreeMapStyle,
++      style: mapStyle,
+       center: [publicTransportCenter.longitude, publicTransportCenter.latitude],
+       zoom: publicTransportRadiusKm <= 5 ? 12 : publicTransportRadiusKm <= 25 ? 10 : 8,
+       attributionControl: true,
+@@ -3017,7 +3015,7 @@
+       if (button) button.hidden = false;
+     });
+   } catch {
+-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
++    replaceMapFallback(element, labels[lang].mapUnavailable);
+   }
+ }
+ 
+@@ -3124,7 +3122,7 @@
+       </section>
+     </main>`;
+   bindPublicTransportPage();
+-  if (publicTransportMode === 'map') initializePublicTransportMap();
++  if (publicTransportMode === 'map') void initializePublicTransportMap();
+ }
+ 
+ function bindPublicTransportPage() {
+@@ -3298,14 +3296,16 @@
+   return `https://www.openstreetmap.org/directions?to=${item.latitude},${item.longitude}#map=17/${item.latitude}/${item.longitude}`;
+ }
+ 
+-function initializeTaxiMap() {
++async function initializeTaxiMap() {
+   taxiMap?.remove();
+   taxiMap = undefined;
++  const mapStyle = await prepareMapLanguage();
++  if (!mapStyle) return;
+   const element = document.querySelector<HTMLElement>('#taxi-map');
+   if (!element || !taxiCenter || !window.maplibregl) return;
+   try {
+     element.replaceChildren();
+-    taxiMap = new window.maplibregl.Map({ container: element, style: openFreeMapStyle, center: [taxiCenter.longitude, taxiCenter.latitude], zoom: taxiRadiusKm <= 5 ? 12 : taxiRadiusKm <= 25 ? 10 : 8, attributionControl: true });
++    taxiMap = new window.maplibregl.Map({ container: element, style: mapStyle, center: [taxiCenter.longitude, taxiCenter.latitude], zoom: taxiRadiusKm <= 5 ? 12 : taxiRadiusKm <= 25 ? 10 : 8, attributionControl: true });
+     taxiMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
+     new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([taxiCenter.longitude, taxiCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(taxiCenter.label)).addTo(taxiMap);
+     const colors: Record<TaxiServiceType, string> = { rank: '#d97706', airport: '#7c3aed', station: '#2563eb', bus: '#0891b2', office: '#0f766e', motorcycle: '#ca8a04', water: '#0284c7', other: '#64748b' };
+@@ -3316,7 +3316,7 @@
+       if (button) button.hidden = false;
+     });
+   } catch {
+-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
++    replaceMapFallback(element, labels[lang].mapUnavailable);
+   }
+ }
+ 
+@@ -3388,7 +3388,7 @@
