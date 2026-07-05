@@ -1,0 +1,15 @@
+=== label definitions and calls ===
+src/main.ts:373:  setLayoutProperty: (layerId: string, property: string, value: unknown) => void;
+src/main.ts:410:const englishMapNameExpression = [
+src/main.ts:726:function applyEnglishMapLabels(map: MapLibreMap) {
+src/main.ts:731:      const textField = map.getLayoutProperty(layer.id, 'text-field');
+src/main.ts:733:      map.setLayoutProperty(layer.id, 'text-field', englishMapNameExpression);
+src/main.ts:776:      applyEnglishMapLabels(cityMap);
+=== map constructors ===
+src/main.ts:759:    cityMap = new maplibre.Map({
+src/main.ts:774:    cityMap.on('load', () => {
+=== startup entries ===
+index.html:20:    <script type="module" src="/src/app-bootstrap.ts"></script>
+src/app-bootstrap.ts:3:import { ensureRtlMapSupport } from './map-rtl-bootstrap.js';
+src/app-bootstrap.ts:6:  void ensureRtlMapSupport().then((rtlReady) => {
+src/map-rtl-bootstrap.ts:26:export function ensureRtlMapSupport(): Promise<boolean> {
