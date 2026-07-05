@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { JERUSALEM_PRAYER_SNAPSHOT } from './generated/jerusalem-prayer-snapshot.js';
 import {
   isFinalPrayerProvider,
   isPrayerOverpassQuery,
@@ -36,6 +37,15 @@ const snapshot: PrayerSearchSnapshot = {
     { type: 'node', id: 2, lat: 32.4, lon: 35.9, tags: { amenity: 'place_of_worship', religion: 'muslim', name: 'Outside Search Radius Mosque' } },
   ],
 };
+
+test('committed Jerusalem snapshot is populated and includes Al-Aqsa', () => {
+  assert.equal(JERUSALEM_PRAYER_SNAPSHOT.elements.length >= 5, true);
+  const names = JERUSALEM_PRAYER_SNAPSHOT.elements.flatMap((element) => {
+    const tags = element.tags ?? {};
+    return [tags.name, tags['name:en'], tags['name:ar'], tags.official_name, tags['official_name:en'], tags['official_name:ar']].filter(Boolean);
+  }).join(' ');
+  assert.match(names, /Al-Aqsa|الأقصى|الاقصى/i);
+});
 
 test('form-encoded prayer queries are detected correctly', () => {
   const encoded = `data=${encodeURIComponent(jerusalemQuery)}`;
