@@ -23,7 +23,9 @@ function waitForRtlPlugin() {
   });
 }
 
-export function ensureRtlMapSupport(): Promise<boolean> {
+export function ensureRtlMapSupport(language: string): Promise<boolean> {
+  if (language !== 'ar' && language !== 'ur') return Promise.resolve(false);
+
   const status = maplibregl.getRTLTextPluginStatus();
   if (status === 'loaded') return Promise.resolve(true);
   if (status === 'loading') return installPromise ?? waitForRtlPlugin();
