@@ -34,8 +34,8 @@ test('release hardening remains wired into source and native configuration', asy
   const buildVersions = [...project.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map((match) => Number(match[1]));
   assert.equal(buildVersions.length, 2);
   assert.equal(new Set(buildVersions).size, 1);
-  assert.equal(buildVersions[0] >= 109, true);
-  assert.equal(verify.includes('version < 109'), true);
+  assert.equal(buildVersions[0] >= 119, true);
+  assert.equal(verify.includes('version < 119'), true);
   assert.equal(main.includes('scheduleFlightClock()'), true);
   assert.equal(main.includes("flightProgressMode: 'elapsed' | 'manual'"), true);
   assert.equal(main.includes("App.addListener('appStateChange'"), true);
