@@ -84,8 +84,8 @@ test('ordered app bootstrap loads prayer reliability and RTL support before the 
 
   assert.equal(html.includes('/src/app-bootstrap.ts'), true);
   assert.equal(html.includes('/src/main.ts'), false);
-  assert.equal(bootstrap.indexOf("import './prayer-search-bootstrap.js'") < bootstrap.indexOf("await import('./main.js')"), true);
-  assert.equal(bootstrap.indexOf('await installRtlMapSupport()') < bootstrap.indexOf("await import('./main.js')"), true);
+  assert.equal(bootstrap.indexOf("import './prayer-search-bootstrap.js'") < bootstrap.indexOf("import('./main.js')"), true);
+  assert.equal(bootstrap.indexOf('registerRtlMapSupport()') < bootstrap.indexOf("import('./main.js')"), true);
   assert.equal(packageJson.includes('"prayer:snapshot"'), true);
   assert.equal(packageJson.includes('"build:deploy": "npm run prayer:snapshot && npm run build"'), true);
   assert.equal(deployment.includes('npm run build:deploy'), true);
