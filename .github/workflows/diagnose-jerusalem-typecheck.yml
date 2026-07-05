@@ -1,9 +1,9 @@
 name: Diagnose Jerusalem typecheck
 
 on:
-  push:
+  pull_request:
     branches:
-      - codex/clean-jerusalem-mosque-list
+      - main
   workflow_dispatch:
 
 permissions:
