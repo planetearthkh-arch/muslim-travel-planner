@@ -104,6 +104,18 @@ function moduleSource(elements) {
   return `import type { PrayerSearchSnapshot } from '../prayer-search-fallback.js';\n\nexport const JERUSALEM_PRAYER_SNAPSHOT: PrayerSearchSnapshot = ${JSON.stringify(snapshot, null, 2)};\n`;
 }
 
+async function hasUsableCommittedSnapshot() {
+  try {
+    const source = await readFile(outputPath, 'utf8');
+    const hasTimestamp = /(?:generatedAt|"generatedAt")\s*:\s*['"][^'"]+['"]/.test(source);
+    const emptyElements = /(?:elements|"elements")\s*:\s*\[\s*\]/.test(source);
+    const recordCount = (source.match(/"type"\s*:\s*"(?:node|way|relation)"/g) ?? []).length;
+    return hasTimestamp && !emptyElements && recordCount >= 5;
+  } catch {
+    return false;
+  }
+}
+
 let elements;
 for (const endpoint of endpoints) {
   try {
@@ -118,11 +130,8 @@ for (const endpoint of endpoints) {
 if (elements) {
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, moduleSource(elements), 'utf8');
+} else if (await hasUsableCommittedSnapshot()) {
+  console.warn('Prayer snapshot refresh failed; preserving the usable committed snapshot.');
 } else {
-  try {
-    await readFile(outputPath, 'utf8');
-    console.warn('Prayer snapshot refresh failed; preserving the committed snapshot.');
-  } catch {
-    console.warn('Prayer snapshot refresh failed and no prior snapshot is available.');
-  }
+  throw new Error('Refusing to ship an empty Jerusalem prayer snapshot.');
 }
