@@ -2,6 +2,7 @@ import { App } from '@capacitor/app';
 import { cities } from './data.js';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { mapStyleForLanguage } from './map-style.js';
 import { generateItinerary } from './planner.js';
 import { RequestError, classifyRequestError, requestJson, retryOnceForTemporary } from './http.js';
 import { availableServiceEndpoints, recordServiceFailure, recordServiceSuccess } from './provider-health.js';
@@ -364,13 +365,9 @@ function prayerMethodOptions(language: Language) {
 }
 
 
-type MapLibreStyleLayer = { id: string; type?: string };
 type MapLibreMap = {
   remove: () => void;
   on: (event: string, handler: () => void) => MapLibreMap;
-  getStyle: () => { layers?: MapLibreStyleLayer[] };
-  getLayoutProperty: (layerId: string, property: string) => unknown;
-  setLayoutProperty: (layerId: string, property: string, value: unknown) => void;
   addControl: (control: unknown, position?: string) => MapLibreMap;
   resize: () => void;
   getCenter?: () => { lat: number; lng: number };
@@ -385,7 +382,7 @@ type MapLibreMarker = {
 type MapLibreGlobal = {
   Map: new (options: {
     container: HTMLElement;
-    style: string;
+    style: string | object;
     center: [number, number];
     zoom: number;
     attributionControl?: boolean;
@@ -405,17 +402,7 @@ let carRentalMap: MapLibreMap | undefined;
 let publicTransportMap: MapLibreMap | undefined;
 let taxiMap: MapLibreMap | undefined;
 let attractionsMap: MapLibreMap | undefined;
-const openFreeMapStyle = 'https://tiles.openfreemap.org/styles/bright';
 const osmSearchUrl = (placeName: string, cityName: string, countryName: string) => `https://www.openstreetmap.org/search?query=${encodeURIComponent(`${placeName}, ${cityName}, ${countryName}`)}`;
-const englishMapNameExpression = [
-  'coalesce',
-  ['get', 'name:en'],
-  ['get', 'name_en'],
-  ['get', 'name:latin'],
-  ['get', 'name'],
-  ['get', 'ref'],
-];
-
 const esc = (value: string) => value.replace(/[&<>\"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[character] ?? character);
 const addMinutes = (time: string, minutes: number) => {
   const [h, m] = time.split(':').map(Number);
@@ -444,7 +431,7 @@ function reportReasonLabel(reason: ReportReason, copy: typeof labels[Language]) 
 
 function reportActionMarkup(place: ReportablePlace, includeHalal = false) {
   const payload = encodeURIComponent(JSON.stringify(place));
-  return `<button type="button" class="ghost report-action" data-report-place="${payload}" data-report-halal="${includeHalal ? 'true' : 'false'}">${labels[lang].reportProblem}</button>`;
+  return `<button type="button" class="ghost report-action" data-report-place="${payload}" data-report-halal="${includeHalal ? 'true' : 'false'}">${esc(labels[lang].reportProblem)}</button>`;
 }
 
 function openReportDialog(place: ReportablePlace, includeHalal = false, trigger?: HTMLElement) {
@@ -455,17 +442,17 @@ function openReportDialog(place: ReportablePlace, includeHalal = false, trigger?
   const backdrop = document.createElement('div');
   backdrop.className = 'report-dialog-backdrop';
   backdrop.innerHTML = `<div class="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title" aria-describedby="report-description" dir="${languageDirection(lang)}">
-    <div class="card-top"><h2 id="report-title">${copy.reportProblem}</h2><button type="button" class="ghost" data-report-close>${copy.reportClose}</button></div>
+    <div class="card-top"><h2 id="report-title">${esc(copy.reportProblem)}</h2><button type="button" class="ghost" data-report-close>${esc(copy.reportClose)}</button></div>
     <p id="report-description">${esc(place.name)} · ${esc(place.feature)}</p>
-    <label>${copy.reportWhatWrong}<select id="report-reason">${reasons.map((reason) => `<option value="${reason}">${reportReasonLabel(reason, copy)}</option>`).join('')}</select></label>
-    <label>${copy.reportOptionalNote}<textarea id="report-note" maxlength="500"></textarea></label>
-    <p class="muted">${copy.reportOsmAccount} ${copy.reportGithubAccount} ${copy.reportExternalNotice}</p>
+    <label>${esc(copy.reportWhatWrong)}<select id="report-reason">${reasons.map((reason) => `<option value="${reason}">${esc(reportReasonLabel(reason, copy))}</option>`).join('')}</select></label>
+    <label>${esc(copy.reportOptionalNote)}<textarea id="report-note" maxlength="500"></textarea></label>
+    <p class="muted">${esc(copy.reportOsmAccount)} ${esc(copy.reportGithubAccount)} ${esc(copy.reportExternalNotice)}</p>
     <div class="toolbar report-actions">
-      <a class="map-link" data-report-source target="_blank" rel="noopener noreferrer">${copy.reportOpenSource}</a>
-      <a class="map-link" data-report-osm target="_blank" rel="noopener noreferrer">${copy.reportOsm}</a>
-      <a class="map-link" data-report-github target="_blank" rel="noopener noreferrer">${copy.reportAppProblem}</a>
-      <button type="button" class="ghost" data-report-copy>${copy.reportCopy}</button>
-      <button type="button" class="ghost" data-report-share>${copy.reportShare}</button>
+      <a class="map-link" data-report-source target="_blank" rel="noopener noreferrer">${esc(copy.reportOpenSource)}</a>
+      <a class="map-link" data-report-osm target="_blank" rel="noopener noreferrer">${esc(copy.reportOsm)}</a>
+      <a class="map-link" data-report-github target="_blank" rel="noopener noreferrer">${esc(copy.reportAppProblem)}</a>
+      <button type="button" class="ghost" data-report-copy>${esc(copy.reportCopy)}</button>
+      <button type="button" class="ghost" data-report-share>${esc(copy.reportShare)}</button>
     </div>
     <p class="status" data-report-status role="status" aria-live="polite"></p>
   </div>`;
@@ -718,30 +705,33 @@ function athanSection(city: (typeof cities)[number], planPrefs: PlannerPreferenc
   </section>`;
 }
 
+function replaceMapFallback(element: HTMLElement, message: string) {
+  const paragraph = document.createElement('p');
+  paragraph.className = 'map-fallback';
+  paragraph.textContent = message;
+  element.replaceChildren(paragraph);
+}
+
 function showMapFallback(element: HTMLElement, status: HTMLElement, message: string) {
-  element.innerHTML = `<p class="map-fallback">${esc(message)}</p>`;
+  replaceMapFallback(element, message);
   status.textContent = message;
 }
 
-function applyEnglishMapLabels(map: MapLibreMap) {
-  const layers = map.getStyle().layers ?? [];
-  for (const layer of layers) {
-    if (layer.type !== 'symbol') continue;
-    try {
-      const textField = map.getLayoutProperty(layer.id, 'text-field');
-      if (typeof textField === 'undefined' || !JSON.stringify(textField).includes('name')) continue;
-      map.setLayoutProperty(layer.id, 'text-field', englishMapNameExpression);
-    } catch {
-      // Some symbol layers contain icons or special text expressions and should remain unchanged.
-    }
-  }
+let mapInitializationSequence = 0;
+async function prepareMapLanguage() {
+  const sequence = ++mapInitializationSequence;
+  const requestedLanguage = lang;
+  const style = await mapStyleForLanguage(requestedLanguage);
+  return sequence === mapInitializationSequence && requestedLanguage === lang ? style : undefined;
 }
 
-function initializeMap(copy: typeof labels[Language]) {
+async function initializeMap(copy: typeof labels[Language]) {
   cityMap?.remove();
   cityMap = undefined;
   publicTransportMap?.remove();
   publicTransportMap = undefined;
+  const mapStyle = await prepareMapLanguage();
+  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#city-map');
   const status = document.querySelector<HTMLElement>('#map-status');
   if (!element || !status) return;
@@ -758,7 +748,7 @@ function initializeMap(copy: typeof labels[Language]) {
     status.textContent = '';
     cityMap = new maplibre.Map({
       container: element,
-      style: openFreeMapStyle,
+      style: mapStyle,
       center: [lng, lat],
       zoom: 13,
       attributionControl: true,
@@ -772,8 +762,6 @@ function initializeMap(copy: typeof labels[Language]) {
       .setPopup(new maplibre.Popup({ offset: 22 }).setText(title))
       .addTo(cityMap);
     cityMap.on('load', () => {
-      if (!cityMap) return;
-      applyEnglishMapLabels(cityMap);
       window.requestAnimationFrame(() => cityMap?.resize());
     });
   } catch {
@@ -1719,18 +1707,20 @@ function debouncedPrayerSearch(center: PrayerCenter) {
   prayerSearchTimer = window.setTimeout(() => void searchPrayerPlaces(center), 450);
 }
 
-function initializePrayerMap() {
+async function initializePrayerMap() {
   prayerMap?.remove();
   prayerMap = undefined;
   publicTransportMap?.remove();
   publicTransportMap = undefined;
+  const mapStyle = await prepareMapLanguage();
+  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#prayer-map');
   if (!element || !prayerCenter || !window.maplibregl) return;
   try {
     element.replaceChildren();
     prayerMap = new window.maplibregl.Map({
       container: element,
-      style: openFreeMapStyle,
+      style: mapStyle,
       center: [prayerCenter.longitude, prayerCenter.latitude],
       zoom: prayerRadiusKm <= 5 ? 12 : prayerRadiusKm <= 10 ? 11 : 9,
       attributionControl: true,
@@ -1747,7 +1737,7 @@ function initializePrayerMap() {
       if (button) button.hidden = false;
     });
   } catch {
-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+    replaceMapFallback(element, labels[lang].mapUnavailable);
   }
 }
 
@@ -1826,7 +1816,7 @@ function prayerPage() {
       </section>
     </main>`;
   bindPrayerPage();
-  if (prayerMode === 'map') initializePrayerMap();
+  if (prayerMode === 'map') void initializePrayerMap();
 }
 
 function bindPrayerPage() {
@@ -2044,18 +2034,20 @@ function debouncedRestaurantSearch(center: PrayerCenter) {
   restaurantSearchTimer = window.setTimeout(() => void searchHalalRestaurants(center), 450);
 }
 
-function initializeRestaurantMap() {
+async function initializeRestaurantMap() {
   restaurantMap?.remove();
   restaurantMap = undefined;
   publicTransportMap?.remove();
   publicTransportMap = undefined;
+  const mapStyle = await prepareMapLanguage();
+  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#halal-map');
   if (!element || !restaurantCenter || !window.maplibregl) return;
   try {
     element.replaceChildren();
     restaurantMap = new window.maplibregl.Map({
       container: element,
-      style: openFreeMapStyle,
+      style: mapStyle,
       center: [restaurantCenter.longitude, restaurantCenter.latitude],
       zoom: restaurantRadiusKm <= 3 ? 13 : restaurantRadiusKm <= 10 ? 11 : 9,
       attributionControl: true,
@@ -2082,7 +2074,7 @@ function initializeRestaurantMap() {
       if (button) button.hidden = false;
     });
   } catch {
-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+    replaceMapFallback(element, labels[lang].mapUnavailable);
   }
 }
 
@@ -2182,7 +2174,7 @@ function halalRestaurantsPage() {
       </section>
     </main>`;
   bindHalalRestaurantsPage();
-  if (restaurantMode === 'map') initializeRestaurantMap();
+  if (restaurantMode === 'map') void initializeRestaurantMap();
 }
 
 function bindHalalRestaurantsPage() {
@@ -2367,18 +2359,20 @@ function toiletBrowserDirectionsUrl(toilet: PublicToilet) {
   return `https://www.openstreetmap.org/directions?to=${toilet.latitude},${toilet.longitude}#map=17/${toilet.latitude}/${toilet.longitude}`;
 }
 
-function initializeToiletMap() {
+async function initializeToiletMap() {
   toiletMap?.remove();
   toiletMap = undefined;
   publicTransportMap?.remove();
   publicTransportMap = undefined;
+  const mapStyle = await prepareMapLanguage();
+  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#toilet-map');
   if (!element || !toiletCenter || !window.maplibregl) return;
   try {
     element.replaceChildren();
     toiletMap = new window.maplibregl.Map({
       container: element,
-      style: openFreeMapStyle,
+      style: mapStyle,
       center: [toiletCenter.longitude, toiletCenter.latitude],
       zoom: toiletRadiusKm <= 1 ? 14 : toiletRadiusKm <= 5 ? 12 : 10,
       attributionControl: true,
@@ -2396,7 +2390,7 @@ function initializeToiletMap() {
       if (button) button.hidden = false;
     });
   } catch {
-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+    replaceMapFallback(element, labels[lang].mapUnavailable);
   }
 }
 
@@ -2506,7 +2500,7 @@ function publicToiletsPage() {
       </section>
     </main>`;
   bindPublicToiletsPage();
-  if (toiletMode === 'map') initializeToiletMap();
+  if (toiletMode === 'map') void initializeToiletMap();
 }
 
 function bindPublicToiletsPage() {
@@ -2676,18 +2670,20 @@ function carRentalBrowserDirectionsUrl(office: CarRentalOffice) {
   return `https://www.openstreetmap.org/directions?to=${office.latitude},${office.longitude}#map=17/${office.latitude}/${office.longitude}`;
 }
 
-function initializeCarRentalMap() {
+async function initializeCarRentalMap() {
   carRentalMap?.remove();
   carRentalMap = undefined;
   publicTransportMap?.remove();
   publicTransportMap = undefined;
+  const mapStyle = await prepareMapLanguage();
+  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#car-rental-map');
   if (!element || !carRentalCenter || !window.maplibregl) return;
   try {
     element.replaceChildren();
     carRentalMap = new window.maplibregl.Map({
       container: element,
-      style: openFreeMapStyle,
+      style: mapStyle,
       center: [carRentalCenter.longitude, carRentalCenter.latitude],
       zoom: carRentalRadiusKm <= 5 ? 12 : carRentalRadiusKm <= 25 ? 10 : 8,
       attributionControl: true,
@@ -2705,7 +2701,7 @@ function initializeCarRentalMap() {
       if (button) button.hidden = false;
     });
   } catch {
-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+    replaceMapFallback(element, labels[lang].mapUnavailable);
   }
 }
 
@@ -2817,7 +2813,7 @@ function carRentalPage() {
       </section>
     </main>`;
   bindCarRentalPage();
-  if (carRentalMode === 'map') initializeCarRentalMap();
+  if (carRentalMode === 'map') void initializeCarRentalMap();
 }
 
 function bindCarRentalPage() {
@@ -2991,16 +2987,18 @@ function publicTransportBrowserDirectionsUrl(stop: PublicTransportStop) {
   return `https://www.openstreetmap.org/directions?to=${stop.latitude},${stop.longitude}#map=17/${stop.latitude}/${stop.longitude}`;
 }
 
-function initializePublicTransportMap() {
+async function initializePublicTransportMap() {
   publicTransportMap?.remove();
   publicTransportMap = undefined;
+  const mapStyle = await prepareMapLanguage();
+  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#public-transport-map');
   if (!element || !publicTransportCenter || !window.maplibregl) return;
   try {
     element.replaceChildren();
     publicTransportMap = new window.maplibregl.Map({
       container: element,
-      style: openFreeMapStyle,
+      style: mapStyle,
       center: [publicTransportCenter.longitude, publicTransportCenter.latitude],
       zoom: publicTransportRadiusKm <= 5 ? 12 : publicTransportRadiusKm <= 25 ? 10 : 8,
       attributionControl: true,
@@ -3017,7 +3015,7 @@ function initializePublicTransportMap() {
       if (button) button.hidden = false;
     });
   } catch {
-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+    replaceMapFallback(element, labels[lang].mapUnavailable);
   }
 }
 
@@ -3124,7 +3122,7 @@ function publicTransportPage() {
       </section>
     </main>`;
   bindPublicTransportPage();
-  if (publicTransportMode === 'map') initializePublicTransportMap();
+  if (publicTransportMode === 'map') void initializePublicTransportMap();
 }
 
 function bindPublicTransportPage() {
@@ -3298,14 +3296,16 @@ function taxiBrowserDirectionsUrl(item: TaxiService) {
   return `https://www.openstreetmap.org/directions?to=${item.latitude},${item.longitude}#map=17/${item.latitude}/${item.longitude}`;
 }
 
-function initializeTaxiMap() {
+async function initializeTaxiMap() {
   taxiMap?.remove();
   taxiMap = undefined;
+  const mapStyle = await prepareMapLanguage();
+  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#taxi-map');
   if (!element || !taxiCenter || !window.maplibregl) return;
   try {
     element.replaceChildren();
-    taxiMap = new window.maplibregl.Map({ container: element, style: openFreeMapStyle, center: [taxiCenter.longitude, taxiCenter.latitude], zoom: taxiRadiusKm <= 5 ? 12 : taxiRadiusKm <= 25 ? 10 : 8, attributionControl: true });
+    taxiMap = new window.maplibregl.Map({ container: element, style: mapStyle, center: [taxiCenter.longitude, taxiCenter.latitude], zoom: taxiRadiusKm <= 5 ? 12 : taxiRadiusKm <= 25 ? 10 : 8, attributionControl: true });
     taxiMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
     new window.maplibregl.Marker({ color: '#0f766e' }).setLngLat([taxiCenter.longitude, taxiCenter.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(taxiCenter.label)).addTo(taxiMap);
     const colors: Record<TaxiServiceType, string> = { rank: '#d97706', airport: '#7c3aed', station: '#2563eb', bus: '#0891b2', office: '#0f766e', motorcycle: '#ca8a04', water: '#0284c7', other: '#64748b' };
@@ -3316,7 +3316,7 @@ function initializeTaxiMap() {
       if (button) button.hidden = false;
     });
   } catch {
-    if (element) element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+    replaceMapFallback(element, labels[lang].mapUnavailable);
   }
 }
 
@@ -3388,7 +3388,7 @@ function taxiPage() {
       <div class="place-list">${results.length ? results.map((item) => taxiCard(item, copy)).join('') : taxiStatus === 'ready' ? `<p>${copy.taxiNoResults}</p>` : ''}</div><p class="map-status">${copy.osmAttribution}</p>
     </section></main>`;
   bindTaxiPage();
-  if (taxiMode === 'map') initializeTaxiMap();
+  if (taxiMode === 'map') void initializeTaxiMap();
 }
 
 function bindTaxiPage() {
@@ -4092,16 +4092,18 @@ function attractionBrowserDirectionsUrl(attraction: Attraction) {
   return `https://www.openstreetmap.org/directions?to=${attraction.latitude},${attraction.longitude}#map=17/${attraction.latitude}/${attraction.longitude}`;
 }
 
-function initializeAttractionsMap() {
+async function initializeAttractionsMap() {
   attractionsMap?.remove();
   attractionsMap = undefined;
+  const mapStyle = await prepareMapLanguage();
+  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#attractions-map');
   if (!element || !attractionCenter || !window.maplibregl) return;
   try {
     element.replaceChildren();
     attractionsMap = new window.maplibregl.Map({
       container: element,
-      style: openFreeMapStyle,
+      style: mapStyle,
       center: [attractionCenter.longitude, attractionCenter.latitude],
       zoom: attractionRadiusKm <= 3 ? 13 : attractionRadiusKm <= 10 ? 11 : 9,
       attributionControl: true,
@@ -4117,7 +4119,7 @@ function initializeAttractionsMap() {
       if (button) button.hidden = false;
     });
   } catch {
-    element.innerHTML = `<p class="map-fallback">${labels[lang].mapUnavailable}</p>`;
+    replaceMapFallback(element, labels[lang].mapUnavailable);
   }
 }
 
@@ -4209,7 +4211,7 @@ function attractionsPage() {
     </section>
   </main>`;
   bindAttractionsPage();
-  if (attractionView === 'map') initializeAttractionsMap();
+  if (attractionView === 'map') void initializeAttractionsMap();
 }
 
 function bindAttractionsPage() {
@@ -4847,7 +4849,7 @@ function currencyByCode(code: string) {
   return currencies.find((currency) => currency.code === code) ?? fallbackCurrencies.find((currency) => currency.code === code) ?? currencies[0];
 }
 
-function currencyOption(currency: CurrencyInfo) {
+function currencyOptionText(currency: CurrencyInfo) {
   return `${currency.flag} ${currency.code} - ${currency.name[lang]} (${currency.symbol})`;
 }
 
@@ -4873,16 +4875,17 @@ function moneyConversionMarkup(copy: typeof labels[Language]) {
   const parsed = parseAmountInput(amountInput, lang);
   const result = parsed.value !== null && rate ? convertAmount(parsed.value, rate.rate) : null;
   return `
-    <span>${from.flag} ${from.code} ${from.name[lang]} · ${from.symbol}</span>
-    <h2 id="money-conversion-heading">${result ? `${formatCurrencyAmount(result.amount, fromCurrency, lang)} = ${formatCurrencyAmount(result.converted, toCurrency, lang)}` : copy.loadingRate}</h2>
-    <span>${to.flag} ${to.code} ${to.name[lang]} · ${to.symbol}</span>`;
+    <span>${esc(`${from.flag} ${from.code} ${from.name[lang]} · ${from.symbol}`)}</span>
+    <h2 id="money-conversion-heading">${esc(result ? `${formatCurrencyAmount(result.amount, fromCurrency, lang)} = ${formatCurrencyAmount(result.converted, toCurrency, lang)}` : copy.loadingRate)}</h2>
+    <span>${esc(`${to.flag} ${to.code} ${to.name[lang]} · ${to.symbol}`)}</span>`;
 }
 
-function currencySelectOptions() {
-  const searchable = searchCurrencies(currencies, currencySearch);
-  const fromOptions = searchable.filter((currency) => currency.code !== fromCurrency).map((currency) => `<option value="${currency.code}">${currencyOption(currency)}</option>`).join('');
-  const toOptions = searchable.filter((currency) => currency.code !== toCurrency).map((currency) => `<option value="${currency.code}">${currencyOption(currency)}</option>`).join('');
-  return { from: `<option value="${fromCurrency}">${currencyOption(currencyByCode(fromCurrency))}</option>${fromOptions}`, to: `<option value="${toCurrency}">${currencyOption(currencyByCode(toCurrency))}</option>${toOptions}` };
+function replaceCurrencyOptions(select: HTMLSelectElement, selectedCode: string, excludedCode: string) {
+  const selected = currencyByCode(selectedCode);
+  const searchable = searchCurrencies(currencies, currencySearch).filter((currency) => currency.code !== excludedCode && currency.code !== selectedCode);
+  const options = [selected, ...searchable].filter((currency, index, all) => currency && all.findIndex((candidate) => candidate.code === currency.code) === index);
+  select.replaceChildren(...options.map((currency) => new Option(currencyOptionText(currency), currency.code)));
+  select.value = selectedCode;
 }
 
 function updateMoneyDynamicSections() {
@@ -4904,17 +4907,10 @@ function updateMoneyDynamicSections() {
 }
 
 function updateCurrencyOptionLists() {
-  const { from, to } = currencySelectOptions();
   const fromSelect = document.querySelector<HTMLSelectElement>('#from-currency');
-  if (fromSelect) {
-    fromSelect.innerHTML = from;
-    fromSelect.value = fromCurrency;
-  }
+  if (fromSelect) replaceCurrencyOptions(fromSelect, fromCurrency, '');
   const toSelect = document.querySelector<HTMLSelectElement>('#to-currency');
-  if (toSelect) {
-    toSelect.innerHTML = to;
-    toSelect.value = toCurrency;
-  }
+  if (toSelect) replaceCurrencyOptions(toSelect, toCurrency, '');
 }
 
 function moneyPage() {
@@ -4932,7 +4928,6 @@ function moneyPage() {
   const parsed = parseAmountInput(amountInput, lang);
   const sameCurrency = fromCurrency === toCurrency;
   const popularButtons = popularCurrencyCodes.map((code) => `<button class="chip" type="button" data-quick="${code}">${code}</button>`).join('');
-  const options = currencySelectOptions();
   const summary = historySummary;
   const history = summary ? `<div class="stats">
     <p><strong>${copy.highestRate}</strong><br>${formatPlainNumber(summary.high, lang)}</p>
@@ -4961,8 +4956,8 @@ function moneyPage() {
         </div>
         <label>${copy.amount}<input id="money-amount" inputmode="decimal" value="${esc(amountInput)}" aria-describedby="money-status" /></label>
         <div class="grid">
-          <label>${copy.fromCurrency}<select id="from-currency">${options.from}</select></label>
-          <label>${copy.toCurrency}<select id="to-currency">${options.to}</select></label>
+          <label>${copy.fromCurrency}<select id="from-currency"></select></label>
+          <label>${copy.toCurrency}<select id="to-currency"></select></label>
         </div>
         <label>${copy.searchCurrency}<input id="currency-search" value="${esc(currencySearch)}" /></label>
         <div class="chips" aria-label="${copy.popularCurrencies}">${popularButtons}</div>
@@ -4983,7 +4978,7 @@ function moneyPage() {
         </article>
         <article class="card">
           <h3>${copy.moneyInfo}</h3>
-          <p>${copy.officialCurrency}: ${city.money.localCurrencies.map((item) => `${item.name} - ${item.code} (${item.symbol})`).join(', ')}</p>
+          <p>${copy.officialCurrency}: ${city.money.localCurrencies.map((item) => esc(`${item.name} - ${item.code} (${item.symbol})`)).join(', ')}</p>
           ${city.money.denominations ? `<p>${copy.denominations}: ${esc(city.money.denominations)}</p>` : ''}
           ${city.money.cardsCommonlyAccepted ? `<p>${copy.cardsAccepted}: ${plannerFacilityStatus(city.money.cardsCommonlyAccepted, copy)}</p>` : ''}
           <p>${copy.paymentWarning}</p>
@@ -4998,6 +4993,7 @@ function moneyPage() {
 }
 
 function bindMoneyPage() {
+  updateCurrencyOptionLists();
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; moneyPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-money')?.addEventListener('click', () => { view = 'planner'; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLInputElement>('#money-amount')?.addEventListener('input', (event) => {
@@ -5238,7 +5234,7 @@ function render() {
       ${appFooterMarkup(copy)}
     </main>`;
   bind();
-  initializeMap(copy);
+  void initializeMap(copy);
 }
 
 async function enableCurrentAthanAlerts() {
