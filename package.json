@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "prayer:snapshot": "node scripts/update-prayer-snapshot.mjs",
     "build": "npm run typecheck && vite build",
+    "build:deploy": "npm run prayer:snapshot && npm run build",
     "build:native": "npm run typecheck && npm run icon:verify && vite build --config vite.native.config.ts",
     "icon:verify": "node scripts/verify-app-icon.mjs",
     "ios:sync": "npm run build:native && npx cap sync ios",

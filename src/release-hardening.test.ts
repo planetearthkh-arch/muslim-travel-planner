@@ -53,10 +53,10 @@ test('external map fields are escaped before insertion', async () => {
   }
 });
 
-test('service worker deletes only SafarOne caches', async () => {
+test('service worker deletes only SafarOne caches and invalidates the previous shell', async () => {
   const worker = await repoFile('public/sw.js');
   assert.match(worker, /key\.startsWith\(CACHE_PREFIX\)/);
-  assert.match(worker, /mtp-app-shell-v14/);
+  assert.match(worker, /mtp-app-shell-v15/);
   assert.match(worker, /await cache\.put\(request, copy\)/);
 });
 
@@ -71,6 +71,19 @@ test('a restrictive content security policy is present', async () => {
   assert.equal(html.includes('https://maps.mail.ru'), true);
   assert.equal(html.includes('https://nominatim.openstreetmap.org'), true);
   assert.equal(html.includes('https://geocoding-api.open-meteo.com'), true);
+});
+
+test('prayer reliability layer loads before the application and release builds generate a snapshot', async () => {
+  const html = await repoFile('index.html');
+  const packageJson = await repoFile('package.json');
+  const deployment = await repoFile('.github/workflows/deploy.yml');
+  const snapshotScript = await repoFile('scripts/update-prayer-snapshot.mjs');
+  assert.equal(html.indexOf('/src/prayer-search-bootstrap.ts') < html.indexOf('/src/main.ts'), true);
+  assert.equal(packageJson.includes('"prayer:snapshot"'), true);
+  assert.equal(packageJson.includes('"build:deploy": "npm run prayer:snapshot && npm run build"'), true);
+  assert.equal(deployment.includes('npm run build:deploy'), true);
+  assert.equal(snapshotScript.includes('Masjid[ -]?Al[- ]?Aqsa|Masjid[ -]?Aqsa'), true);
+  assert.equal(snapshotScript.includes('(?:'), false);
 });
 
 test('prayer notification fallbacks use bundled assets and exact-alarm state', async () => {
