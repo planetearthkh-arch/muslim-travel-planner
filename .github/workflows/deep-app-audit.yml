@@ -1,0 +1,53 @@
+name: Deep App Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'ios/**'
+      - 'android/**'
+      - 'scripts/deep-app-audit.mjs'
+      - '.github/workflows/deep-app-audit.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'index.html'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit and integration tests
+        run: npm test
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Browser smoke test
+        run: npm run test:browser-smoke
+      - name: Compile audit imports
+        run: npx tsc -p tsconfig.json --outDir dist-audit
+      - name: Run multilingual and static audit
+        run: node scripts/deep-app-audit.mjs
+      - name: Dependency vulnerability snapshot
+        shell: bash
+        run: npm audit --omit=dev --json > audit-output/dependency-audit.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deep-app-audit
+          path: audit-output
+          if-no-files-found: error
+          retention-days: 7
