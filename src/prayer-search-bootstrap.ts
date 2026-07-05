@@ -18,32 +18,41 @@ if (!globalState.__safarOnePrayerFetchInstalled) {
   const originalFetch = globalThis.fetch.bind(globalThis);
   const storage = getSafeStorage();
 
+  const saveLivePayload = (query: string, response: Response) => {
+    if (!response.ok) return;
+    void response.clone().json().then((payload: unknown) => {
+      if (validPrayerPayload(payload)) writePrayerSearchCache(storage, query, payload);
+    }).catch(() => undefined);
+  };
+
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const query = prayerQueryFromBody(init?.body);
     if (!isPrayerOverpassQuery(query)) return originalFetch(input, init);
 
-    const fallback = () => {
-      const payload = prayerFallbackPayload(storage, query, JERUSALEM_PRAYER_SNAPSHOT);
-      return payload ? prayerJsonResponse(payload) : undefined;
-    };
+    const fallbackPayload = prayerFallbackPayload(storage, query, JERUSALEM_PRAYER_SNAPSHOT);
+    if (fallbackPayload) {
+      void originalFetch(input, init).then((response) => saveLivePayload(query, response)).catch(() => undefined);
+      return prayerJsonResponse(fallbackPayload);
+    }
 
     try {
       const response = await originalFetch(input, init);
       if (response.ok) {
-        void response.clone().json().then((payload: unknown) => {
-          if (validPrayerPayload(payload)) writePrayerSearchCache(storage, query, payload);
-        }).catch(() => undefined);
+        saveLivePayload(query, response);
         return response;
       }
 
-      if (isFinalPrayerProvider(url) && isRetryablePrayerFailure(response.status)) return fallback() ?? response;
+      if (isFinalPrayerProvider(url) && isRetryablePrayerFailure(response.status)) {
+        const payload = prayerFallbackPayload(storage, query, JERUSALEM_PRAYER_SNAPSHOT);
+        return payload ? prayerJsonResponse(payload) : response;
+      }
       return response;
     } catch (error) {
       const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
       if (offline || isFinalPrayerProvider(url)) {
-        const cached = fallback();
-        if (cached) return cached;
+        const payload = prayerFallbackPayload(storage, query, JERUSALEM_PRAYER_SNAPSHOT);
+        if (payload) return prayerJsonResponse(payload);
       }
       throw error;
     }
