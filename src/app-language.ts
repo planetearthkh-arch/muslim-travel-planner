@@ -15,6 +15,7 @@ import { urduTransportLabelsA } from './urdu-labels-transport-a.js';
 import { urduTransportLabelsB } from './urdu-labels-transport-b.js';
 import { urduTransportLabelsC } from './urdu-labels-transport-c.js';
 import type { PrayerName, Region, VerificationStatus } from './models.js';
+import { indonesianLabelCorrections, malayLabelCorrections } from './language-quality-corrections.js';
 
 export type Language = CoreLanguage | 'ur';
 
@@ -39,8 +40,10 @@ export function parseLanguage(value: unknown): Language | null {
   return languages.some((language) => language.code === value) ? value as Language : null;
 }
 
-export const labels = {
+export const labels: Record<Language, Record<string, string>> = {
   ...coreLabels,
+  id: { ...coreLabels.id, ...indonesianLabelCorrections },
+  ms: { ...coreLabels.ms, ...malayLabelCorrections },
   ur: {
     ...coreLabels.en,
     ...urduLabels,
@@ -51,7 +54,7 @@ export const labels = {
     ...urduExtraLabelsA,
     ...urduExtraLabelsC,
   },
-} satisfies Record<Language, Record<string, string>>;
+};
 
 export const regionLabels = {
   ...coreRegionLabels,
