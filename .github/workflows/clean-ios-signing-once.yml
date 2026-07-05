@@ -1,0 +1,37 @@
+name: Clean iOS Signing Once
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/clean-ios-signing-once.yml
+      - ios/App/App.xcodeproj/project.pbxproj
+      - clean-map-test-failures.txt
+
+permissions:
+  contents: write
+
+jobs:
+  clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/clean-map-label-restoration
+          fetch-depth: 0
+      - name: Keep build 117 without committing a signing team
+        run: |
+          sed -E -i '/^[[:space:]]*DEVELOPMENT_TEAM = [A-Z0-9]+;$/d' ios/App/App.xcodeproj/project.pbxproj
+          test "$(grep -c 'CURRENT_PROJECT_VERSION = 117;' ios/App/App.xcodeproj/project.pbxproj)" -eq 2
+          test "$(grep -c 'DEVELOPMENT_TEAM =' ios/App/App.xcodeproj/project.pbxproj || true)" -eq 0
+      - name: Commit clean signing configuration
+        run: |
+          rm -f clean-map-test-failures.txt
+          rm .github/workflows/clean-ios-signing-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Keep iOS build 117 without hardcoded signing"
+          git push origin HEAD:codex/clean-map-label-restoration
