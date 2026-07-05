@@ -18,16 +18,16 @@ function place(id: number, tags: OsmTags, lat = 51.5074, lon = -0.1278, type = '
   };
 }
 
-test('broken Latin names are removed globally instead of being displayed', () => {
+test('broken Latin names remain usable without displaying garbage', () => {
   for (const [index, name] of ['lshyj Mosque', 'lhstf~ Mosque', 'vkhvd', 'tvbh'].entries()) {
     const normalized = normalizePrayerPlace(place(index + 1, { name, 'name:en': name }), origin);
-    assert.equal(normalized, undefined);
+    assert.equal(normalized?.name, 'Unnamed Mosque');
   }
 });
 
-test('generic facility-only names are removed globally', () => {
+test('generic-only names use an honest neutral label', () => {
   const normalized = normalizePrayerPlace(place(10, { name: 'Masjid', 'name:en': 'Masjid' }), origin);
-  assert.equal(normalized, undefined);
+  assert.equal(normalized?.name, 'Unnamed Mosque');
 });
 
 test('obvious non-Muslim places are excluded in every city', () => {
@@ -37,19 +37,30 @@ test('obvious non-Muslim places are excluded in every city', () => {
   assert.equal(synagogue, undefined);
 });
 
-test('Arabic names are preferred and converted into readable English names', () => {
+test('Arabic names are converted into readable English when confidence is high', () => {
   const normalized = normalizePrayerPlace(place(30, { name: 'مسجد النور', 'name:ar': 'مسجد النور' }), origin);
   assert.equal(normalized?.name, 'Al-Noor Mosque');
 });
 
-test('common facility words are standardized globally', () => {
-  const normalized = normalizePrayerPlace(place(40, { name: 'Masjid Al Noor', 'name:en': 'Masjid Al Noor' }), origin);
-  assert.equal(normalized?.name, 'Al-Noor Mosque');
+test('facility wording is standardized without damaging natural English order', () => {
+  const examples: Array<[string, string]> = [
+    ['Masjid Al Noor', 'Al-Noor Mosque'],
+    ['Mosque of Omar', 'Mosque of Omar'],
+    ['Mosque of Mecca', 'Mosque of Mecca'],
+    ['of Omar Mosque', 'Mosque of Omar'],
+    ['of Mecca Mosque', 'Mosque of Mecca'],
+    ['Omar Masjid', 'Omar Mosque'],
+    ['Masjid Omar', 'Omar Mosque'],
+  ];
+  for (const [index, [input, expected]] of examples.entries()) {
+    const normalized = normalizePrayerPlace(place(40 + index, { name: input, 'name:en': input }), origin);
+    assert.equal(normalized?.name, expected);
+  }
 });
 
-test('nearby node and building records for the same mosque share one identity worldwide', () => {
-  const node = normalizePrayerPlace(place(50, { name: 'Masjid Al Noor', 'name:en': 'Masjid Al Noor' }, 51.50010, -0.10010, 'node'), origin);
-  const way = normalizePrayerPlace(place(51, { name: 'Al-Noor Mosque', 'name:en': 'Al-Noor Mosque' }, 51.50020, -0.10020, 'way'), origin);
+test('nearby wording variants share one identity worldwide', () => {
+  const node = normalizePrayerPlace(place(50, { name: 'Mosque of Omar', 'name:en': 'Mosque of Omar' }, 51.50010, -0.10010, 'node'), origin);
+  const way = normalizePrayerPlace(place(51, { name: 'Omar Mosque', 'name:en': 'Omar Mosque' }, 51.50020, -0.10020, 'way'), origin);
   if (!node || !way) throw new Error('Expected both duplicate records to normalize');
   assert.equal(node.id, way.id);
 });
@@ -68,7 +79,7 @@ test('unnamed facilities keep source-specific identities to avoid false merging'
   assert.equal(first.id === second.id, false);
 });
 
-test('non-prayer feature names keep their original capitalization', () => {
+test('valid capitalization is preserved', () => {
   const normalized = normalizePrayerPlace(place(80, { name: 'RentCo Mosque', 'name:en': 'RentCo Mosque' }), origin);
   assert.equal(normalized?.name, 'RentCo Mosque');
 });

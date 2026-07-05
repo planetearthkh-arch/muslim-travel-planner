@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAlAqsaCompoundSubstructure, normalizePrayerPlace, type OverpassElement } from './prayer-spaces.js';
+import { buildOverpassQuery, classifyPrayerPlace, isAlAqsaCompoundSubstructure, normalizePrayerPlace, type OverpassElement } from './prayer-spaces.js';
 
 const origin = { latitude: 31.778, longitude: 35.235 };
 
@@ -41,19 +41,38 @@ test('Al-Aqsa Mosque itself remains in the prayer-place list', () => {
   assert.equal(normalized?.type, 'mosque');
 });
 
+test('Al-Aqsa parent objects without normal mosque tags are still accepted', () => {
+  const parent: OverpassElement = {
+    type: 'relation',
+    id: 21,
+    center: { lat: 31.7780, lon: 35.2354 },
+    tags: { name: 'Al-Aqsa Mosque', 'name:ar': 'المسجد الأقصى' },
+  };
+  assert.equal(classifyPrayerPlace(parent.tags ?? {}), 'mosque');
+  assert.equal(normalizePrayerPlace(parent, origin)?.name, 'Al-Aqsa Mosque');
+});
+
+test('Al-Aqsa multilingual name selectors are added only for nearby searches', () => {
+  const jerusalemQuery = buildOverpassQuery(origin.latitude, origin.longitude, 5);
+  const londonQuery = buildOverpassQuery(51.5074, -0.1278, 5);
+  assert.equal(jerusalemQuery.includes('["name:ar"~'), true);
+  assert.equal(jerusalemQuery.includes('Aqsa'), true);
+  assert.equal(londonQuery.includes('["name:ar"~'), false);
+});
+
 test('similarly named places outside the compound are not globally hidden', () => {
-  const elsewhere = place(21, 'Dome Mosque', 31.90, 35.30);
+  const elsewhere = place(22, 'Dome Mosque', 31.90, 35.30);
   assert.equal(isAlAqsaCompoundSubstructure(elsewhere.tags ?? {}, elsewhere.lat ?? 0, elsewhere.lon ?? 0), false);
   assert.equal(normalizePrayerPlace(elsewhere, origin)?.name, 'Dome Mosque');
 });
 
-test('broken transliterations and generic-only names are excluded from Jerusalem results', () => {
+test('broken and generic Jerusalem names become neutral labels instead of disappearing', () => {
   for (const [index, name] of ['lshyj Mosque', 'lhstf~ Mosque', 'vkhvd', 'tvbh', 'Masjid'].entries()) {
-    assert.equal(normalizePrayerPlace(place(30 + index, name, 31.79, 35.22), origin), undefined);
+    assert.equal(normalizePrayerPlace(place(30 + index, name, 31.79, 35.22), origin)?.name, 'Unnamed Mosque');
   }
 });
 
-test('obvious non-Muslim places are rejected even when their source tags are wrong', () => {
+test('obvious non-Muslim places are rejected even when source tags are wrong', () => {
   assert.equal(normalizePrayerPlace(place(40, 'Saint Mark Church', 31.79, 35.22), origin), undefined);
 });
 
