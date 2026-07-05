@@ -14,6 +14,15 @@ export class RequestError extends Error {
   }
 }
 
+export const PRAYER_OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+] as const;
+
+const NOMINATIM_HOST = 'nominatim.openstreetmap.org';
+const OPEN_METEO_GEOCODING_ENDPOINT = 'https://geocoding-api.open-meteo.com/v1/search';
+
 export function classifyHttpStatus(status: number): RequestFailureKind {
   if (status === 429) return 'rate-limited';
   if ([500, 502, 503, 504].includes(status)) return 'temporary';
@@ -58,7 +67,7 @@ function timeoutSignal(milliseconds: number, externalSignal?: AbortSignal) {
   };
 }
 
-export async function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14_000): Promise<T> {
+async function requestJsonOnce<T>(url: string, options: RequestInit, milliseconds: number): Promise<T> {
   const { signal, cleanup } = timeoutSignal(milliseconds, options.signal ?? undefined);
   try {
     const response = await fetch(url, { ...options, signal });
@@ -79,6 +88,156 @@ export async function requestJson<T>(url: string, options: RequestInit = {}, mil
   } finally {
     cleanup();
   }
+}
+
+function requestBodyText(body: BodyInit | null | undefined) {
+  return typeof body === 'string' ? body : '';
+}
+
+export function isPrayerOverpassRequest(url: string, options: RequestInit = {}) {
+  if ((options.method ?? 'GET').toUpperCase() !== 'POST') return false;
+  const body = requestBodyText(options.body);
+  if (!body.includes('place_of_worship') || !body.includes('prayer_room')) return false;
+  try {
+    const parsed = new URL(url);
+    return /(?:\/api)?\/interpreter\/?$/.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function normalizePrayerOverpassBody(body: string) {
+  return body.replace(
+    'Masjid[ -]?(?:al[- ]?)?Aqsa',
+    'Masjid[ -]?Al[- ]?Aqsa|Masjid[ -]?Aqsa',
+  );
+}
+
+export function prayerOverpassEndpoints(primary: string) {
+  const values = [primary, ...PRAYER_OVERPASS_ENDPOINTS];
+  const result: string[] = [];
+  for (const value of values) {
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password) continue;
+      const normalized = parsed.toString();
+      if (!result.includes(normalized)) result.push(normalized);
+    } catch {
+      // Ignore invalid custom endpoints and keep the trusted fallbacks.
+    }
+  }
+  return result;
+}
+
+function prayerOverpassOptions(options: RequestInit) {
+  const query = normalizePrayerOverpassBody(requestBodyText(options.body));
+  return {
+    ...options,
+    body: `data=${encodeURIComponent(query)}`,
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      ...options.headers,
+    },
+  } satisfies RequestInit;
+}
+
+async function requestPrayerOverpass<T>(url: string, options: RequestInit, milliseconds: number): Promise<T> {
+  const endpoints = prayerOverpassEndpoints(url);
+  const endpointTimeout = Math.max(15_000, Math.ceil(milliseconds / Math.max(1, endpoints.length)));
+  let lastError: RequestError | undefined;
+
+  for (const endpoint of endpoints) {
+    try {
+      return await requestJsonOnce<T>(endpoint, prayerOverpassOptions(options), endpointTimeout);
+    } catch (error) {
+      const classified = classifyRequestError(error);
+      if (classified.kind === 'aborted' || classified.kind === 'offline') throw classified;
+      if (classified.kind === 'http' && classified.status && classified.status < 500 && classified.status !== 429) throw classified;
+      lastError = classified;
+    }
+  }
+
+  throw lastError ?? new RequestError('temporary', 'Map data services are unavailable');
+}
+
+function isNominatimSearch(url: string, options: RequestInit) {
+  if ((options.method ?? 'GET').toUpperCase() !== 'GET') return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === NOMINATIM_HOST && parsed.pathname.replace(/\/+$/, '') === '/search';
+  } catch {
+    return false;
+  }
+}
+
+function openMeteoGeocodingUrl(nominatimUrl: string) {
+  const parsed = new URL(nominatimUrl);
+  const query = parsed.searchParams.get('q')?.trim() ?? '';
+  if (!query) return '';
+  const fallback = new URL(OPEN_METEO_GEOCODING_ENDPOINT);
+  fallback.searchParams.set('name', query);
+  fallback.searchParams.set('count', '1');
+  fallback.searchParams.set('language', 'en');
+  fallback.searchParams.set('format', 'json');
+  return fallback.toString();
+}
+
+function nominatimShapeFromOpenMeteo(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return [];
+  const results = (payload as { results?: unknown }).results;
+  if (!Array.isArray(results) || !results.length) return [];
+  const first = results[0];
+  if (!first || typeof first !== 'object') return [];
+  const item = first as Record<string, unknown>;
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
+  const city = typeof item.name === 'string' ? item.name : '';
+  const state = typeof item.admin1 === 'string' ? item.admin1 : '';
+  const country = typeof item.country === 'string' ? item.country : '';
+  const displayName = [city, state, country].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join(', ');
+  return [{
+    lat: String(latitude),
+    lon: String(longitude),
+    display_name: displayName || `${latitude}, ${longitude}`,
+    address: { city, state, country },
+  }];
+}
+
+async function requestNominatimWithFallback<T>(url: string, options: RequestInit, milliseconds: number): Promise<T> {
+  let primaryError: RequestError | undefined;
+  try {
+    const primary = await requestJsonOnce<unknown>(url, options, milliseconds);
+    if (Array.isArray(primary) && primary.length) return primary as T;
+    const fallbackUrl = openMeteoGeocodingUrl(url);
+    if (!fallbackUrl) return primary as T;
+    try {
+      const fallback = await requestJsonOnce<unknown>(fallbackUrl, { headers: { Accept: 'application/json' }, signal: options.signal }, milliseconds);
+      return nominatimShapeFromOpenMeteo(fallback) as T;
+    } catch {
+      return primary as T;
+    }
+  } catch (error) {
+    const classified = classifyRequestError(error);
+    if (classified.kind === 'aborted' || classified.kind === 'offline') throw classified;
+    primaryError = classified;
+  }
+
+  const fallbackUrl = openMeteoGeocodingUrl(url);
+  if (!fallbackUrl) throw primaryError;
+  try {
+    const fallback = await requestJsonOnce<unknown>(fallbackUrl, { headers: { Accept: 'application/json' }, signal: options.signal }, milliseconds);
+    return nominatimShapeFromOpenMeteo(fallback) as T;
+  } catch (error) {
+    throw classifyRequestError(error) ?? primaryError;
+  }
+}
+
+export async function requestJson<T>(url: string, options: RequestInit = {}, milliseconds = 14_000): Promise<T> {
+  if (isPrayerOverpassRequest(url, options)) return requestPrayerOverpass<T>(url, options, milliseconds);
+  if (isNominatimSearch(url, options)) return requestNominatimWithFallback<T>(url, options, milliseconds);
+  return requestJsonOnce<T>(url, options, milliseconds);
 }
 
 function abortableDelay(milliseconds: number, signal?: AbortSignal) {
