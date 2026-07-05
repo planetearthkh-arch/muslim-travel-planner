@@ -12,17 +12,17 @@ async function repoFile(path: string) {
   }));
 }
 
-test('app startup waits for bundled RTL shaping before any map can be created', async () => {
+test('app registers bundled RTL shaping before any map can be created', async () => {
   const html = (await repoFile('index.html')).content;
   const appBootstrap = (await repoFile('src/app-bootstrap.ts')).content;
   const rtlBootstrap = (await repoFile('src/map-rtl-bootstrap.ts')).content;
 
   assert.equal(html.includes('/src/app-bootstrap.ts'), true);
   assert.equal(html.includes('/src/main.ts'), false);
-  assert.equal(appBootstrap.indexOf('await installRtlMapSupport()') < appBootstrap.indexOf("await import('./main.js')"), true);
-  assert.equal(appBootstrap.indexOf("import './prayer-search-bootstrap.js'") < appBootstrap.indexOf("await import('./main.js')"), true);
+  assert.equal(appBootstrap.indexOf('registerRtlMapSupport()') < appBootstrap.indexOf("import('./main.js')"), true);
+  assert.equal(appBootstrap.indexOf("import './prayer-search-bootstrap.js'") < appBootstrap.indexOf("import('./main.js')"), true);
   assert.match(rtlBootstrap, /new URL\('\.\/mapbox-gl-rtl-text\.js', document\.baseURI\)/);
-  assert.match(rtlBootstrap, /setRTLTextPlugin\(RTL_PLUGIN_URL, false\)/);
+  assert.match(rtlBootstrap, /setRTLTextPlugin\(RTL_PLUGIN_URL, true\)/);
   assert.equal(rtlBootstrap.includes('unpkg.com'), false);
   assert.equal(rtlBootstrap.includes("language !== 'ar'"), false);
 });
