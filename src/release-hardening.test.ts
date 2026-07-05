@@ -53,10 +53,11 @@ test('external map fields are escaped before insertion', async () => {
   }
 });
 
-test('service worker deletes only SafarOne caches and invalidates the previous shell', async () => {
+test('service worker deletes only SafarOne caches and includes the bundled RTL plugin in the current shell', async () => {
   const worker = await repoFile('public/sw.js');
   assert.match(worker, /key\.startsWith\(CACHE_PREFIX\)/);
-  assert.match(worker, /mtp-app-shell-v15/);
+  assert.match(worker, /mtp-app-shell-v16/);
+  assert.match(worker, /vendor\/mapbox-gl-rtl-text\.js/);
   assert.match(worker, /await cache\.put\(request, copy\)/);
 });
 
@@ -74,11 +75,11 @@ test('a restrictive content security policy is present', async () => {
 });
 
 test('prayer reliability layer loads before the application and release builds generate a snapshot', async () => {
-  const html = await repoFile('index.html');
+  const appBootstrap = await repoFile('src/app-bootstrap.ts');
   const packageJson = await repoFile('package.json');
   const deployment = await repoFile('.github/workflows/deploy.yml');
   const snapshotScript = await repoFile('scripts/update-prayer-snapshot.mjs');
-  assert.equal(html.indexOf('/src/prayer-search-bootstrap.ts') < html.indexOf('/src/main.ts'), true);
+  assert.equal(appBootstrap.indexOf("import './prayer-search-bootstrap.js'") < appBootstrap.indexOf("import('./main.js')"), true);
   assert.equal(packageJson.includes('"prayer:snapshot"'), true);
   assert.equal(packageJson.includes('"build:deploy": "npm run prayer:snapshot && npm run build"'), true);
   assert.equal(deployment.includes('npm run build:deploy'), true);
