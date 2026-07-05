@@ -31,8 +31,8 @@ test('release hardening remains wired into source and native configuration', asy
     repoFile('mobile/android/java/AthanAlarmPlugin.java'),
     repoFile('mobile/android/java/AthanPlaybackService.java'),
   ]);
-  assert.equal((project.match(/CURRENT_PROJECT_VERSION = 102;/g) ?? []).length, 2);
-  assert.equal(verify.includes('version < 102'), true);
+  assert.equal((project.match(/CURRENT_PROJECT_VERSION = 103;/g) ?? []).length, 2);
+  assert.equal(verify.includes('version < 103'), true);
   assert.equal(main.includes('scheduleFlightClock()'), true);
   assert.equal(main.includes("flightProgressMode: 'elapsed' | 'manual'"), true);
   assert.equal(main.includes("App.addListener('appStateChange'"), true);

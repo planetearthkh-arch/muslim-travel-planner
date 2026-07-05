@@ -276,7 +276,18 @@ export async function checkAthanPermissions() {
   if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
     return AndroidAthan.checkPermissions();
   }
-  return { exactAlarmAllowed: true, notificationsAllowed: true };
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const permissions = await LocalNotifications.checkPermissions();
+      return { exactAlarmAllowed: true, notificationsAllowed: permissions.display === 'granted' };
+    } catch {
+      return { exactAlarmAllowed: true, notificationsAllowed: false };
+    }
+  }
+  return {
+    exactAlarmAllowed: false,
+    notificationsAllowed: !('Notification' in window) || Notification.permission === 'granted',
+  };
 }
 
 export async function hasScheduledAthanAlarms() {

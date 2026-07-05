@@ -71,6 +71,7 @@ const toRadians = (degrees: number) => degrees * Math.PI / 180;
 const toDegrees = (radians: number) => radians * 180 / Math.PI;
 const EARTH_RADIUS_KM = 6371.0088;
 const GPS_FRESH_MS = 120_000;
+const GPS_FUTURE_TOLERANCE_MS = 30_000;
 const LOW_ACCURACY_METERS = 5000;
 
 export const airportDataSource = 'Bundled compact airport index derived from public-domain OurAirports data; fields reduced for offline SafarOne flight preparation.';
@@ -328,7 +329,9 @@ export function chooseFlightProgress(plan: PreparedFlightPlan, options: { gps?: 
   const scheduledEnd = scheduledStart + plan.durationMinutes * 60_000;
   const flightWindowPadding = 2 * 60 * 60 * 1000;
   if (Number.isFinite(scheduledStart) && (nowMs < scheduledStart - flightWindowPadding || nowMs > scheduledEnd + flightWindowPadding)) return routeEstimate;
-  const stale = nowMs - gps.timestamp > GPS_FRESH_MS;
+  const gpsTimestamp = Number(gps.timestamp);
+  const invalidTimestamp = !Number.isFinite(gpsTimestamp) || gpsTimestamp <= 0 || gpsTimestamp > nowMs + GPS_FUTURE_TOLERANCE_MS;
+  const stale = invalidTimestamp || nowMs - gpsTimestamp > GPS_FRESH_MS;
   const lowAccuracy = typeof gps.accuracyMeters === 'number' && gps.accuracyMeters > LOW_ACCURACY_METERS;
   if (stale) return { ...routeEstimate, source: 'route-estimate' as const, stale: true };
   const projection = projectPositionOntoRoute(routePoints(plan), gps);

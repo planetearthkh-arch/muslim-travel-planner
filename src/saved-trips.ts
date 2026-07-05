@@ -51,8 +51,35 @@ const isFiniteNumber = (value: unknown): value is number => typeof value === 'nu
 const verificationStatuses = new Set<VerificationStatus>(['Sample', 'Unverified', 'Verified']);
 const prayerMethods = new Set(['Muslim World League', 'Egyptian General Authority', 'Umm al-Qura', 'ISNA', 'Turkey Diyanet', 'Muslim World League (Hanafi Asr)', 'Egyptian General Authority (Hanafi Asr)', 'Umm al-Qura (Hanafi Asr)', 'ISNA (Hanafi Asr)', 'Turkey Diyanet (Hanafi Asr)']);
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-const timePattern = /^\d{2}:\d{2}$/;
+const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const itineraryTimePattern = /^(\d{1,2}):([0-5]\d)(?:\s*(AM|PM))?$/i;
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString);
+
+function isValidDate(value: unknown): value is string {
+  if (!isString(value) || !datePattern.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime())
+    && date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+}
+
+function isValid24HourTime(value: unknown): value is string {
+  return isString(value) && timePattern.test(value);
+}
+
+function isValidItineraryTime(value: unknown): value is string {
+  if (!isString(value)) return false;
+  const match = itineraryTimePattern.exec(value);
+  if (!match) return false;
+  const hour = Number(match[1]);
+  return match[3] ? hour >= 1 && hour <= 12 : hour >= 0 && hour <= 23;
+}
+
+function isValidTimestamp(value: unknown): value is string {
+  return isString(value) && value.trim().length > 0 && Number.isFinite(Date.parse(value));
+}
 
 function isVerificationStatus(value: unknown): value is VerificationStatus {
   return verificationStatuses.has(value as VerificationStatus);
@@ -75,10 +102,10 @@ function isPlace(value: unknown): value is Place {
 function isPlannerPreferences(value: unknown): value is PlannerPreferences {
   if (!isRecord(value)) return false;
   return isString(value.city)
-    && isString(value.startDate) && datePattern.test(value.startDate)
-    && isString(value.endDate) && datePattern.test(value.endDate)
-    && isString(value.startHour) && timePattern.test(value.startHour)
-    && isString(value.endHour) && timePattern.test(value.endHour)
+    && isValidDate(value.startDate)
+    && isValidDate(value.endDate)
+    && isValid24HourTime(value.startHour)
+    && isValid24HourTime(value.endHour)
     && isStringArray(value.interests)
     && isFiniteNumber(value.groupSize) && value.groupSize >= 1
     && typeof value.children === 'boolean'
@@ -96,8 +123,8 @@ function isPlannerPreferences(value: unknown): value is PlannerPreferences {
 function isItineraryItem(value: unknown): value is ItineraryItem {
   if (!isRecord(value)) return false;
   return isString(value.id)
-    && isString(value.date) && datePattern.test(value.date)
-    && isString(value.time) && /^(?:\d{1,2}:\d{2}|\d{1,2}:\d{2}\s*(?:AM|PM))$/i.test(value.time)
+    && isValidDate(value.date)
+    && isValidItineraryTime(value.time)
     && isString(value.title)
     && ['travel', 'attraction', 'prayer', 'meal', 'free-time'].includes(String(value.kind))
     && isFiniteNumber(value.durationMinutes) && value.durationMinutes >= 0
@@ -185,13 +212,13 @@ export function createSavedTrip(input: {
 
 export function validateSavedTrip(value: unknown): SavedTrip | null {
   if (!isRecord(value) || value.schemaVersion !== SAVED_TRIP_SCHEMA_VERSION) return null;
-  if (!isString(value.id) || !isString(value.name) || !isString(value.createdAt) || !isString(value.updatedAt) || !isString(value.savedAt)) return null;
+  if (!isString(value.id) || !isString(value.name) || !isValidTimestamp(value.createdAt) || !isValidTimestamp(value.updatedAt) || !isValidTimestamp(value.savedAt)) return null;
   const language = ['en', 'ar', 'ur', 'id', 'ms', 'tr', 'fr'].includes(String(value.language)) ? value.language as Language : 'en';
   if (!isPlannerPreferences(value.preferences) || !isRecord(value.destination) || !Array.isArray(value.itinerary) || !value.itinerary.every(isItineraryItem) || !isRecord(value.dateRange) || !isRecord(value.essentials)) return null;
   const destination = value.destination;
   if (!isString(destination.city) || !isString(destination.country) || !isString(destination.timezone) || !isRecord(destination.coordinates)) return null;
   if (!isFiniteNumber(destination.coordinates.lat) || destination.coordinates.lat < -90 || destination.coordinates.lat > 90 || !isFiniteNumber(destination.coordinates.lng) || destination.coordinates.lng < -180 || destination.coordinates.lng > 180) return null;
-  if (!isString(value.dateRange.startDate) || !datePattern.test(value.dateRange.startDate) || !isString(value.dateRange.endDate) || !datePattern.test(value.dateRange.endDate)) return null;
+  if (!isValidDate(value.dateRange.startDate) || !isValidDate(value.dateRange.endDate)) return null;
   if (value.dateRange.startDate !== value.preferences.startDate || value.dateRange.endDate !== value.preferences.endDate) return null;
   if (!Array.isArray(value.essentials.localCurrencies) || !value.essentials.localCurrencies.every(isLocalCurrency) || !isFiniteNumber(value.essentials.qiblaBearingFromCityCenter)) return null;
   if (!isRecord(value.essentials.preferenceSummary)) return null;
@@ -213,7 +240,7 @@ export function parseSavedTrips(raw: string | null) {
     const parsed = JSON.parse(raw) as unknown;
     if (!isRecord(parsed) || parsed.schemaVersion !== SAVED_TRIP_SCHEMA_VERSION || !Array.isArray(parsed.trips)) return { trips: [] as SavedTrip[], corrupted: true };
     const validated = parsed.trips.map(validateSavedTrip);
-    const trips = validated.filter((trip): trip is SavedTrip => Boolean(trip)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const trips = validated.filter((trip): trip is SavedTrip => Boolean(trip)).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
     return { trips, corrupted: trips.length !== parsed.trips.length };
   } catch {
     return { trips: [] as SavedTrip[], corrupted: true };
@@ -235,7 +262,7 @@ export class SavedTripRepository {
     const next = collection(trips);
     if (!Array.isArray(next.trips) || next.trips.some((trip) => !validateSavedTrip(trip))) throw new Error('Invalid saved trips');
     this.storage.setItem(this.key, JSON.stringify(next));
-    return next.trips.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return next.trips.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   }
 
   upsert(trip: SavedTrip) {
