@@ -1,0 +1,126 @@
+name: Apply Latin Map Label Fix
+
+on:
+  push:
+    branches:
+      - fix/rtl-labels-device-test
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rtl-labels-device-test
+      - name: Apply isolated map-label repair
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          main_path = Path('src/main.ts')
+          main = main_path.read_text()
+          old_expression = """const englishMapNameExpression = [
+  'coalesce',
+  ['get', 'name:en'],
+  ['get', 'name_en'],
+  ['get', 'name:latin'],
+  ['get', 'name'],
+  ['get', 'ref'],
+];"""
+          new_expression = """const englishMapNameExpression = [
+  'coalesce',
+  ['get', 'name:en'],
+  ['get', 'name_en'],
+  ['get', 'name:latin'],
+  ['get', 'int_name'],
+  ['get', 'official_name:en'],
+  ['get', 'short_name:en'],
+  ['get', 'ref'],
+];"""
+          if old_expression not in main:
+              raise SystemExit('Expected map label expression was not found')
+          main_path.write_text(main.replace(old_expression, new_expression, 1))
+
+          index_path = Path('index.html')
+          index = index_path.read_text()
+          index = index.replace("script-src 'self' https://unpkg.com;", "script-src 'self';")
+          index = index.replace("worker-src 'self' blob: https://unpkg.com;", "worker-src 'self' blob:;")
+          index = index.replace("connect-src 'self' https://unpkg.com ", "connect-src 'self' ")
+          index = index.replace('    <script type="module" src="/src/map-rtl-bootstrap.ts"></script>\n', '')
+          index_path.write_text(index)
+
+          sw_path = Path('public/sw.js')
+          worker = sw_path.read_text()
+          if "mtp-app-shell-v15" not in worker:
+              raise SystemExit('Expected service-worker cache version was not found')
+          sw_path.write_text(worker.replace('mtp-app-shell-v15', 'mtp-app-shell-v17'))
+
+          for test_path in [
+              'src/app-hardening.test.ts',
+              'src/release-hardening.test.ts',
+              'src/halal-page-bootstrap.test.ts',
+              'src/qibla-copy-bootstrap.test.ts',
+          ]:
+              path = Path(test_path)
+              path.write_text(path.read_text().replace('mtp-app-shell-v15', 'mtp-app-shell-v17'))
+
+          Path('src/map-rtl-bootstrap.ts').unlink(missing_ok=True)
+          Path('src/map-rtl-bootstrap.test.ts').unlink(missing_ok=True)
+
+          Path('src/map-labels-latin.test.ts').write_text("""import assert from 'node:assert/strict';
+import test from 'node:test';
+
+async function repoFile(path: string) {
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
+  return load('node:fs/promises').then((fs) => fs.readFile(new URL('../' + path, import.meta.url), 'utf8'));
+}
+
+test('map labels never fall back to raw non-Latin names', async () => {
+  const main = await repoFile('src/main.ts');
+  const start = main.indexOf('const englishMapNameExpression = [');
+  const end = main.indexOf('];', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const expression = main.slice(start, end + 2);
+
+  assert.match(expression, /name:en/);
+  assert.match(expression, /name_en/);
+  assert.match(expression, /name:latin/);
+  assert.match(expression, /int_name/);
+  assert.match(expression, /official_name:en/);
+  assert.match(expression, /short_name:en/);
+  assert.match(expression, /ref/);
+  assert.equal(expression.includes("['get', 'name'],"), false);
+});
+
+test('release contains no RTL bootstrap or external RTL dependency', async () => {
+  const html = await repoFile('index.html');
+  const worker = await repoFile('public/sw.js');
+
+  assert.equal(html.includes('map-rtl-bootstrap'), false);
+  assert.equal(html.includes('unpkg.com'), false);
+  assert.match(worker, /mtp-app-shell-v17/);
+});
+""")
+          PY
+
+          test ! -e src/map-rtl-bootstrap.ts
+          test ! -e src/map-rtl-bootstrap.test.ts
+          grep -q "\['get', 'int_name'\]" src/main.ts
+          ! grep -A12 "const englishMapNameExpression" src/main.ts | grep -q "\['get', 'name'\]"
+          ! grep -q "map-rtl-bootstrap" index.html
+          ! grep -q "unpkg.com" index.html
+          grep -q "mtp-app-shell-v17" public/sw.js
+      - name: Remove temporary workflow and commit
+        run: |
+          rm .github/workflows/apply-latin-map-label-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Use English and Latin map labels only"
+          git push origin HEAD:fix/rtl-labels-device-test
