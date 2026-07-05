@@ -52,13 +52,35 @@ const unsupportedScriptPattern = /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=C
 const latinDisplayPattern = /^[\p{Script=Latin}\p{Number}\p{Punctuation}\p{Separator}\p{Mark}\p{Symbol}]+$/u;
 
 const arabicPhraseMap: Array<[RegExp, string]> = [
+  [/مسجد\s+الأقصى|مسجد\s+الاقصى|المسجد\s+الأقصى|المسجد\s+الاقصى/u, 'Al-Aqsa Mosque'],
   [/مسجد\s+عمر\s+بن\s+الخطاب/u, 'Omar ibn Al-Khattab Mosque'],
-  [/مسجد\s+الأقصى|مسجد\s+الاقصى/u, 'Al-Aqsa Mosque'],
+  [/مسجد\s+الشيخ\s+جراح|الشيخ\s+جراح/u, 'Al-Sheikh Jarrah Mosque'],
+  [/مسجد\s+الفاروق|الفاروق/u, 'Al-Farouq Mosque'],
+  [/مسجد\s+الأبرار|مسجد\s+الابرار|الأبرار|الابرار/u, 'Al-Abrar Mosque'],
+  [/مسجد\s+صلاح\s+الدين|صلاح\s+الدين/u, 'Salah al-Din Mosque'],
+  [/مسجد\s+عثمان(?:\s+بن\s+عفان)?|عثمان\s+بن\s+عفان/u, 'Othman ibn Affan Mosque'],
+  [/مسجد\s+النهيان|النهيان/u, 'Al-Nahyan Mosque'],
+  [/سعيد\s+وسعيد|سعد\s+وسعيد/u, "Said wa Su'ayd Mosque"],
+  [/المصلى\s+المرواني|المرواني/u, 'Al-Marwani Prayer Hall'],
+  [/عرش\s+سليمان/u, 'Throne of Solomon'],
   [/مسجد\s+التقوى/u, 'Al-Taqwa Mosque'],
   [/مسجد\s+النور/u, 'Al-Noor Mosque'],
   [/مصلى\s+المطار/u, 'Airport Prayer Room'],
   [/غرفة\s+صلاة|غرفة\s+الصلاة/u, 'Prayer Room'],
   [/مركز\s+إسلامي|مركز\s+اسلامي/u, 'Islamic Centre'],
+];
+
+const canonicalLatinNameMap: Array<[RegExp, string]> = [
+  [/\b(?:al[-\s]*)?aqsa\b/i, 'Al-Aqsa Mosque'],
+  [/\b(?:al[-\s]*)?sheikh\s+(?:jarrah|sarah)\b/i, 'Al-Sheikh Jarrah Mosque'],
+  [/\b(?:said|saeed)\s+(?:wa|and)\s+su['’]?(?:ayd|aid|eed)\b/i, "Said wa Su'ayd Mosque"],
+  [/\b(?:al[-\s]*)?far(?:ouq|ooq|uq)\b/i, 'Al-Farouq Mosque'],
+  [/\b(?:al[-\s]*)?abrar\b/i, 'Al-Abrar Mosque'],
+  [/\bsalah\s+(?:(?:al|el)[-\s]*)?d(?:i|ee)n\b/i, 'Salah al-Din Mosque'],
+  [/\b(?:othman|uthman|osman)(?:\s+(?:ibn|bin)\s+affan)?\b/i, 'Othman ibn Affan Mosque'],
+  [/\b(?:al[-\s]*)?(?:nahyan|nhayyan|nahayyan|nehayan)\b/i, 'Al-Nahyan Mosque'],
+  [/\b(?:al[-\s]*)?marwani\b/i, 'Al-Marwani Prayer Hall'],
+  [/\b(?:throne\s+of\s+solomon|solomon'?s\s+throne)\b/i, 'Throne of Solomon'],
 ];
 
 const facilityWordMap: Array<[RegExp, string]> = [
@@ -71,11 +93,9 @@ const facilityWordMap: Array<[RegExp, string]> = [
   [/\bмечеть\b/iu, 'Mosque'],
   [/\bмолельная\b|\bмолитвенная\s+комната\b/iu, 'Prayer Room'],
   [/\bτζαμί\b/iu, 'Mosque'],
-  [/\bمسجد\b/u, 'Mosque'],
   [/清真寺/g, 'Mosque'],
   [/礼拝室|祈祷室/g, 'Prayer Room'],
   [/기도실/g, 'Prayer Room'],
-  [/مسجد/g, 'Mosque'],
 ];
 
 const fallbackForType = (type: PrayerPlaceType | undefined) => {
@@ -84,6 +104,13 @@ const fallbackForType = (type: PrayerPlaceType | undefined) => {
   if (type === 'islamic-centre') return 'Unnamed Islamic Centre';
   return 'Unnamed Quiet Prayer Space';
 };
+
+const generatedPrayerFallbackPattern = /^Unnamed (?:Quiet Prayer Space|Mosque|Prayer Room|Islamic Centre)$/;
+const genericPrayerNamePattern = /^(?:the\s+)?(?:al[-\s]*)?(?:masjid|mosque|jami|grand mosque|prayer room|مسجد|جامع|مصلى)$/iu;
+const nonMuslimPlacePattern = /\b(?:church|chapel|cathedral|monastery|convent|synagogue)\b|كنيسة|دير|כנסייה|בית\s+כנסת/iu;
+const mosqueWordPattern = /\b(?:mosque|masjid|jami)\b|مسجد|جامع/iu;
+const suspiciousPunctuationPattern = /[~^`{}\[\]\\|]/;
+const ignoredLatinWords = new Set(['mosque', 'masjid', 'jami', 'grand', 'prayer', 'room', 'hall', 'islamic', 'centre', 'center', 'the']);
 
 const hasAffirmingValue = (value: string | undefined) => !!value && /^(yes|designated|available|separate|female|true|1)$/i.test(value);
 const hasMuslimSignal = (tags: OsmTags) => tags.religion === 'muslim' || tags.denomination === 'sunni' || tags.denomination === 'shia' || tags.muslim === 'yes';
@@ -95,11 +122,23 @@ const AL_AQSA_COMPOUND_BOUNDS = {
   east: 35.2375,
 };
 
-const alAqsaSubstructureNamePattern = /^(?:the\s+)?(?:dome|qubbat|qubba)\b|^قبة(?:\s|$)/iu;
+const JERUSALEM_BOUNDS = {
+  south: 31.70,
+  north: 31.85,
+  west: 35.15,
+  east: 35.30,
+};
+
+function insideBounds(latitude: number, longitude: number, bounds: typeof JERUSALEM_BOUNDS) {
+  return latitude >= bounds.south && latitude <= bounds.north && longitude >= bounds.west && longitude <= bounds.east;
+}
 
 function prayerPlaceSearchableNames(tags: OsmTags) {
   return [
     tags['name:en'],
+    tags['official_name:en'],
+    tags['short_name:en'],
+    tags['alt_name:en'],
     tags.name,
     tags.official_name,
     tags.short_name,
@@ -108,13 +147,30 @@ function prayerPlaceSearchableNames(tags: OsmTags) {
   ].filter((value): value is string => Boolean(value)).map((value) => value.trim());
 }
 
+function canonicalLatinName(value: string) {
+  for (const [pattern, replacement] of canonicalLatinNameMap) {
+    if (pattern.test(value)) return replacement;
+  }
+  return '';
+}
+
+function looksLikeBrokenLatinName(value: string) {
+  if (suspiciousPunctuationPattern.test(value)) return true;
+  const words = value.match(/[A-Za-z]+/g) ?? [];
+  const significant = words.filter((word) => word.length >= 4 && !ignoredLatinWords.has(word.toLowerCase()));
+  return significant.length > 0 && significant.every((word) => !/[aeiou]/i.test(word));
+}
+
+function isClearlyNonMuslimNamed(tags: OsmTags) {
+  return prayerPlaceSearchableNames(tags).some((name) => nonMuslimPlacePattern.test(name) && !mosqueWordPattern.test(name));
+}
+
+function isMainAlAqsaName(tags: OsmTags) {
+  return prayerPlaceSearchableNames(tags).some((name) => /\bal[-\s]?aqsa\b|المسجد\s+الأقصى|المسجد\s+الاقصى|مسجد\s+الأقصى|مسجد\s+الاقصى/iu.test(name));
+}
+
 export function isAlAqsaCompoundSubstructure(tags: OsmTags, latitude: number, longitude: number) {
-  const insideCompound = latitude >= AL_AQSA_COMPOUND_BOUNDS.south
-    && latitude <= AL_AQSA_COMPOUND_BOUNDS.north
-    && longitude >= AL_AQSA_COMPOUND_BOUNDS.west
-    && longitude <= AL_AQSA_COMPOUND_BOUNDS.east;
-  if (!insideCompound) return false;
-  return prayerPlaceSearchableNames(tags).some((name) => alAqsaSubstructureNamePattern.test(name));
+  return insideBounds(latitude, longitude, AL_AQSA_COMPOUND_BOUNDS) && !isMainAlAqsaName(tags);
 }
 
 function cleanLatinName(value: string) {
@@ -128,7 +184,7 @@ function cleanLatinName(value: string) {
 
 function titleCaseLatin(value: string) {
   return cleanLatinName(value).replace(/[\p{Script=Latin}\p{Number}][\p{Script=Latin}\p{Number}'-]*/gu, (word) => {
-    if (/^(ibn|bin|al|and|of)$/i.test(word)) return word.toLowerCase();
+    if (/^(ibn|bin|al|and|of|wa)$/i.test(word)) return word.toLowerCase();
     if (/^[A-Z]{2,}$/.test(word)) return word;
     return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   }).replace(/\bAl-/g, 'Al-');
@@ -151,6 +207,8 @@ function transliterateOriginalName(value: string, type: PrayerPlaceType | undefi
     .replace(/\bAlnwr\b/gi, 'Al-Noor')
     .replace(/\bAltqwy\b/gi, 'Al-Taqwa')
     .replace(/\bMrkz Islmy\b/gi, 'Islamic Centre');
+  const canonical = canonicalLatinName(titled);
+  if (canonical) return canonical;
   if (/\bMosque\b/i.test(titled) || /\bPrayer Room\b/i.test(titled) || /\bIslamic Centre\b/i.test(titled)) return titled;
   if (type === 'mosque') return `${titled} Mosque`;
   return titled;
@@ -159,13 +217,15 @@ function transliterateOriginalName(value: string, type: PrayerPlaceType | undefi
 export function ensureLatinDisplayName(name: string | undefined, placeType: PrayerPlaceType | undefined) {
   const cleaned = cleanLatinName(name ?? '');
   if (!cleaned) return fallbackForType(placeType);
-  if (!unsupportedScriptPattern.test(cleaned) && latinDisplayPattern.test(cleaned)) return cleaned;
+  const canonical = canonicalLatinName(cleaned);
+  if (canonical) return canonical;
+  if (!unsupportedScriptPattern.test(cleaned) && latinDisplayPattern.test(cleaned) && !looksLikeBrokenLatinName(cleaned)) return cleaned;
   const converted = cleanLatinName(transliterateOriginalName(cleaned, placeType));
-  if (converted && !unsupportedScriptPattern.test(converted) && latinDisplayPattern.test(converted)) return converted;
+  const convertedCanonical = canonicalLatinName(converted);
+  if (convertedCanonical) return convertedCanonical;
+  if (converted && !unsupportedScriptPattern.test(converted) && latinDisplayPattern.test(converted) && !looksLikeBrokenLatinName(converted)) return converted;
   return fallbackForType(placeType);
 }
-
-const generatedPrayerFallbackPattern = /^Unnamed Quiet Prayer Space$|^Unnamed Mosque$|^Unnamed Prayer Room$/;
 
 export function optionalLatinDisplayName(value: string | undefined) {
   const cleaned = cleanLatinName(value ?? '');
@@ -253,6 +313,23 @@ export function isReliablyOpenNow(tags: OsmTags, timeZone: string | undefined, n
   return openingState(tags.opening_hours, timeZone, now) === 'open';
 }
 
+function prayerIdentity(name: string, type: PrayerPlaceType, latitude: number, longitude: number, element: OverpassElement) {
+  if (!insideBounds(latitude, longitude, JERUSALEM_BOUNDS) || generatedPrayerFallbackPattern.test(name)) {
+    return `${element.type}-${element.id}`;
+  }
+  const normalizedName = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(?:mosque|masjid|jami|grand|prayer|room|hall|islamic|centre|center|the|al|el)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!normalizedName) return `${element.type}-${element.id}`;
+  const gridLatitude = Math.round(latitude * 500);
+  const gridLongitude = Math.round(longitude * 500);
+  return `jerusalem-${type}-${normalizedName}-${gridLatitude}-${gridLongitude}`;
+}
+
 export function normalizePrayerPlace(element: OverpassElement, origin: { latitude: number; longitude: number }): PrayerPlace | undefined {
   const tags = element.tags ?? {};
   const latitude = element.lat ?? element.center?.lat;
@@ -261,10 +338,16 @@ export function normalizePrayerPlace(element: OverpassElement, origin: { latitud
   if (!type || typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
   if (isAlAqsaCompoundSubstructure(tags, latitude, longitude)) return undefined;
 
+  const name = getEnglishPlaceName({ tags, type });
+  if (insideBounds(latitude, longitude, JERUSALEM_BOUNDS)) {
+    if (isClearlyNonMuslimNamed(tags)) return undefined;
+    if (generatedPrayerFallbackPattern.test(name) || genericPrayerNamePattern.test(name) || looksLikeBrokenLatinName(name)) return undefined;
+  }
+
   const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
   return {
-    id: `${element.type}-${element.id}`,
-    name: getEnglishPlaceName({ tags, type }),
+    id: prayerIdentity(name, type, latitude, longitude, element),
+    name,
     originalName: getOriginalPlaceName(tags),
     type,
     latitude,
