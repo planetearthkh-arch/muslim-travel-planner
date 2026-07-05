@@ -1,0 +1,36 @@
+name: Capture Test Failure Once
+
+on:
+  push:
+    branches:
+      - codex/verify-bundled-arabic-map
+    paths:
+      - .github/workflows/capture-test-failure-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/verify-bundled-arabic-map
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Capture test output
+        run: npm test > test-output.txt 2>&1 || true
+      - name: Commit diagnostic output
+        run: |
+          rm .github/workflows/capture-test-failure-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test-output.txt .github/workflows/capture-test-failure-once.yml
+          git commit -m "Record remaining test failures"
+          git push origin HEAD:codex/verify-bundled-arabic-map
