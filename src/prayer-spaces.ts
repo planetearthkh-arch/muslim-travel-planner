@@ -87,8 +87,8 @@ const facilityWordMap: Array<[RegExp, string]> = [
   [/\bمسجد\b|\bمسجد/u, 'Mosque'],
   [/\bجامع\b|\bجامع/u, 'Grand Mosque'],
   [/\bمصلى\b|\bمصلّى/u, 'Prayer Room'],
-  [/\bغرفة\s+صلاة\b|\bغرفة\s+الصلاة\b/u, 'Prayer Room'],
-  [/\bمركز\s+إسلامي\b|\bمركز\s+اسلامي\b/u, 'Islamic Centre'],
+  [/\bغرفة\s+صلاة\b|\bغرفة\s+الصلاة/u, 'Prayer Room'],
+  [/\bمركز\s+إسلامي\b|\bمركز\s+اسلامي/u, 'Islamic Centre'],
   [/\bالمطار\b/u, 'Airport'],
   [/\bмечеть\b/iu, 'Mosque'],
   [/\bмолельная\b|\bмолитвенная\s+комната\b/iu, 'Prayer Room'],
@@ -167,7 +167,7 @@ function looksLikeBrokenLatinName(value: string) {
   if (suspiciousPunctuationPattern.test(value)) return true;
   const words = value.match(/[A-Za-z]+/g) ?? [];
   const significant = words.filter((word) => word.length >= 4 && !ignoredLatinWords.has(word.toLowerCase()));
-  return significant.length > 0 && significant.every((word) => !/[aeiouy]/i.test(word));
+  return significant.length > 0 && significant.every((word) => !/[aeiou]/i.test(word));
 }
 
 function isClearlyNonMuslimNamed(tags: OsmTags) {
