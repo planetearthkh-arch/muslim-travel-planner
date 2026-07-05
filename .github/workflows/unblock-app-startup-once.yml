@@ -1,0 +1,41 @@
+name: Unblock App Startup Once
+
+on:
+  push:
+    branches:
+      - codex/verify-bundled-arabic-map
+    paths:
+      - .github/workflows/unblock-app-startup-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/verify-bundled-arabic-map
+          fetch-depth: 0
+      - name: Make RTL loading non-blocking
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/app-bootstrap.ts')
+          source = path.read_text()
+          old = "  const rtlReady = await ensureRtlMapSupport();\n  if (!rtlReady) console.error('Arabic map shaping was not available at startup.');\n"
+          new = "  void ensureRtlMapSupport().then((rtlReady) => {\n    if (!rtlReady) console.error('Arabic map shaping was not available at startup.');\n  });\n"
+          if old not in source:
+              raise SystemExit('Expected blocking startup code was not found.')
+          path.write_text(source.replace(old, new))
+          PY
+      - name: Commit startup fix
+        run: |
+          rm .github/workflows/unblock-app-startup-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app-bootstrap.ts .github/workflows/unblock-app-startup-once.yml
+          git commit -m "Start bundled RTL shaping without blocking app render"
+          git push origin HEAD:codex/verify-bundled-arabic-map
