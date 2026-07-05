@@ -18,6 +18,7 @@ test('app starts bundled RTL shaping before map code without blocking render', a
   const bootstrap = (await repoFile('src/app-bootstrap.ts')).content;
   const rtl = (await repoFile('src/map-rtl-bootstrap.ts')).content;
 
+  // Start shaping first, but never leave the application root waiting on the plugin promise.
   assert.equal(bootstrap.includes('void ensureRtlMapSupport().then'), true);
   assert.equal(bootstrap.includes('await ensureRtlMapSupport()'), false);
   assert.equal(bootstrap.indexOf('ensureRtlMapSupport()') < bootstrap.indexOf("import('./main.js')"), true);
