@@ -64,7 +64,9 @@ test('common Jerusalem mosque names are normalized consistently', () => {
     ['Al Farooq Masjid', 'Al-Farouq Mosque'],
     ['Al Abrar Mosque', 'Al-Abrar Mosque'],
     ['Salah Al Din Masjid', 'Salah al-Din Mosque'],
+    ['Salah El Din Mosque', 'Salah al-Din Mosque'],
     ['Uthman ibn Affan Mosque', 'Othman ibn Affan Mosque'],
+    ['Al Nhayyan Mosque', 'Al-Nahyan Mosque'],
   ];
   for (const [index, [input, expected]] of examples.entries()) {
     assert.equal(normalizePrayerPlace(place(50 + index, input, 31.79, 35.22), origin)?.name, expected);
