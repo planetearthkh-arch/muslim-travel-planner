@@ -1,0 +1,35 @@
+name: Export Resolved Labels
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/export-resolved-labels.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -p tsconfig.json --outDir dist-labels
+      - name: Export final dictionaries
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const module = await import('./dist-labels/app-language.js');
+          fs.writeFileSync('resolved-labels.json', JSON.stringify({ languages: module.languages, labels: module.labels, regionLabels: module.regionLabels, prayerLabels: module.prayerLabels, optionLabels: module.optionLabels }, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resolved-labels
+          path: resolved-labels.json
+          retention-days: 3
