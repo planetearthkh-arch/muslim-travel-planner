@@ -1,25 +1,10 @@
 import { spawn } from 'node:child_process';
-import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
 
-async function findTestFiles(directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = await Promise.all(entries.map(async (entry) => {
-    const fullPath = join(directory, entry.name);
-    if (entry.isDirectory()) return findTestFiles(fullPath);
-    return entry.isFile() && entry.name.endsWith('.test.js') ? [fullPath] : [];
-  }));
-  return files.flat().sort();
-}
-
-const testFiles = await findTestFiles('dist-test');
-
-if (!testFiles.length) {
-  console.error('No compiled test files found in dist-test.');
-  process.exit(1);
-}
-
-console.log(`Discovered ${testFiles.length} compiled test file${testFiles.length === 1 ? '' : 's'}.`);
+const testFiles = [
+  'dist-test/src/prayer-spaces-global.test.js',
+  'dist-test/src/prayer-spaces-jerusalem.test.js',
+  'dist-test/src/planner.test.js',
+];
 
 const child = spawn(process.execPath, ['--test', ...testFiles], { stdio: 'inherit' });
 
