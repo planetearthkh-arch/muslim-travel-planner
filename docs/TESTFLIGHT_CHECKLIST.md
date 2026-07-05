@@ -13,8 +13,9 @@ This checklist is for the app owner. Do not commit Apple IDs, certificates, prov
 7. Keep automatic signing unless there is a specific reason not to.
 8. Confirm no push notification, background location, in-app purchase, advertising, analytics, or tracking capability is enabled.
 9. Confirm marketing version is `1.0.0`.
-10. Confirm build number is `1` for the first upload.
-11. Increment the build number for every future TestFlight upload.
+10. For the first upload, use build number `1`.
+11. Before every later upload, check the highest build number already visible in App Store Connect.
+12. Set the new build number to a strictly higher unused number; never reuse an uploaded build number.
 
 ## Archive and Upload
 
