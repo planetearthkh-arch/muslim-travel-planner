@@ -1,11 +1,14 @@
 name: Apply Clean Map Label Fix Once
 
 on:
-  push:
+  pull_request:
     branches:
-      - codex/clean-map-label-restoration
+      - main
     paths:
       - .github/workflows/apply-clean-map-label-fix-once.yml
+      - src/main.ts
+      - src/map-rtl-bootstrap.ts
+      - src/app-bootstrap.ts
 
 permissions:
   contents: write
