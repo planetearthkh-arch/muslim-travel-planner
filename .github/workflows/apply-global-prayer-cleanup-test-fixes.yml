@@ -1,0 +1,48 @@
+name: Apply global prayer cleanup test fixes
+
+on:
+  push:
+    branches:
+      - codex/global-prayer-place-cleanup
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/global-prayer-place-cleanup
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply fixes
+        run: python3 scripts/apply-global-prayer-cleanup-test-fixes.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate fixes
+        run: |
+          npm run typecheck
+          npm test
+          npm run lint
+          npm run build
+
+      - name: Commit validated fixes
+        run: |
+          rm -f .github/workflows/apply-global-prayer-cleanup-test-fixes.yml
+          rm -f .github/workflows/diagnose-global-prayer-tests.yml
+          rm -f scripts/apply-global-prayer-cleanup-test-fixes.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix global prayer cleanup regressions"
+          git push origin HEAD:codex/global-prayer-place-cleanup
