@@ -7,7 +7,7 @@
     <meta property="og:title" content="SafarOne — Muslim Travel Planner" />
     <meta property="og:description" content="Prayer-aware trip planning with local saved itineraries, travel tools, and optional offline access to saved trip information." />
     <meta name="theme-color" content="#0f766e" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https://tiles.openfreemap.org; worker-src 'self' blob:; connect-src 'self' https://overpass-api.de https://overpass.private.coffee https://overpass.kumi.systems https://maps.mail.ru https://nominatim.openstreetmap.org https://geocoding-api.open-meteo.com https://api.open-meteo.com https://api.frankfurter.dev https://*.wikipedia.org https://*.wikimedia.org https://www.wikidata.org https://tiles.openfreemap.org https://media.assabile.com; media-src 'self' https://media.assabile.com; form-action 'self'; upgrade-insecure-requests" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https://tiles.openfreemap.org; worker-src 'self' blob: https://unpkg.com; connect-src 'self' https://unpkg.com https://overpass-api.de https://overpass.private.coffee https://overpass.kumi.systems https://maps.mail.ru https://nominatim.openstreetmap.org https://geocoding-api.open-meteo.com https://api.open-meteo.com https://api.frankfurter.dev https://*.wikipedia.org https://*.wikimedia.org https://www.wikidata.org https://tiles.openfreemap.org https://media.assabile.com; media-src 'self' https://media.assabile.com; form-action 'self'; upgrade-insecure-requests" />
     <link rel="manifest" href="/muslim-travel-planner/manifest.webmanifest" />
     <link rel="icon" href="/muslim-travel-planner/icons/icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/src/styles.css" />
@@ -17,6 +17,11 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/app-bootstrap.ts"></script>
+    <script type="module" src="/src/turkish-halal-copy.ts"></script>
+    <script type="module" src="/src/map-rtl-bootstrap.ts"></script>
+    <script type="module" src="/src/prayer-search-bootstrap.ts"></script>
+    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/halal-page-bootstrap.ts"></script>
+    <script type="module" src="/src/qibla-copy-bootstrap.ts"></script>
   </body>
 </html>
