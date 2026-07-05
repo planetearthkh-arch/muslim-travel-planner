@@ -1,12 +1,15 @@
 import './turkish-halal-copy.js';
 import './prayer-search-bootstrap.js';
-import { installRtlMapSupport } from './map-rtl-bootstrap.js';
+import { registerRtlMapSupport } from './map-rtl-bootstrap.js';
 
-// MapLibre must know how to shape bidirectional text before the first map is
-// constructed. The plugin is local, so this does not depend on a CDN or the
-// selected interface language.
-await installRtlMapSupport();
+registerRtlMapSupport();
 
-await import('./main.js');
-await import('./halal-page-bootstrap.js');
-await import('./qibla-copy-bootstrap.js');
+async function startApp() {
+  await import('./main.js');
+  await import('./halal-page-bootstrap.js');
+  await import('./qibla-copy-bootstrap.js');
+}
+
+startApp().catch((error: unknown) => {
+  console.error('Application startup failed.', error);
+});
