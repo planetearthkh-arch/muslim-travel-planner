@@ -81,8 +81,8 @@ const canonicalLatinNameMap: Array<[RegExp, string]> = [
   [/\b(?:al[-\s]*)?(?:nahyan|nhayyan|nahayyan|nehayan)\b/i, 'Al-Nahyan Mosque'],
   [/\b(?:al[-\s]*)?marwani\b/i, 'Al-Marwani Prayer Hall'],
   [/\b(?:throne\s+of\s+solomon|solomon'?s\s+throne)\b/i, 'Throne of Solomon'],
-  [/\b(?:al[-\s]*)?noor\b/i, 'Al-Noor Mosque'],
-  [/\b(?:al[-\s]*)?taqwa\b/i, 'Al-Taqwa Mosque'],
+  [/(?:\bmasjid\s+(?:al[-\s]*)?noor\b|\b(?:al[-\s]*)?noor\s+mosque\b)/i, 'Al-Noor Mosque'],
+  [/(?:\bmasjid\s+(?:al[-\s]*)?taqwa\b|\b(?:al[-\s]*)?taqwa\s+mosque\b)/i, 'Al-Taqwa Mosque'],
 ];
 
 const facilityWordMap: Array<[RegExp, string]> = [
@@ -189,7 +189,7 @@ function titleCaseLatin(value: string) {
 }
 
 function standardizeLatinFacilityName(value: string, type: PrayerPlaceType | undefined) {
-  let result = titleCaseLatin(value)
+  let result = cleanLatinName(value)
     .replace(/\bMasjid\b/gi, 'Mosque')
     .replace(/\bMoschee\b/gi, 'Mosque')
     .replace(/\bMezquita\b/gi, 'Mosque')
@@ -201,10 +201,6 @@ function standardizeLatinFacilityName(value: string, type: PrayerPlaceType | und
     result = result.replace(/^(?:The\s+)?(?:Grand\s+)?Mosque\s+(.+)$/i, '$1 Mosque');
     result = result.replace(/(?:\s+Mosque){2,}$/i, ' Mosque');
     if (!/\bMosque\b/i.test(result)) result = `${result} Mosque`;
-  } else if (type === 'prayer-room' || type === 'quiet-space') {
-    if (/^Prayer Room\s+(.+)$/i.test(result)) result = result.replace(/^Prayer Room\s+(.+)$/i, '$1 Prayer Room');
-  } else if (type === 'islamic-centre') {
-    if (/^Islamic Centre\s+(.+)$/i.test(result)) result = result.replace(/^Islamic Centre\s+(.+)$/i, '$1 Islamic Centre');
   }
 
   return cleanLatinName(result);
@@ -366,8 +362,10 @@ export function normalizePrayerPlace(element: OverpassElement, origin: { latitud
   if (isAlAqsaCompoundSubstructure(tags, latitude, longitude)) return undefined;
   if (isClearlyNonMuslimNamed(tags)) return undefined;
 
-  let name = getEnglishPlaceName({ tags, type });
-  if (genericPrayerNamePattern.test(name) || looksLikeBrokenLatinName(name)) name = fallbackForType(type);
+  const name = getEnglishPlaceName({ tags, type });
+  const hasSourceName = prayerPlaceSearchableNames(tags).length > 0;
+  if (hasSourceName && generatedPrayerFallbackPattern.test(name)) return undefined;
+  if (genericPrayerNamePattern.test(name) || looksLikeBrokenLatinName(name)) return undefined;
 
   const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
   return {
