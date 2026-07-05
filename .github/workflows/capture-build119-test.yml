@@ -1,0 +1,32 @@
+name: Capture Build 119 Test
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/capture-build119-test.yml'
+      - 'scripts/verify-ios-version.mjs'
+      - 'ios/App/App.xcodeproj/project.pbxproj'
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Capture test output
+        shell: bash
+        run: npm test > build119-test-output.txt 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build119-test-output
+          path: build119-test-output.txt
+          retention-days: 2
