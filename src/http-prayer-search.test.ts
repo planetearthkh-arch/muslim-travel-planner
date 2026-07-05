@@ -8,13 +8,9 @@ import {
   prayerOverpassEndpoints,
   requestJson,
 } from './http.js';
+import { buildOverpassQuery } from './prayer-spaces.js';
 
-const prayerQuery = `[out:json][timeout:25];(
-  node["amenity"="place_of_worship"]["religion"="muslim"](around:10000,31.778,35.235);
-  node["amenity"="prayer_room"](around:10000,31.778,35.235);
-  node["name"~"Masjid[ -]?(?:al[- ]?)?Aqsa",i](around:10000,31.778,35.235);
-  relation["name:en"~"Masjid[ -]?(?:al[- ]?)?Aqsa",i](around:10000,31.778,35.235);
-);out center tags;`;
+const prayerQuery = buildOverpassQuery(31.778, 35.235, 10);
 
 function responseJson(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -50,10 +46,10 @@ async function expectRequestError(promise: Promise<unknown>, expectedStatus: num
   if (received instanceof RequestError) assert.equal(received.status, expectedStatus);
 }
 
-test('Al-Aqsa prayer query is converted to portable Overpass syntax everywhere', () => {
+test('the real Al-Aqsa prayer query is converted to portable Overpass syntax everywhere', () => {
   const normalized = normalizePrayerOverpassBody(prayerQuery);
   assert.equal(normalized.includes('(?:'), false);
-  assert.equal(normalized.split('Masjid[ -]?Al[- ]?Aqsa|Masjid[ -]?Aqsa').length - 1, 2);
+  assert.equal(normalized.split('Masjid[ -]?Al[- ]?Aqsa|Masjid[ -]?Aqsa').length - 1, 18);
 });
 
 test('unknown unsupported Overpass regular expressions fail before any request', async () => {
