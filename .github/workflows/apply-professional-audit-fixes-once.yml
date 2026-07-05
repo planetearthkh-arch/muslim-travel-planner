@@ -1,0 +1,45 @@
+name: Apply Professional Audit Fixes Once
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.fix-patches/**'
+      - '.github/workflows/apply-professional-audit-fixes-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/fix-all-audit-findings
+          fetch-depth: 0
+      - name: Apply reviewed main source patch
+        shell: bash
+        run: |
+          cat .fix-patches/main.part00 .fix-patches/main.part01 .fix-patches/main.part02 > /tmp/main.patch
+          git apply --check /tmp/main.patch
+          git apply /tmp/main.patch
+      - name: Vendor the inspected OpenFreeMap Bright style
+        shell: bash
+        run: |
+          mkdir -p public/vendor
+          curl --fail --location --retry 3 https://tiles.openfreemap.org/styles/bright -o public/vendor/openfreemap-bright.json
+          echo 'ada317e9b31c65b726dc46a2b3b14acb9856782051a09e3f4bc92d034373999f  public/vendor/openfreemap-bright.json' | sha256sum --check
+      - name: Commit transparent production changes
+        shell: bash
+        run: |
+          rm -rf .fix-patches
+          rm .github/workflows/apply-professional-audit-fixes-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts .github/workflows/apply-professional-audit-fixes-once.yml
+          git add -f public/vendor/openfreemap-bright.json .fix-patches
+          git commit -m 'Apply deterministic multilingual map and HTML safety fixes'
+          git push origin HEAD:codex/fix-all-audit-findings
