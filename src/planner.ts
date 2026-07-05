@@ -232,8 +232,9 @@ const choosePrayerPlace = (city: CityData, prefs: PlannerPreferences) => {
     return { place, score };
   }).sort((a, b) => b.score - a.score);
   const selected = scored[0]?.place ?? candidates[0];
-  const perfect = (!prefs.womenPrayerRequired || verificationScore(selected?.facility?.womenPrayerSpace) >= 2)
-    && (!prefs.wuduRequired || verificationScore(selected?.facility?.wudu) >= 2)
+  if (!selected) return { place: undefined, perfect: false };
+  const perfect = (!prefs.womenPrayerRequired || verificationScore(selected.facility?.womenPrayerSpace) >= 2)
+    && (!prefs.wuduRequired || verificationScore(selected.facility?.wudu) >= 2)
     && matchesAccessibility(selected, prefs);
   return { place: selected, perfect };
 };
@@ -304,7 +305,7 @@ interface ScheduleContext {
   attractionPool: Place[];
   attractionOffset: number;
   meal: { place: Place; perfect: boolean };
-  prayer: { place: Place; perfect: boolean };
+  prayer: { place?: Place; perfect: boolean };
   replanDay: boolean;
 }
 
@@ -415,10 +416,13 @@ function generateBaseItinerary(prefs: PlannerPreferences, language: Language, re
     const dayAttractions = rotate(attractionPool, dayIndex === replanDayIndex ? dayIndex + 1 : 0);
     const context: ScheduleContext = { copy, language: languageCode, prefs, city, date, dayIndex, travel, attractionPool: dayAttractions, attractionOffset: dayIndex, meal, prayer, replanDay: dayIndex === replanDayIndex };
     const prayerTimes = calculatePrayerDisplay(city, prefs.prayerMethod, date, 'en-GB');
-    const prayers = prayerNames
-      .map((name) => ({ name, time: prayerTimes[name], minutes: minutesOfDay(prayerTimes[name]), duration: prayer.place.estimatedMinutes }))
-      .filter((entry) => Number.isFinite(entry.minutes) && entry.minutes >= startMinutes && entry.minutes + entry.duration <= endMinutes)
-      .sort((a, b) => a.minutes - b.minutes);
+    const prayerPlace = prayer.place;
+    const prayers = prayerPlace
+      ? prayerNames
+        .map((name) => ({ name, time: prayerTimes[name], minutes: minutesOfDay(prayerTimes[name]), duration: prayerPlace.estimatedMinutes, place: prayerPlace }))
+        .filter((entry) => Number.isFinite(entry.minutes) && entry.minutes >= startMinutes && entry.minutes + entry.duration <= endMinutes)
+        .sort((a, b) => a.minutes - b.minutes)
+      : [];
     let current = startMinutes;
 
     prayers.forEach((entry) => {
@@ -426,12 +430,12 @@ function generateBaseItinerary(prefs: PlannerPreferences, language: Language, re
       dayItems.push(makeItem(date, {
         id: `${entry.name.toLowerCase()}-${dayIndex}`,
         time: entry.time,
-        title: copy.prayerTitle(displayNames[entry.name], prayer.place.name),
+        title: copy.prayerTitle(displayNames[entry.name], entry.place.name),
         kind: 'prayer',
         durationMinutes: entry.duration,
-        details: copy.prayerDetails(prefs.prayerMethod, facilityUncertainty(languageCode), facilityUncertainty(languageCode), notes[prayer.place.facility?.notes ?? ''] ?? '', prayer.perfect ? '' : copy.fallbackPrayer),
-        place: prayer.place,
-        status: prayer.place.verification,
+        details: copy.prayerDetails(prefs.prayerMethod, facilityUncertainty(languageCode), facilityUncertainty(languageCode), notes[entry.place.facility?.notes ?? ''] ?? '', prayer.perfect ? '' : copy.fallbackPrayer),
+        place: entry.place,
+        status: entry.place.verification,
       }));
       current = entry.minutes + entry.duration;
     });
