@@ -1,0 +1,161 @@
+name: Deep Professional Audit V2
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'ios/**'
+      - 'android/**'
+      - 'mobile/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.ts'
+      - 'tsconfig.json'
+      - 'vite*.ts'
+      - '.github/workflows/deep-professional-audit-v2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  web-security-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: mkdir -p audit-output
+      - name: Dependency security snapshots
+        shell: bash
+        run: |
+          npm audit --json > audit-output/npm-audit-full.json || true
+          npm audit --omit=dev --json > audit-output/npm-audit-production.json || true
+          npm outdated --json > audit-output/npm-outdated.json || true
+      - name: Typecheck, build, tests, lint, and browser smoke
+        shell: bash
+        run: |
+          npm run typecheck
+          npm run build
+          npm test
+          npm run lint
+          npm run test:browser-smoke
+      - name: Test coverage snapshot
+        shell: bash
+        run: |
+          rm -rf dist-test
+          npx tsc -p tsconfig.json --outDir dist-test
+          mapfile -t tests < <(find dist-test -name '*.test.js' -type f | sort)
+          node --experimental-test-coverage --test "${tests[@]}" > audit-output/test-coverage.txt 2>&1
+      - name: Bundle and license inventory
+        shell: bash
+        run: |
+          find dist -type f -printf '%s %p\n' | sort -nr > audit-output/bundle-sizes.txt
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const root = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const direct = { ...root.dependencies, ...root.devDependencies };
+          const rows = [];
+          for (const name of Object.keys(direct).sort()) {
+            try {
+              const pkg = JSON.parse(fs.readFileSync(`node_modules/${name}/package.json`, 'utf8'));
+              rows.push({ name, requested: direct[name], installed: pkg.version, license: pkg.license ?? pkg.licenses ?? 'UNKNOWN', repository: pkg.repository ?? '' });
+            } catch (error) {
+              rows.push({ name, requested: direct[name], error: String(error) });
+            }
+          }
+          fs.writeFileSync('audit-output/direct-dependency-licenses.json', JSON.stringify(rows, null, 2));
+          NODE
+      - name: Compile resolved language dictionaries
+        run: npx tsc -p tsconfig.json --outDir dist-audit
+      - name: Run deep static and configuration audit
+        run: node scripts/deep-professional-audit.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deep-professional-web-audit
+          path: audit-output
+          if-no-files-found: error
+          retention-days: 7
+
+  android-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npm run android:setup
+      - name: Android lint, tests, debug and release builds
+        shell: bash
+        working-directory: android
+        run: |
+          ./gradlew lintDebug testDebugUnitTest assembleDebug assembleRelease --stacktrace --warning-mode all | tee ../android-deep-audit.log
+      - name: Android dependency graph
+        shell: bash
+        working-directory: android
+        run: ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > ../android-release-dependencies.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deep-professional-android-audit
+          path: |
+            android-deep-audit.log
+            android-release-dependencies.txt
+            android/app/build/reports
+            android/app/build/test-results
+          if-no-files-found: warn
+          retention-days: 7
+
+  ios-native:
+    runs-on: macos-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ios:sync
+      - run: mkdir -p audit-output-ios
+      - name: Validate native property lists and privacy manifests
+        shell: bash
+        run: |
+          plutil -lint ios/App/App/Info.plist | tee audit-output-ios/plist-lint.txt
+          find ios -name 'PrivacyInfo.xcprivacy' -print > audit-output-ios/privacy-manifests.txt
+      - name: Capture Xcode build settings
+        shell: bash
+        run: xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -showBuildSettings > audit-output-ios/build-settings.txt
+      - name: Xcode static analyzer
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO analyze | tee audit-output-ios/xcode-analyze.log
+      - name: iOS release verification and archive
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run ios:verify | tee audit-output-ios/ios-verify.log
+          npm run ios:archive-verify | tee audit-output-ios/ios-archive.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deep-professional-ios-audit
+          path: audit-output-ios
+          if-no-files-found: error
+          retention-days: 7
