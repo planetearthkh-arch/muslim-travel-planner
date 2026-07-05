@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'mtp-app-shell-';
-const CACHE_VERSION = 'mtp-app-shell-v16';
+const CACHE_VERSION = 'mtp-app-shell-v15';
 const APP_SCOPE = new URL(self.registration.scope);
 const APP_HOME = new URL('./', APP_SCOPE).toString();
 const APP_SHELL = [
@@ -7,8 +7,7 @@ const APP_SHELL = [
   new URL('./privacy.html', APP_SCOPE).toString(),
   new URL('./support.html', APP_SCOPE).toString(),
   new URL('./manifest.webmanifest', APP_SCOPE).toString(),
-  new URL('./icons/icon.svg', APP_SCOPE).toString(),
-  new URL('./mapbox-gl-rtl-text.js', APP_SCOPE).toString()
+  new URL('./icons/icon.svg', APP_SCOPE).toString()
 ];
 
 const isSameOrigin = (request) => new URL(request.url).origin === self.location.origin;
