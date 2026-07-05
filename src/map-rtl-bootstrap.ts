@@ -14,3 +14,17 @@ export function ensureRtlMapSupport(language: string) {
     .catch(() => false);
   return installPromise;
 }
+
+function activeLanguage() {
+  try {
+    return localStorage.getItem('mtp-language') ?? document.documentElement.lang ?? 'en';
+  } catch {
+    return document.documentElement.lang ?? 'en';
+  }
+}
+
+void ensureRtlMapSupport(activeLanguage());
+
+new MutationObserver(() => {
+  void ensureRtlMapSupport(activeLanguage());
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['lang', 'dir'] });
