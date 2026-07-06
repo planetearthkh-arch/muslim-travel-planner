@@ -9,3 +9,7 @@
   left: 50%;
   transform-origin: center;
 }
+
+.qibla-cardinal.north {
+  transform: translate(-50%, -50%) rotate(var(--compass-rotation)) translateY(-149px);
+}
