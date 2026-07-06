@@ -1,0 +1,32 @@
+name: Audit Fix Test Output
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/audit-fix-test-output.yml'
+      - 'src/**/*.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run tests for diagnostic artifact
+        continue-on-error: true
+        shell: bash
+        run: npm test > audit-fix-test-output.txt 2>&1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audit-fix-test-output
+          path: audit-fix-test-output.txt
+          retention-days: 2
