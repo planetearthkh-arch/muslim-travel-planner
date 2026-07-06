@@ -44,7 +44,6 @@ export const labels: Record<Language, Record<string, string>> = {
   ...coreLabels,
   id: { ...coreLabels.id, ...indonesianLabelCorrections, prayerAppleMaps: 'Buka di Apple Maps' },
   ms: { ...coreLabels.ms, ...malayLabelCorrections, prayerAppleMaps: 'Buka dalam Apple Maps' },
-  tr: { ...coreLabels.tr, prayerAppleMaps: 'Apple Haritalar’da aç' },
   ur: {
     ...coreLabels.en,
     ...urduLabels,
