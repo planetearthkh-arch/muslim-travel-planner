@@ -63,6 +63,15 @@ export type Attraction = {
 const tourismAttractions = new Set(['attraction', 'museum', 'gallery', 'viewpoint', 'zoo', 'aquarium', 'theme_park', 'artwork']);
 const historicAttractions = new Set(['monument', 'memorial', 'castle', 'archaeological_site', 'ruins', 'fort', 'city_gate', 'manor', 'church', 'mosque', 'synagogue', 'palace']);
 
+function isValidAttractionCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+}
+
 export function isMappedAttraction(tags: OsmTags) {
   if (tourismAttractions.has(tags.tourism ?? '')) return true;
   if (tags.historic && (historicAttractions.has(tags.historic) || tags.tourism === 'attraction')) return true;
@@ -162,6 +171,7 @@ export function normalizeAttraction(element: OverpassElement, origin: { latitude
   const latitude = element.lat ?? element.center?.lat;
   const longitude = element.lon ?? element.center?.lon;
   if (typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
+  if (!isValidAttractionCoordinate(latitude, longitude) || !isValidAttractionCoordinate(origin.latitude, origin.longitude)) return undefined;
   const category = classifyAttraction(tags);
   const name = attractionName(tags, category);
   const openingHours = tags.opening_hours ?? '';
@@ -444,6 +454,7 @@ export function buildAttractionOverpassQuery(latitude: number, longitude: number
 }
 
 export function buildAttractionOverpassBatches(latitude: number, longitude: number, radiusKm: number): AttractionQueryBatch[] {
+  if (!isValidAttractionCoordinate(latitude, longitude)) throw new Error('Invalid attraction coordinates');
   const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
   const boxes = searchBoxes(latitude, longitude, radiusMeters / 1000);
   const batch = (id: string, label: string, selectors: string[]): AttractionQueryBatch => ({
