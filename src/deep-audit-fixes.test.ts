@@ -4,6 +4,7 @@ import { airportByIata, chooseFlightProgress, createPreparedFlightPlan, position
 import { createSavedTrip, validateSavedTrip } from './saved-trips.js';
 import { getSafeStorage } from './safe-storage.js';
 import { cities } from './data.js';
+import { safeExternalUrl } from './urls.js';
 
 // Regression coverage for the full deep-audit repair set.
 async function repoFile(relative: string) {
@@ -81,6 +82,14 @@ test('safe storage falls back outside a browser', () => {
   assert.equal(storage.getItem('key'), 'value');
 });
 
+test('external URL sanitizer is HTTPS-only', () => {
+  assert.equal(safeExternalUrl('example.com/path'), 'https://example.com/path');
+  assert.equal(safeExternalUrl('https://example.com/path'), 'https://example.com/path');
+  assert.equal(safeExternalUrl('http://example.com/path'), '');
+  assert.equal(safeExternalUrl('ftp://example.com/path'), '');
+  assert.equal(safeExternalUrl('mailto:test@example.com'), '');
+});
+
 test('native and UI safeguards remain wired', async () => {
   const [main, athan, manifest, project, index] = await Promise.all([
     repoFile('src/main.ts'),
@@ -95,9 +104,50 @@ test('native and UI safeguards remain wired', async () => {
   assert.equal(main.includes('language: trip.language'), true);
   assert.equal(athan.includes('AndroidAthan.schedule'), true);
   assert.match(manifest, /android:allowBackup="false"/);
+  assert.match(manifest, /android:fullBackupContent="@xml\/backup_rules"/);
+  assert.match(manifest, /android:dataExtractionRules="@xml\/data_extraction_rules"/);
   assert.equal(buildVersions.length, 2);
   assert.equal(new Set(buildVersions).size, 1);
-  assert.equal(buildVersions[0] >= 109, true);
+  assert.equal(buildVersions[0] >= 119, true);
   assert.match(project, /ur InfoPlist.strings/);
   assert.equal(index.includes('urdu-runtime.ts'), false);
+});
+
+test('Android receiver and audio policy fixes stay wired into the native template', async () => {
+  const [bootReceiver, audioPolicy, alarmPlugin, setup, backupRules, extractionRules] = await Promise.all([
+    repoFile('mobile/android/java/BootReceiver.java'),
+    repoFile('mobile/android/java/AthanAudioPolicy.java'),
+    repoFile('mobile/android/java/AthanAlarmPlugin.java'),
+    repoFile('scripts/setup-android.mjs'),
+    repoFile('mobile/android/res/xml/backup_rules.xml'),
+    repoFile('mobile/android/res/xml/data_extraction_rules.xml'),
+  ]);
+  assert.equal(bootReceiver.includes('isSupportedAction(Intent intent)'), true);
+  assert.equal(bootReceiver.includes('isSupportedAction(String action)'), true);
+  assert.equal(bootReceiver.includes('if (!isSupportedAction(intent)) return;'), true);
+  assert.equal(bootReceiver.includes('Intent.ACTION_BOOT_COMPLETED'), true);
+  assert.equal(bootReceiver.includes('Intent.ACTION_TIME_CHANGED'), true);
+  assert.equal(bootReceiver.includes('Intent.ACTION_TIMEZONE_CHANGED'), true);
+  assert.equal(audioPolicy.includes('toLowerCase(Locale.ROOT)'), true);
+  assert.equal(audioPolicy.includes('isTrustedAudioUrl'), true);
+  assert.equal(audioPolicy.includes('isSupportedAudioContentType'), true);
+  assert.equal(alarmPlugin.includes('AthanAudioPolicy.isTrustedAudioUrl'), true);
+  assert.equal(alarmPlugin.includes('AthanAudioPolicy.isSupportedAudioContentType'), true);
+  assert.equal(alarmPlugin.includes('contentType.toLowerCase()'), false);
+  assert.equal(backupRules.includes('athan_alarm_preferences.xml'), true);
+  assert.equal(extractionRules.includes('<cloud-backup>'), true);
+  assert.equal(extractionRules.includes('<device-transfer>'), true);
+  assert.equal(setup.includes("join(androidDir, 'app', 'src', 'test'"), true);
+});
+
+test('Android native unit-test templates cover the receiver and audio policy', async () => {
+  const [bootTest, audioTest] = await Promise.all([
+    repoFile('mobile/android/test/BootReceiverTest.java'),
+    repoFile('mobile/android/test/AthanAudioPolicyTest.java'),
+  ]);
+  assert.equal(bootTest.includes('acceptsOnlyExpectedSystemActions'), true);
+  assert.equal(bootTest.includes('com.example.UNEXPECTED'), true);
+  assert.equal(audioTest.includes('contentTypeChecksAreLocaleSafe'), true);
+  assert.equal(audioTest.includes('new Locale("tr", "TR")'), true);
+  assert.equal(audioTest.includes('acceptsOnlyTrustedHttpsAssabileUrls'), true);
 });
