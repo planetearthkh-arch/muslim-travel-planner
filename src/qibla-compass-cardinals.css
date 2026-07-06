@@ -13,3 +13,51 @@
 .qibla-cardinal.north {
   transform: translate(-50%, -50%) rotate(var(--compass-rotation)) translateY(-149px);
 }
+
+.qibla-cardinal.east {
+  transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(90deg) translateY(-149px);
+}
+
+.qibla-cardinal.south {
+  transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(180deg) translateY(-149px);
+}
+
+.qibla-cardinal.west {
+  transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(270deg) translateY(-149px);
+}
+
+@media (max-width: 480px) {
+  .qibla-cardinal.north {
+    transform: translate(-50%, -50%) rotate(var(--compass-rotation)) translateY(-118px);
+  }
+
+  .qibla-cardinal.east {
+    transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(90deg) translateY(-118px);
+  }
+
+  .qibla-cardinal.south {
+    transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(180deg) translateY(-118px);
+  }
+
+  .qibla-cardinal.west {
+    transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(270deg) translateY(-118px);
+  }
+}
+
+@media (max-width: 360px) {
+  .qibla-cardinal.north {
+    transform: translate(-50%, -50%) rotate(var(--compass-rotation)) translateY(-104px);
+  }
+
+  .qibla-cardinal.east {
+    transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(90deg) translateY(-104px);
+  }
+
+  .qibla-cardinal.south {
+    transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(180deg) translateY(-104px);
+  }
+
+  .qibla-cardinal.west {
+    transform: translate(-50%, -50%) rotate(var(--compass-rotation)) rotate(270deg) translateY(-104px);
+  }
+}
