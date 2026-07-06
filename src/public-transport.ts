@@ -39,6 +39,15 @@ export type PublicTransportStop = {
 const yes = (value: string | undefined) => /^(yes|designated|available|true|1)$/i.test(value ?? '');
 const no = (value: string | undefined) => /^(no|false|0)$/i.test(value ?? '');
 
+function isValidPublicTransportCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+}
+
 export function classifyPublicTransport(tags: OsmTags): PublicTransportType | undefined {
   const railway = tags.railway?.toLowerCase();
   const station = tags.station?.toLowerCase();
@@ -117,6 +126,7 @@ export function normalizePublicTransportStop(element: OverpassElement, origin: {
   const latitude = element.lat ?? element.center?.lat;
   const longitude = element.lon ?? element.center?.lon;
   if (!type || typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
+  if (!isValidPublicTransportCoordinate(latitude, longitude) || !isValidPublicTransportCoordinate(origin.latitude, origin.longitude)) return undefined;
   const openingHours = tags.opening_hours ?? '';
   const routes = taggedValue(tags, ['line', 'lines', 'route_ref', 'routes', 'bus_routes', 'train_routes']);
   return {
