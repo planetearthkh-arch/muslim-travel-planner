@@ -1,0 +1,31 @@
+name: Capture Audit Fix Test Output
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/deep-audit-fixes.test.ts'
+      - '.github/workflows/capture-audit-fix-test-output.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Capture npm test output
+        shell: bash
+        run: npm test > audit-fix-test-output.txt 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audit-fix-test-output
+          path: audit-fix-test-output.txt
+          retention-days: 2
