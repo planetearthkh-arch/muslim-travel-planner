@@ -1,3 +1,4 @@
+import { safeOverpassRadiusMeters } from './overpass-radius.js';
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { isAlwaysOpen, openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
@@ -238,7 +239,7 @@ export function sortToilets(toilets: PublicToilet[], sort: ToiletSort) {
 }
 
 export function buildToiletOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
-  const radiusMeters = Math.round(Math.min(radiusKm, 25) * 1000);
+  const radiusMeters = safeOverpassRadiusMeters(radiusKm, 25, 5);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const selectors = [
     `node["amenity"="toilets"]${around}`,
