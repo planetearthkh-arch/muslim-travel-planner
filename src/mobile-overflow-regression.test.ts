@@ -1,6 +1,26 @@
-import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import test from 'node:test';
+type AssertModule = {
+  default: {
+    match(actual: string, expected: RegExp, message?: string): void;
+    notEqual(actual: unknown, expected: unknown, message?: string): void;
+    ok(value: unknown, message?: string): void;
+  };
+};
+
+type FsModule = {
+  readFileSync(path: string, encoding: 'utf8'): string;
+};
+
+type TestModule = {
+  default(name: string, callback: () => void | Promise<void>): void;
+};
+
+const loadNodeModule = new Function('specifier', 'return import(specifier)') as <T>(
+  specifier: string,
+) => Promise<T>;
+
+const { default: assert } = await loadNodeModule<AssertModule>('node:assert/strict');
+const { readFileSync } = await loadNodeModule<FsModule>('node:fs');
+const { default: test } = await loadNodeModule<TestModule>('node:test');
 
 test('mobile overflow guard is loaded after the main stylesheet', () => {
   const index = readFileSync('index.html', 'utf8');
