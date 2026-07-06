@@ -42,6 +42,15 @@ const no = (value: string | undefined) => /^(no|false|0)$/i.test(value ?? '');
 const officeEvidence = /\b(taxi|cab|minicab|dispatch)\b/i;
 const weakOfficeValues = new Set(['office', 'company', 'transport', 'travel_agency']);
 
+function isValidTaxiCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+}
+
 function taggedValue(tags: OsmTags, keys: string[]) {
   return keys.map((key) => tags[key]?.trim()).find(Boolean) ?? '';
 }
@@ -116,6 +125,7 @@ export function normalizeTaxiService(element: OverpassElement, origin: { latitud
   const latitude = element.lat ?? element.center?.lat;
   const longitude = element.lon ?? element.center?.lon;
   if (!type || typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
+  if (!isValidTaxiCoordinate(latitude, longitude) || !isValidTaxiCoordinate(origin.latitude, origin.longitude)) return undefined;
   const phone = tags.phone ?? tags['contact:phone'] ?? '';
   const call = normalizeTaxiPhone(phone);
   const openingHours = tags.opening_hours ?? '';
