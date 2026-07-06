@@ -1362,10 +1362,10 @@ test('in-flight mode is bundled, localized, route-discoverable, and avoids magne
   assert.equal(docs.includes('OurAirports'), true);
 });
 
-test('shared external URL sanitizer accepts only HTTP and HTTPS links', () => {
+test('shared external URL sanitizer accepts HTTPS links and rejects unencrypted URLs', () => {
   assert.equal(safeExternalUrl('example.com'), 'https://example.com/');
   assert.equal(safeExternalUrl('https://example.com/path'), 'https://example.com/path');
-  assert.equal(safeExternalUrl('http://example.com'), 'http://example.com/');
+  assert.equal(safeExternalUrl('http://example.com'), '');
   for (const unsafe of ['javascript:alert(1)', 'data:text/html,x', 'file:///tmp/x', 'blob:https://example.com/id', 'vbscript:msgbox(1)', 'https://', '']) {
     assert.equal(safeExternalUrl(unsafe), '');
   }
