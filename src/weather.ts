@@ -70,7 +70,17 @@ const currentVariables = ['temperature_2m', 'apparent_temperature', 'relative_hu
 const hourlyVariables = ['temperature_2m', 'apparent_temperature', 'relative_humidity_2m', 'precipitation_probability', 'precipitation', 'rain', 'showers', 'snowfall', 'weather_code', 'cloud_cover', 'visibility', 'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'uv_index', 'is_day'];
 const dailyVariables = ['weather_code', 'temperature_2m_max', 'temperature_2m_min', 'apparent_temperature_max', 'apparent_temperature_min', 'sunrise', 'sunset', 'daylight_duration', 'sunshine_duration', 'uv_index_max', 'precipitation_sum', 'rain_sum', 'showers_sum', 'snowfall_sum', 'precipitation_probability_max', 'wind_speed_10m_max', 'wind_gusts_10m_max', 'wind_direction_10m_dominant'];
 
+function isValidWeatherCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+}
+
 export function buildWeatherUrl(latitude: number, longitude: number, units: WeatherUnits, baseUrl = OPEN_METEO_FORECAST_URL) {
+  if (!isValidWeatherCoordinate(latitude, longitude)) throw new Error('Invalid weather coordinates');
   const params = new URLSearchParams({
     latitude: String(latitude),
     longitude: String(longitude),
@@ -200,9 +210,13 @@ export function validateWeatherResponse(raw: unknown, retrievedAt = new Date().t
   }));
   if (daily.some((day) => !day.sunrise || !day.sunset)) throw new Error('Missing daily sunrise or sunset');
 
+  const latitude = requiredNumber(body.latitude, 'latitude');
+  const longitude = requiredNumber(body.longitude, 'longitude');
+  if (!isValidWeatherCoordinate(latitude, longitude)) throw new Error('Invalid weather coordinates');
+
   return {
-    latitude: requiredNumber(body.latitude, 'latitude'),
-    longitude: requiredNumber(body.longitude, 'longitude'),
+    latitude,
+    longitude,
     timezone: asString(body.timezone) || 'auto',
     retrievedAt,
     cached: false,
