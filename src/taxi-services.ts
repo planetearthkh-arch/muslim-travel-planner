@@ -1,3 +1,4 @@
+import { safeOverpassRadiusMeters } from './overpass-radius.js';
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
@@ -200,7 +201,7 @@ export function sortTaxiServices(items: TaxiService[], sort: TaxiSort) {
 }
 
 export function buildTaxiOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
-  const radiusMeters = Math.round(Math.min(radiusKm, 50) * 1000);
+  const radiusMeters = safeOverpassRadiusMeters(radiusKm, 50, 5);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const selectors = [
     `node["amenity"="taxi"]${around}`,
