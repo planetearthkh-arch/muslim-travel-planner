@@ -1,4 +1,4 @@
-import { formatAddress, getEnglishPlaceName, getOriginalPlaceName, isValidPrayerCoordinate, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
+import { formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { distanceKm } from './prayer-spaces.js';
 import { openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
@@ -68,6 +68,15 @@ const yes = (value: string | undefined) => affirmativeHalalValues.has(normalized
 const no = (value: string | undefined) => negativeHalalValues.has(normalizedValue(value));
 const invalidCertification = /^(no|none|false|expired|unknown|unverified|not certified)$/i;
 
+function isValidRestaurantCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+}
+
 export function classifyHalalStatus(tags: OsmTags, includePossible = false): HalalStatus | undefined {
   const dietHalal = normalizedValue(tags['diet:halal']);
   const legacyHalal = normalizedValue(tags.halal);
@@ -113,7 +122,7 @@ export function normalizeHalalRestaurant(element: OverpassElement, origin: { lat
   const type = classifyFoodPlace(tags);
   const halalStatus = classifyHalalStatus(tags, includePossible);
   if (!type || !halalStatus || typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
-  if (!isValidPrayerCoordinate(latitude, longitude) || !isValidPrayerCoordinate(origin.latitude, origin.longitude)) return undefined;
+  if (!isValidRestaurantCoordinate(latitude, longitude) || !isValidRestaurantCoordinate(origin.latitude, origin.longitude)) return undefined;
   const openingHours = tags.opening_hours ?? '';
   return {
     id: `${element.type}-${element.id}`,
