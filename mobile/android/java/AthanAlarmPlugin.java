@@ -24,7 +24,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONArray;
@@ -261,13 +260,10 @@ public class AthanAlarmPlugin extends Plugin {
     }
 
     private static URL validateAudioUrl(String address) throws Exception {
-        URL url = new URL(address);
-        String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
-        boolean trustedHost = host.equals("assabile.com") || host.endsWith(".assabile.com");
-        if (!"https".equalsIgnoreCase(url.getProtocol()) || !trustedHost) {
+        if (!AthanAudioPolicy.isTrustedAudioUrl(address)) {
             throw new IllegalStateException("Athan audio URL is not trusted.");
         }
-        return url;
+        return new URL(address);
     }
 
     private static void download(String address, File destination) throws Exception {
@@ -284,12 +280,9 @@ public class AthanAlarmPlugin extends Plugin {
             throw new IllegalStateException("Audio download returned HTTP " + responseCode);
         }
         String contentType = connection.getContentType();
-        if (contentType != null) {
-            String normalizedContentType = contentType.toLowerCase(Locale.ROOT);
-            if (!normalizedContentType.startsWith("audio/") && !normalizedContentType.contains("octet-stream")) {
-                connection.disconnect();
-                throw new IllegalStateException("Audio download returned an unexpected content type.");
-            }
+        if (!AthanAudioPolicy.isSupportedAudioContentType(contentType)) {
+            connection.disconnect();
+            throw new IllegalStateException("Audio download returned an unexpected content type.");
         }
         long contentLength = connection.getContentLengthLong();
         if (contentLength > MAX_AUDIO_BYTES) {
