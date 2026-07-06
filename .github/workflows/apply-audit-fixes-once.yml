@@ -1,0 +1,116 @@
+name: Apply Audit Fixes Once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-audit-fixes-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/fix-deep-audit-findings
+          fetch-depth: 0
+      - name: Apply professional fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          boot = Path('mobile/android/java/BootReceiver.java')
+          boot.write_text('''package com.planetearthkids.muslimtravelplanner;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+
+public class BootReceiver extends BroadcastReceiver {
+    public static boolean isSupportedAction(Intent intent) {
+        if (intent == null) return false;
+        String action = intent.getAction();
+        return Intent.ACTION_BOOT_COMPLETED.equals(action)
+            || Intent.ACTION_TIME_CHANGED.equals(action)
+            || Intent.ACTION_TIMEZONE_CHANGED.equals(action);
+    }
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (!isSupportedAction(intent)) return;
+        PendingResult result = goAsync();
+        new Thread(() -> {
+            try {
+                AthanAlarmPlugin.rescheduleStored(context.getApplicationContext());
+            } finally {
+                result.finish();
+            }
+        }).start();
+    }
+}
+''')
+
+          plugin = Path('mobile/android/java/AthanAlarmPlugin.java')
+          text = plugin.read_text()
+          text = text.replace('if (contentType != null && !contentType.toLowerCase().startsWith("audio/") && !contentType.toLowerCase().contains("octet-stream")) {', 'if (contentType != null) {\n            String normalizedContentType = contentType.toLowerCase(Locale.ROOT);\n            if (!normalizedContentType.startsWith("audio/") && !normalizedContentType.contains("octet-stream")) {')
+          text = text.replace('            connection.disconnect();\n            throw new IllegalStateException("Audio download returned an unexpected content type.");\n        }\n        long contentLength = connection.getContentLengthLong();', '                connection.disconnect();\n                throw new IllegalStateException("Audio download returned an unexpected content type.");\n            }\n        }\n        long contentLength = connection.getContentLengthLong();')
+          plugin.write_text(text)
+
+          manifest = Path('mobile/android/AndroidManifest.xml')
+          text = manifest.read_text()
+          text = text.replace('android:fullBackupContent="false"\n        android:icon="@mipmap/ic_launcher"', 'android:fullBackupContent="@xml/backup_rules"\n        android:dataExtractionRules="@xml/data_extraction_rules"\n        android:icon="@mipmap/ic_launcher"')
+          manifest.write_text(text)
+
+          xml_dir = Path('mobile/android/res/xml')
+          xml_dir.mkdir(parents=True, exist_ok=True)
+          (xml_dir / 'backup_rules.xml').write_text('''<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="sharedpref" path="athan_alarm_preferences.xml" />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+</full-backup-content>
+''')
+          (xml_dir / 'data_extraction_rules.xml').write_text('''<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="athan_alarm_preferences.xml" />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="athan_alarm_preferences.xml" />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+    </device-transfer>
+</data-extraction-rules>
+''')
+
+          urls = Path('src/urls.ts')
+          urls.write_text('''export function safeExternalUrl(value: string | undefined) {
+  const raw = value?.trim();
+  if (!raw) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https:\/\//i.test(raw)) return '';
+  const candidate = /^https:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== 'https:') return '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+''')
+          PY
+      - name: Commit fixes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/android/java/BootReceiver.java mobile/android/java/AthanAlarmPlugin.java mobile/android/AndroidManifest.xml mobile/android/res/xml src/urls.ts
+          git commit -m 'Fix confirmed audit defects'
+          git push origin HEAD:codex/fix-deep-audit-findings
