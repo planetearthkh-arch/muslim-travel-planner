@@ -1,3 +1,11 @@
 .qibla-compass {
   --qibla-cardinal-offset: 149px;
 }
+
+.qibla-cardinal {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  transform-origin: center;
+}
