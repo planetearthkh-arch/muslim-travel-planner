@@ -24,15 +24,15 @@ const { default: assert } = await loadNodeModule<AssertModule>('node:assert/stri
 const { readFileSync } = await loadNodeModule<FsModule>('node:fs');
 const { default: test } = await loadNodeModule<TestModule>('node:test');
 
-test('Qibla cardinal labels rotate with the live compass heading inside the dial', () => {
+test('Qibla cardinal labels are anchored inside the dial and rotate together', () => {
   const index = readFileSync('index.html', 'utf8');
   const css = readFileSync('src/qibla-compass-cardinals.css', 'utf8');
   const cardinalBlocks = [...css.matchAll(/\.qibla-cardinal\.(north|east|south|west)\s*\{([\s\S]*?)\}/g)];
 
   assert.ok(index.includes('href="/src/qibla-compass-cardinals.css"'), 'Qibla compass cardinal stylesheet should be loaded after the base compass styles');
-  assert.equal(cardinalBlocks.length, 4, 'all four cardinal directions should have explicit transforms');
-  assert.match(css, /\.qibla-cardinal\.north[\s\S]*rotate\(var\(--compass-rotation\)\)[\s\S]*translateY\(-96px\)/);
-  assert.match(css, /\.qibla-cardinal\.east[\s\S]*rotate\(90deg\)[\s\S]*translateY\(-96px\)/);
-  assert.match(css, /\.qibla-cardinal\.south[\s\S]*rotate\(180deg\)[\s\S]*translateY\(-96px\)/);
-  assert.match(css, /\.qibla-cardinal\.west[\s\S]*rotate\(270deg\)[\s\S]*translateY\(-96px\)/);
+  assert.equal(cardinalBlocks.length, 4, 'all four cardinal directions should have explicit positions');
+  assert.match(css, /--qibla-cardinal-orbit:\s*78px/);
+  assert.match(css, /\.qibla-cardinal\s*\{[\s\S]*transform:\s*rotate\(var\(--compass-rotation\)\)/);
+  assert.match(css, /\.qibla-cardinal\.north[\s\S]*top:\s*calc\(50% - var\(--qibla-cardinal-orbit\) - var\(--qibla-cardinal-half\)\)/);
+  assert.match(css, /\.qibla-cardinal\.west[\s\S]*left:\s*calc\(50% - var\(--qibla-cardinal-orbit\) - var\(--qibla-cardinal-half\)\)/);
 });
