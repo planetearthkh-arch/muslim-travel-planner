@@ -39,7 +39,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
       - run: npm run android:setup
-      - run: ./gradlew assembleDebug assembleRelease --stacktrace
+      - run: ./gradlew lintDebug testDebugUnitTest assembleDebug assembleRelease --stacktrace
         working-directory: android
 
   ios:

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { airportByIata, chooseFlightProgress, createPreparedFlightPlan } from './flight-mode.js';
 import { isPersistentStorageAvailable } from './safe-storage.js';
+import { safeExternalUrl } from './urls.js';
 
 const load = (specifier: string) => Function('specifier', 'return import(specifier)')(specifier) as Promise<any>;
 async function repoFile(path: string) {
@@ -21,7 +22,7 @@ test('future-flight GPS fixes do not replace the scheduled route estimate', () =
 });
 
 test('release hardening remains wired into source and native configuration', async () => {
-  const [project, verify, main, athan, safeStorage, serviceWorker, plugin, service] = await Promise.all([
+  const [project, verify, main, athan, safeStorage, serviceWorker, plugin, service, bootReceiver, manifest, dataRules, setup] = await Promise.all([
     repoFile('ios/App/App.xcodeproj/project.pbxproj'),
     repoFile('scripts/verify-ios-version.mjs'),
     repoFile('src/main.ts'),
@@ -30,6 +31,10 @@ test('release hardening remains wired into source and native configuration', asy
     repoFile('public/sw.js'),
     repoFile('mobile/android/java/AthanAlarmPlugin.java'),
     repoFile('mobile/android/java/AthanPlaybackService.java'),
+    repoFile('mobile/android/java/BootReceiver.java'),
+    repoFile('mobile/android/AndroidManifest.xml'),
+    repoFile('mobile/android/res/xml/data_extraction_rules.xml'),
+    repoFile('scripts/setup-android.mjs'),
   ]);
   const buildVersions = [...project.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map((match) => Number(match[1]));
   assert.equal(buildVersions.length, 2);
@@ -51,9 +56,25 @@ test('release hardening remains wired into source and native configuration', asy
   assert.equal(plugin.includes('checkPermissions(PluginCall call)'), true);
   assert.equal(plugin.includes('validateAudioUrl'), true);
   assert.equal(plugin.includes('PendingIntent.FLAG_NO_CREATE'), true);
+  assert.equal(plugin.includes('toLowerCase(Locale.ROOT)'), true);
+  assert.equal(plugin.includes('isTrustedAudioContentType'), true);
   assert.equal(service.includes('localized("stop", language)'), true);
+  assert.equal(bootReceiver.includes('isAcceptedAction'), true);
+  assert.equal(bootReceiver.includes('intent.getAction()'), true);
+  assert.equal(manifest.includes('android:dataExtractionRules="@xml/data_extraction_rules"'), true);
+  assert.equal(dataRules.includes('<device-transfer>'), true);
+  assert.equal(dataRules.includes('<exclude domain="sharedpref" path="." />'), true);
+  assert.equal(setup.includes("join(androidDir, 'app', 'src', 'test'"), true);
+  assert.equal(setup.includes("cpSync(join(templateDir, 'test'), testTarget"), true);
 });
 
 test('temporary storage is identified as non-persistent outside a browser', () => {
   assert.equal(isPersistentStorageAvailable(), false);
+});
+
+test('external navigation is HTTPS-only by default', () => {
+  assert.equal(safeExternalUrl('example.com'), 'https://example.com/');
+  assert.equal(safeExternalUrl('https://example.com/path'), 'https://example.com/path');
+  assert.equal(safeExternalUrl('http://example.com/path'), '');
+  assert.equal(safeExternalUrl('javascript:alert(1)'), '');
 });

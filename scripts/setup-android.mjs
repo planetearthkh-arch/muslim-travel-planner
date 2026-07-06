@@ -21,9 +21,12 @@ run('npx', ['cap', 'sync', 'android']);
 
 const mainDir = join(androidDir, 'app', 'src', 'main');
 const javaTarget = join(mainDir, 'java', 'com', 'planetearthkids', 'muslimtravelplanner');
+const testTarget = join(androidDir, 'app', 'src', 'test', 'java', 'com', 'planetearthkids', 'muslimtravelplanner');
 mkdirSync(javaTarget, { recursive: true });
+mkdirSync(testTarget, { recursive: true });
 cpSync(join(templateDir, 'AndroidManifest.xml'), join(mainDir, 'AndroidManifest.xml'));
 cpSync(join(templateDir, 'java'), javaTarget, { recursive: true });
 cpSync(join(templateDir, 'res'), join(mainDir, 'res'), { recursive: true });
+cpSync(join(templateDir, 'test'), testTarget, { recursive: true });
 
 console.log('\nAndroid Athan alarms are installed. Run: npm run android:open');
