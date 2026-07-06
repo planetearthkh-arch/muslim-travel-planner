@@ -218,20 +218,49 @@ export const writeJsonCache = <T>(storage: Storage | undefined, key: string, val
   }
 };
 
+type HistoricalRatePoint = { date: string; rate: number };
+type RateMap = Record<string, number>;
+
+function isValidHistoricalRate(date: string, rate: number) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(rate) && rate > 0;
+}
+
+function directHistoricalRate(item: { date: string; base: string; quote: string; rate: number }, base: string, quote: string): HistoricalRatePoint | null {
+  if (!isValidHistoricalRate(item.date, item.rate)) return null;
+  if (item.base === base && item.quote === quote) return { date: item.date, rate: item.rate };
+  if (item.base === quote && item.quote === base) return { date: item.date, rate: 1 / item.rate };
+  return null;
+}
+
+function rateFromMap(rates: RateMap, base: string, quote: string) {
+  if (base === quote) return 1;
+  if (base === 'EUR') return rates[quote];
+  if (quote === 'EUR') return rates[base] ? 1 / rates[base] : Number.NaN;
+  return rates[quote] / rates[base];
+}
+
+function pointsFromRateMapPayload(ratesPayload: Record<string, RateMap>, base: string, quote: string) {
+  return Object.entries(ratesPayload)
+    .filter(([date, rates]) => /^\d{4}-\d{2}-\d{2}$/.test(date) && rates && typeof rates === 'object')
+    .map(([date, rates]) => ({ date, rate: rateFromMap(rates, base, quote) }));
+}
+
 export const historyStats = (ratesPayload: Record<string, Record<string, number>> | Array<{ date: string; base: string; quote: string; rate: number }>, quote: string, base = 'EUR') => {
   const points = (Array.isArray(ratesPayload)
-    ? Object.entries(ratesPayload.reduce<Record<string, Record<string, number>>>((days, item) => {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date) || item.base !== 'EUR' && item.base !== base || typeof item.rate !== 'number' || !Number.isFinite(item.rate) || item.rate <= 0) return days;
-      days[item.date] = { ...(days[item.date] ?? {}), [item.quote]: item.rate };
-      return days;
-    }, {})).map(([date, rates]) => {
-      const rate = base === 'EUR' ? rates[quote] : quote === 'EUR' ? 1 / rates[base] : rates[quote] / rates[base];
-      return { date, rate };
-    })
-    : Object.entries(ratesPayload)
-      .filter(([date, rates]) => /^\d{4}-\d{2}-\d{2}$/.test(date) && rates && typeof rates === 'object')
-      .map(([date, rates]) => ({ date, rate: base === 'EUR' ? rates[quote] : quote === 'EUR' ? 1 / rates[base] : rates[quote] / rates[base] })))
-    .filter((point): point is { date: string; rate: number } => typeof point.rate === 'number' && Number.isFinite(point.rate) && point.rate > 0)
+    ? (() => {
+      const directPoints = ratesPayload
+        .map((item) => directHistoricalRate(item, base, quote))
+        .filter((point): point is HistoricalRatePoint => Boolean(point));
+      if (directPoints.length) return directPoints;
+      const dailyRates = ratesPayload.reduce<Record<string, RateMap>>((days, item) => {
+        if (!isValidHistoricalRate(item.date, item.rate) || item.base !== 'EUR') return days;
+        days[item.date] = { ...(days[item.date] ?? {}), [item.quote]: item.rate };
+        return days;
+      }, {});
+      return pointsFromRateMapPayload(dailyRates, base, quote);
+    })()
+    : pointsFromRateMapPayload(ratesPayload, base, quote))
+    .filter((point): point is HistoricalRatePoint => typeof point.rate === 'number' && Number.isFinite(point.rate) && point.rate > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
   if (!points.length) throw new Error('Missing history data');
   const start = points[0].rate;
