@@ -1,11 +1,21 @@
 export {};
 
-function clearDuplicatePrayerStatus() {
-  const page = document.querySelector<HTMLElement>('.prayer-app:not(.halal-app)');
-  const status = page?.querySelector<HTMLElement>('.prayer-status.idle, .prayer-status.ready');
-  if (status && status.textContent?.trim()) status.textContent = '';
+const idleStatuses = '.prayer-status.idle, .prayer-status.ready';
+const toolPanels = '.prayer-app, .halal-app';
+
+function collapseEmptyToolStatuses() {
+  document.querySelectorAll<HTMLElement>(`${toolPanels} ${idleStatuses}`).forEach((status) => {
+    const message = status.textContent?.trim() ?? '';
+    if (message && status.closest('.prayer-app:not(.halal-app)')) {
+      status.textContent = '';
+    }
+
+    const isEmpty = !(status.textContent?.trim());
+    status.hidden = isEmpty;
+    status.setAttribute('aria-hidden', String(isEmpty));
+  });
 }
 
 const root = document.querySelector<HTMLElement>('#root');
-if (root) new MutationObserver(clearDuplicatePrayerStatus).observe(root, { childList: true, subtree: true });
-window.queueMicrotask(clearDuplicatePrayerStatus);
+if (root) new MutationObserver(collapseEmptyToolStatuses).observe(root, { childList: true, subtree: true });
+window.queueMicrotask(collapseEmptyToolStatuses);
