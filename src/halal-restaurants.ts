@@ -1,4 +1,4 @@
-import { formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
+import { formatAddress, getEnglishPlaceName, getOriginalPlaceName, isValidPrayerCoordinate, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { distanceKm } from './prayer-spaces.js';
 import { openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
@@ -113,6 +113,7 @@ export function normalizeHalalRestaurant(element: OverpassElement, origin: { lat
   const type = classifyFoodPlace(tags);
   const halalStatus = classifyHalalStatus(tags, includePossible);
   if (!type || !halalStatus || typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
+  if (!isValidPrayerCoordinate(latitude, longitude) || !isValidPrayerCoordinate(origin.latitude, origin.longitude)) return undefined;
   const openingHours = tags.opening_hours ?? '';
   return {
     id: `${element.type}-${element.id}`,
