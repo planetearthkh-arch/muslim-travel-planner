@@ -215,7 +215,19 @@ const facilityUncertainty = (language: string) => textFor(language, {
   fr: 'Les informations sur les équipements peuvent être incomplètes',
 });
 
-const makeItem = (date: string, item: Omit<ItineraryItem, 'date'>): ItineraryItem => ({ ...item, date, id: `${date}-${item.id}` });
+const internalVerificationLabelPattern = /\b(?:Sample|Verified|Unverified)\b/g;
+const cleanItineraryDetails = (details: string) => details
+  .replace(internalVerificationLabelPattern, '')
+  .replace(/\s{2,}/g, ' ')
+  .replace(/\s+([,.;:])/g, '$1')
+  .trim();
+
+const makeItem = (date: string, item: Omit<ItineraryItem, 'date'>): ItineraryItem => ({
+  ...item,
+  details: cleanItineraryDetails(item.details),
+  date,
+  id: `${date}-${item.id}`,
+});
 const verificationScore = (status: VerificationStatus | undefined) => status === 'Verified' ? 3 : status === 'Sample' ? 2 : status === 'Unverified' ? 1 : 0;
 const matchesAccessibility = (place: Place, prefs: PlannerPreferences) => !prefs.accessibilityNeeds.trim() || verificationScore(place.facility?.accessibility) >= 2;
 
