@@ -7,6 +7,10 @@ export type StoredFlightMode = {
   plan: PreparedFlightPlan | null;
 };
 
+function storedFlightMode(plan: PreparedFlightPlan | null): StoredFlightMode {
+  return { schemaVersion: 1, plan };
+}
+
 export function parseStoredFlightPlan(raw: string | null) {
   if (!raw) return { plan: null as PreparedFlightPlan | null, corrupted: false };
   try {
@@ -25,13 +29,21 @@ export class FlightPlanRepository {
   constructor(private readonly storage: Storage, private readonly key = FLIGHT_MODE_STORAGE_KEY) {}
 
   read() {
-    return parseStoredFlightPlan(this.storage.getItem(this.key));
+    const result = parseStoredFlightPlan(this.storage.getItem(this.key));
+    if (result.corrupted) {
+      try {
+        this.storage.setItem(this.key, JSON.stringify(storedFlightMode(result.plan)));
+      } catch {
+        // Keep returning the recovered in-memory result even if storage is unavailable.
+      }
+    }
+    return result;
   }
 
   save(plan: PreparedFlightPlan) {
     const valid = validateFlightPlan(plan);
     if (!valid) throw new Error('Invalid flight plan');
-    const next: StoredFlightMode = { schemaVersion: 1, plan: valid };
+    const next = storedFlightMode(valid);
     this.storage.setItem(this.key, JSON.stringify(next));
     return valid;
   }
@@ -40,4 +52,3 @@ export class FlightPlanRepository {
     this.storage.removeItem(this.key);
   }
 }
-
