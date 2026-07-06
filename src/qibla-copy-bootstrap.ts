@@ -26,7 +26,8 @@ function updateQiblaEnhancements() {
   button.setAttribute('aria-label', copy.liveCompass);
 
   // Before the user requests sensor access, the valid state is a fixed Qibla bearing,
-  // not a compass-unavailable error. Do not replace location loading or error states.
+  // not a compass-unavailable error. Do not replace location loading, error, or active
+  // live-compass states.
   if (!compassRequested && !button.disabled) {
     const status = document.querySelector<HTMLElement>('#qibla-status');
     const readout = document.querySelector<HTMLElement>('#qibla-motion-readout');
@@ -39,7 +40,6 @@ document.addEventListener('click', (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
   if (target.closest('#request-motion')) compassRequested = true;
-  if (target.closest('#request-location')) compassRequested = false;
 });
 
 window.addEventListener('hashchange', () => {
