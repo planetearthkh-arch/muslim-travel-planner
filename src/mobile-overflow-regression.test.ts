@@ -1,3 +1,5 @@
+export {};
+
 type AssertModule = {
   default: {
     match(actual: string, expected: RegExp, message?: string): void;
