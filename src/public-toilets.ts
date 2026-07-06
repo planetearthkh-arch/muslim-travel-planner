@@ -69,6 +69,15 @@ export type ToiletSort = 'distance' | 'name' | 'access' | 'free' | 'open' | 'acc
 const restrictive = /^(private|no|staff|employees|residents)$/i;
 const yes = (value: string | undefined) => /^(yes|permissive|public|designated|available|true|1)$/i.test(value ?? '');
 
+function isValidToiletCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+}
+
 export function classifyToiletAccess(tags: OsmTags): ToiletAccess | undefined {
   if (restrictive.test(tags.access ?? '') || restrictive.test(tags['toilets:access'] ?? '') || tags.toilets === 'no') return undefined;
   const explicit = (tags['toilets:access'] ?? tags.access ?? '').toLowerCase();
@@ -140,6 +149,7 @@ export function normalizePublicToilet(element: OverpassElement, origin: { latitu
   const longitude = element.lon ?? element.center?.lon;
   const access = classifyToiletAccess(tags);
   if (!access || typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
+  if (!isValidToiletCoordinate(latitude, longitude) || !isValidToiletCoordinate(origin.latitude, origin.longitude)) return undefined;
   const feeData = toiletFee(tags);
   const kind = classifyToiletKind(tags, access);
   const openingHours = tags.opening_hours ?? '';
