@@ -3,8 +3,8 @@ import test from 'node:test';
 import { historyStats } from './money.js';
 
 function assertAlmostEqual(actual: unknown, expected: number) {
-  assert.equal(typeof actual, 'number');
-  assert.ok(Number.isFinite(actual));
+  assert.ok(typeof actual === 'number', 'Expected a number');
+  assert.ok(Number.isFinite(actual), 'Expected a finite number');
   assert.ok(Math.abs(actual - expected) < 1e-12, `Expected ${actual} to be close to ${expected}`);
 }
 
