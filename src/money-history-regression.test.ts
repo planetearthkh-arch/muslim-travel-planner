@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { historyStats } from './money.js';
 
+function assertAlmostEqual(actual: number, expected: number) {
+  assert.ok(Math.abs(actual - expected) < 1e-12, `Expected ${actual} to be close to ${expected}`);
+}
+
 test('historyStats accepts direct non-EUR pair history', () => {
   const stats = historyStats([
     { date: '2026-01-01', base: 'USD', quote: 'GBP', rate: 0.79 },
@@ -10,10 +14,10 @@ test('historyStats accepts direct non-EUR pair history', () => {
   ], 'GBP', 'USD');
 
   assert.equal(stats.points.length, 3);
-  assert.equal(stats.start, 0.79);
-  assert.equal(stats.latest, 0.78);
-  assert.equal(stats.high, 0.80);
-  assert.equal(stats.low, 0.78);
+  assertAlmostEqual(stats.start, 0.79);
+  assertAlmostEqual(stats.latest, 0.78);
+  assertAlmostEqual(stats.high, 0.80);
+  assertAlmostEqual(stats.low, 0.78);
 });
 
 test('historyStats can invert direct pair history', () => {
@@ -22,7 +26,7 @@ test('historyStats can invert direct pair history', () => {
   ], 'GBP', 'USD');
 
   assert.equal(stats.points.length, 1);
-  assert.equal(stats.latest, 0.8);
+  assertAlmostEqual(stats.latest, 0.8);
 });
 
 test('historyStats still supports EUR cross-rate maps', () => {
@@ -32,6 +36,6 @@ test('historyStats still supports EUR cross-rate maps', () => {
   }, 'GBP', 'USD');
 
   assert.equal(stats.points.length, 2);
-  assert.equal(stats.start, 0.8);
-  assert.equal(stats.latest, 0.75);
+  assertAlmostEqual(stats.start, 0.8);
+  assertAlmostEqual(stats.latest, 0.75);
 });
