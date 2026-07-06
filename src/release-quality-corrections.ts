@@ -1,4 +1,4 @@
-import type { Language } from './app-language.js';
+type ReleaseLanguage = 'en' | 'ar' | 'id' | 'ms' | 'tr' | 'fr' | 'ur';
 
 export const releaseQualityLabelCorrections = {
   en: {
@@ -26,4 +26,4 @@ export const releaseQualityLabelCorrections = {
     prototype: 'ریلیز 1.0',
     prayerAppleMaps: 'Apple Maps میں کھولیں',
   },
-} satisfies Record<Language, Record<string, string>>;
+} satisfies Record<ReleaseLanguage, Record<string, string>>;
