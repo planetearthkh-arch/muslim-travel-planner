@@ -1,3 +1,4 @@
+import { safeOverpassRadiusMeters } from './overpass-radius.js';
 import { distanceKm, ensureLatinDisplayName, formatAddress, getEnglishPlaceName, getOriginalPlaceName, optionalLatinDisplayName, type OsmTags, type OverpassElement } from './prayer-spaces.js';
 import { isAlwaysOpen, openingState, type OpeningState } from './opening-hours.js';
 import { safeExternalUrl } from './urls.js';
@@ -187,7 +188,7 @@ export function sortCarRentalOffices(offices: CarRentalOffice[], sort: CarRental
 }
 
 export function buildCarRentalOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
-  const radiusMeters = Math.round(Math.min(radiusKm, 100) * 1000);
+  const radiusMeters = safeOverpassRadiusMeters(radiusKm, 100, 10);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const selectors = [
     `node["amenity"="car_rental"]${around}`,
