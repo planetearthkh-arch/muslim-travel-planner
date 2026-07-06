@@ -255,7 +255,15 @@ export class SavedTripRepository {
   constructor(private readonly storage: Storage, private readonly key = SAVED_TRIPS_STORAGE_KEY) {}
 
   read() {
-    return parseSavedTrips(this.storage.getItem(this.key));
+    const result = parseSavedTrips(this.storage.getItem(this.key));
+    if (result.corrupted) {
+      try {
+        this.storage.setItem(this.key, JSON.stringify(collection(result.trips)));
+      } catch {
+        // Keep returning the recovered in-memory trips even if storage is unavailable.
+      }
+    }
+    return result;
   }
 
   replaceAll(trips: SavedTrip[]) {
