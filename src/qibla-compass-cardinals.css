@@ -1,32 +1,12 @@
-.qibla-cardinal {
-  --qibla-cardinal-size: 38px;
-  --qibla-cardinal-half: 19px;
-  --qibla-cardinal-orbit: 78px;
-  right: auto;
-  bottom: auto;
+.qibla-compass {
   transform: rotate(var(--compass-rotation));
+  transform-origin: center;
 }
 
-.qibla-cardinal.north {
-  top: calc(50% - var(--qibla-cardinal-orbit) - var(--qibla-cardinal-half));
-  left: calc(50% - var(--qibla-cardinal-half));
-  transform-origin: var(--qibla-cardinal-half) calc(var(--qibla-cardinal-orbit) + var(--qibla-cardinal-half));
+.qibla-compass .compass-face {
+  transform: none;
 }
 
-.qibla-cardinal.east {
-  top: calc(50% - var(--qibla-cardinal-half));
-  left: calc(50% + var(--qibla-cardinal-orbit) - var(--qibla-cardinal-half));
-  transform-origin: calc(var(--qibla-cardinal-half) - var(--qibla-cardinal-orbit)) var(--qibla-cardinal-half);
-}
-
-.qibla-cardinal.south {
-  top: calc(50% + var(--qibla-cardinal-orbit) - var(--qibla-cardinal-half));
-  left: calc(50% - var(--qibla-cardinal-half));
-  transform-origin: var(--qibla-cardinal-half) calc(var(--qibla-cardinal-half) - var(--qibla-cardinal-orbit));
-}
-
-.qibla-cardinal.west {
-  top: calc(50% - var(--qibla-cardinal-half));
-  left: calc(50% - var(--qibla-cardinal-orbit) - var(--qibla-cardinal-half));
-  transform-origin: calc(var(--qibla-cardinal-half) + var(--qibla-cardinal-orbit)) var(--qibla-cardinal-half);
+.qibla-compass .qibla-arrow {
+  transform: rotate(calc(var(--qibla-rotation) - var(--compass-rotation)));
 }
