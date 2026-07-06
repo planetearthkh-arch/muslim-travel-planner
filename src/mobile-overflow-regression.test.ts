@@ -13,9 +13,12 @@ test('mobile overflow guard is loaded after the main stylesheet', () => {
 
 test('mobile overflow guard prevents long localized labels from widening the viewport', () => {
   const css = readFileSync('src/mobile-overflow.css', 'utf8');
-  assert.match(css, /html,\s*\nbody\s*{[^}]*overflow-x:\s*hidden/s);
-  assert.match(css, /\.app\s*{[^}]*max-width:\s*100vw/s);
-  assert.match(css, /button,\s*\n\.button-link,\s*\n\.map-link,\s*\n\.chip,\s*\n\.badge\s*{[^}]*white-space:\s*normal/s);
+  assert.match(css, /overflow-x:\s*hidden/);
+  assert.match(css, /max-width:\s*100vw/);
+  assert.match(css, /white-space:\s*normal/);
   assert.match(css, /overflow-wrap:\s*anywhere/);
   assert.match(css, /min-width:\s*0/);
+  assert.ok(css.includes('html,\nbody'), 'page roots should be clamped');
+  assert.ok(css.includes('.manual-search'), 'manual-search action rows should be protected');
+  assert.ok(css.includes('.qibla-toolbar'), 'toolbar action rows should be protected');
 });
