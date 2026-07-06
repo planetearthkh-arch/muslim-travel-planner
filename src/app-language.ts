@@ -7,7 +7,6 @@ import {
   statusLabels as coreStatusLabels,
   type Language as CoreLanguage,
 } from './i18n.js';
-import { indonesianLabelCorrections, malayLabelCorrections } from './language-quality-corrections.js';
 import { urduExtraLabelsA } from './urdu-labels-extra-a.js';
 import { urduExtraLabelsC } from './urdu-labels-extra-c.js';
 import { urduFlightLabels } from './urdu-labels-flight.js';
@@ -16,6 +15,7 @@ import { urduTransportLabelsA } from './urdu-labels-transport-a.js';
 import { urduTransportLabelsB } from './urdu-labels-transport-b.js';
 import { urduTransportLabelsC } from './urdu-labels-transport-c.js';
 import type { PrayerName, Region, VerificationStatus } from './models.js';
+import { indonesianLabelCorrections, malayLabelCorrections } from './language-quality-corrections.js';
 
 export type Language = CoreLanguage | 'ur';
 
@@ -42,8 +42,8 @@ export function parseLanguage(value: unknown): Language | null {
 
 export const labels: Record<Language, Record<string, string>> = {
   ...coreLabels,
-  id: { ...coreLabels.id, ...indonesianLabelCorrections, prayerAppleMaps: 'Buka di Apple Maps' },
-  ms: { ...coreLabels.ms, ...malayLabelCorrections, prayerAppleMaps: 'Buka dalam Apple Maps' },
+  id: { ...coreLabels.id, ...indonesianLabelCorrections },
+  ms: { ...coreLabels.ms, ...malayLabelCorrections },
   ur: {
     ...coreLabels.en,
     ...urduLabels,
@@ -53,7 +53,6 @@ export const labels: Record<Language, Record<string, string>> = {
     ...urduTransportLabelsC,
     ...urduExtraLabelsA,
     ...urduExtraLabelsC,
-    prayerAppleMaps: 'Apple Maps میں کھولیں',
   },
 };
 
