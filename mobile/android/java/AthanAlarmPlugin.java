@@ -284,9 +284,12 @@ public class AthanAlarmPlugin extends Plugin {
             throw new IllegalStateException("Audio download returned HTTP " + responseCode);
         }
         String contentType = connection.getContentType();
-        if (contentType != null && !contentType.toLowerCase().startsWith("audio/") && !contentType.toLowerCase().contains("octet-stream")) {
-            connection.disconnect();
-            throw new IllegalStateException("Audio download returned an unexpected content type.");
+        if (contentType != null) {
+            String normalizedContentType = contentType.toLowerCase(Locale.ROOT);
+            if (!normalizedContentType.startsWith("audio/") && !normalizedContentType.contains("octet-stream")) {
+                connection.disconnect();
+                throw new IllegalStateException("Audio download returned an unexpected content type.");
+            }
         }
         long contentLength = connection.getContentLengthLong();
         if (contentLength > MAX_AUDIO_BYTES) {
