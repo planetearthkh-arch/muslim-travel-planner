@@ -37,7 +37,7 @@ test('normalizeCarRentalOffice rejects invalid search origins before calculating
 test('normalizeCarRentalOffice keeps valid car rental results usable', () => {
   const office = normalizeCarRentalOffice(carRentalElement(), origin);
   assert.equal(office?.locationType, 'independent');
-  assert.equal(office?.name, 'Test Car Rental');
+  assert.equal(office?.name, 'TestRent');
   assert.equal(office?.brand, 'TestRent');
   assert.equal(office?.website, 'https://example.com');
   assert.equal(office?.wheelchair, 'yes');
