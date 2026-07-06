@@ -39,7 +39,7 @@ test('normalizeCarRentalOffice keeps valid car rental results usable', () => {
   assert.equal(office?.locationType, 'independent');
   assert.equal(office?.name, 'TestRent');
   assert.equal(office?.brand, 'TestRent');
-  assert.equal(office?.website, 'https://example.com');
+  assert.equal(office?.website, 'https://example.com/');
   assert.equal(office?.wheelchair, 'yes');
   assert.equal(Number.isFinite(office?.distanceKm), true);
 });
