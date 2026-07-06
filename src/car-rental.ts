@@ -40,6 +40,15 @@ export type CarRentalOffice = {
 const excludedAmenities = new Set(['car_sharing', 'car_pooling', 'bicycle_rental', 'taxi', 'driving_school', 'parking']);
 const excludedShops = new Set(['car', 'car_repair', 'bicycle', 'motorcycle', 'scooter']);
 
+function isValidCarRentalCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+}
+
 export function isCarRentalOffice(tags: OsmTags) {
   if (excludedAmenities.has(tags.amenity ?? '') || excludedShops.has(tags.shop ?? '')) return false;
   if (tags.amenity === 'car_rental') return true;
@@ -113,6 +122,7 @@ export function normalizeCarRentalOffice(element: OverpassElement, origin: { lat
   const latitude = element.lat ?? element.center?.lat;
   const longitude = element.lon ?? element.center?.lon;
   if (typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
+  if (!isValidCarRentalCoordinate(latitude, longitude) || !isValidCarRentalCoordinate(origin.latitude, origin.longitude)) return undefined;
   const locationType = classifyCarRentalLocation(tags, origin.label);
   const openingHours = tags.opening_hours ?? '';
   const website = safeRentalUrl(tags.website ?? tags['contact:website']);
