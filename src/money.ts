@@ -221,7 +221,16 @@ export const writeJsonCache = <T>(storage: Storage | undefined, key: string, val
 export const historyStats = (ratesPayload: Record<string, Record<string, number>> | Array<{ date: string; base: string; quote: string; rate: number }>, quote: string, base = 'EUR') => {
   const points = (Array.isArray(ratesPayload)
     ? Object.entries(ratesPayload.reduce<Record<string, Record<string, number>>>((days, item) => {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date) || item.base !== 'EUR' && item.base !== base || typeof item.rate !== 'number' || !Number.isFinite(item.rate) || item.rate <= 0) return days;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date) || typeof item.rate !== 'number' || !Number.isFinite(item.rate) || item.rate <= 0) return days;
+      if (item.base === base && item.quote === quote) {
+        days[item.date] = { ...(days[item.date] ?? {}), [base]: 1, [quote]: item.rate };
+        return days;
+      }
+      if (item.base === quote && item.quote === base) {
+        days[item.date] = { ...(days[item.date] ?? {}), [base]: 1, [quote]: 1 / item.rate };
+        return days;
+      }
+      if (item.base !== 'EUR') return days;
       days[item.date] = { ...(days[item.date] ?? {}), [item.quote]: item.rate };
       return days;
     }, {})).map(([date, rates]) => {
