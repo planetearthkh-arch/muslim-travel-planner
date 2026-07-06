@@ -14,6 +14,11 @@ const halalEnhancementCopy = {
     status: 'حالة الحلال',
     cuisine: 'تظهر خيارات المطبخ بعد تحميل نتائج المطاعم.',
   },
+  ur: {
+    filterBy: 'فلٹر کریں',
+    status: 'حلال حیثیت',
+    cuisine: 'کھانوں کے انتخاب ریسٹورنٹ کے نتائج لوڈ ہونے کے بعد ظاہر ہوں گے۔',
+  },
   id: {
     filterBy: 'Saring berdasarkan',
     status: 'status halal',
@@ -28,6 +33,11 @@ const halalEnhancementCopy = {
     filterBy: 'Şuna göre filtrele:',
     status: 'helal durumu',
     cuisine: 'Mutfak seçenekleri restoran sonuçları yüklendikten sonra görünür.',
+  },
+  fr: {
+    filterBy: 'Filtrer par',
+    status: 'statut halal',
+    cuisine: 'Les choix de cuisine apparaissent après le chargement des résultats des restaurants.',
   },
 } as const;
 
