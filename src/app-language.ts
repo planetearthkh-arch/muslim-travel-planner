@@ -41,12 +41,10 @@ export function parseLanguage(value: unknown): Language | null {
 }
 
 export const labels: Record<Language, Record<string, string>> = {
-  en: { ...coreLabels.en, prototype: 'Release 1.0' },
-  ar: { ...coreLabels.ar, prototype: 'الإصدار 1.0' },
-  id: { ...coreLabels.id, ...indonesianLabelCorrections, prototype: 'Rilis 1.0', prayerAppleMaps: 'Buka di Apple Maps' },
-  ms: { ...coreLabels.ms, ...malayLabelCorrections, prototype: 'Keluaran 1.0', prayerAppleMaps: 'Buka dalam Apple Maps' },
-  tr: { ...coreLabels.tr, prototype: 'Sürüm 1.0', prayerAppleMaps: 'Apple Haritalar’da aç' },
-  fr: { ...coreLabels.fr, prototype: 'Version 1.0' },
+  ...coreLabels,
+  id: { ...coreLabels.id, ...indonesianLabelCorrections, prayerAppleMaps: 'Buka di Apple Maps' },
+  ms: { ...coreLabels.ms, ...malayLabelCorrections, prayerAppleMaps: 'Buka dalam Apple Maps' },
+  tr: { ...coreLabels.tr, prayerAppleMaps: 'Apple Haritalar’da aç' },
   ur: {
     ...coreLabels.en,
     ...urduLabels,
@@ -56,7 +54,6 @@ export const labels: Record<Language, Record<string, string>> = {
     ...urduTransportLabelsC,
     ...urduExtraLabelsA,
     ...urduExtraLabelsC,
-    prototype: 'ریلیز 1.0',
     prayerAppleMaps: 'Apple Maps میں کھولیں',
   },
 };
