@@ -30,6 +30,8 @@
 	<string>Main</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SafarOne uses your location only when you request Qibla direction or nearby travel places.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SafarOne uses your location only when you request Qibla direction or nearby travel places.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>SafarOne uses motion and compass data only when you start the live Qibla compass.</string>
 	<key>UIStatusBarStyle</key>
