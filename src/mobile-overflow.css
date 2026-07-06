@@ -109,4 +109,14 @@ textarea {
   .flight-actions button {
     flex: 1 1 min(100%, 160px);
   }
+
+  .manual-search label,
+  .manual-search button {
+    flex: 0 1 auto;
+  }
+
+  .manual-search input {
+    min-height: 48px;
+    height: auto;
+  }
 }
