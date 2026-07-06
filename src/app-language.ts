@@ -8,7 +8,6 @@ import {
   type Language as CoreLanguage,
 } from './i18n.js';
 import { indonesianLabelCorrections, malayLabelCorrections } from './language-quality-corrections.js';
-import { releaseQualityLabelCorrections } from './release-quality-corrections.js';
 import { urduExtraLabelsA } from './urdu-labels-extra-a.js';
 import { urduExtraLabelsC } from './urdu-labels-extra-c.js';
 import { urduFlightLabels } from './urdu-labels-flight.js';
@@ -42,12 +41,12 @@ export function parseLanguage(value: unknown): Language | null {
 }
 
 export const labels: Record<Language, Record<string, string>> = {
-  en: { ...coreLabels.en, ...releaseQualityLabelCorrections.en },
-  ar: { ...coreLabels.ar, ...releaseQualityLabelCorrections.ar },
-  id: { ...coreLabels.id, ...indonesianLabelCorrections, ...releaseQualityLabelCorrections.id },
-  ms: { ...coreLabels.ms, ...malayLabelCorrections, ...releaseQualityLabelCorrections.ms },
-  tr: { ...coreLabels.tr, ...releaseQualityLabelCorrections.tr },
-  fr: { ...coreLabels.fr, ...releaseQualityLabelCorrections.fr },
+  en: { ...coreLabels.en, prototype: 'Release 1.0' },
+  ar: { ...coreLabels.ar, prototype: 'الإصدار 1.0' },
+  id: { ...coreLabels.id, ...indonesianLabelCorrections, prototype: 'Rilis 1.0', prayerAppleMaps: 'Buka di Apple Maps' },
+  ms: { ...coreLabels.ms, ...malayLabelCorrections, prototype: 'Keluaran 1.0', prayerAppleMaps: 'Buka dalam Apple Maps' },
+  tr: { ...coreLabels.tr, prototype: 'Sürüm 1.0', prayerAppleMaps: 'Apple Haritalar’da aç' },
+  fr: { ...coreLabels.fr, prototype: 'Version 1.0' },
   ur: {
     ...coreLabels.en,
     ...urduLabels,
@@ -57,7 +56,8 @@ export const labels: Record<Language, Record<string, string>> = {
     ...urduTransportLabelsC,
     ...urduExtraLabelsA,
     ...urduExtraLabelsC,
-    ...releaseQualityLabelCorrections.ur,
+    prototype: 'ریلیز 1.0',
+    prayerAppleMaps: 'Apple Maps میں کھولیں',
   },
 };
 
