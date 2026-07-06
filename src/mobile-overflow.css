@@ -1,0 +1,112 @@
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.app,
+.panel,
+.hero,
+.card,
+.trip-header,
+.quick-action,
+.home-card-top,
+.prayer-panel,
+.place-list,
+.attraction-grid,
+.travel-details-shell,
+.report-dialog {
+  min-width: 0;
+}
+
+label,
+p,
+h1,
+h2,
+h3,
+strong,
+small,
+span,
+dd,
+li,
+button,
+.button-link,
+.map-link,
+.chip,
+.badge {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+button,
+.button-link,
+.map-link,
+.chip,
+.badge {
+  white-space: normal;
+}
+
+input,
+select,
+textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.manual-search,
+.prayer-actions,
+.prayer-filters,
+.segmented,
+.place-actions,
+.empty-actions,
+.toolbar,
+.chips,
+.stats,
+.trip-actions,
+.itinerary-actions,
+.flight-actions,
+.qibla-toolbar {
+  min-width: 0;
+}
+
+.manual-search > *,
+.prayer-actions > *,
+.prayer-filters > *,
+.segmented > *,
+.place-actions > *,
+.empty-actions > *,
+.toolbar > *,
+.chips > *,
+.stats > *,
+.trip-actions > *,
+.itinerary-actions > *,
+.flight-actions > *,
+.qibla-toolbar > * {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .app {
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  .manual-search {
+    flex-wrap: wrap;
+  }
+
+  .manual-search button,
+  .prayer-actions button,
+  .prayer-filters button,
+  .segmented button,
+  .place-actions a,
+  .place-actions button,
+  .toolbar button,
+  .chips button,
+  .trip-actions button,
+  .itinerary-actions button,
+  .flight-actions button {
+    flex: 1 1 min(100%, 160px);
+  }
+}
