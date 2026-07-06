@@ -20,11 +20,12 @@ const { default: assert } = await loadNodeModule<AssertModule>('node:assert/stri
 const { readFileSync } = await loadNodeModule<FsModule>('node:fs');
 const { default: test } = await loadNodeModule<TestModule>('node:test');
 
-test('status bootstrap is loaded after the main app renders', () => {
+test('status bootstrap is loaded after the main app renders and collapses empty tool rows', () => {
   const bootstrap = readFileSync('src/app-bootstrap.ts', 'utf8');
   const helper = readFileSync('src/prayer-status-bootstrap.ts', 'utf8');
 
   assert.ok(bootstrap.includes("await import('./prayer-status-bootstrap.js');"));
-  assert.ok(helper.includes(".prayer-app:not(.halal-app)"));
-  assert.ok(helper.includes(".prayer-status.idle, .prayer-status.ready"));
+  assert.ok(helper.includes('.prayer-status.idle, .prayer-status.ready'));
+  assert.ok(helper.includes('status.hidden = isEmpty'));
+  assert.ok(helper.includes("status.setAttribute('aria-hidden', String(isEmpty))"));
 });
