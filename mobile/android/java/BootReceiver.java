@@ -5,12 +5,14 @@ import android.content.Context;
 import android.content.Intent;
 
 public class BootReceiver extends BroadcastReceiver {
-    public static boolean isSupportedAction(Intent intent) {
-        if (intent == null) return false;
-        String action = intent.getAction();
+    public static boolean isSupportedAction(String action) {
         return Intent.ACTION_BOOT_COMPLETED.equals(action)
             || Intent.ACTION_TIME_CHANGED.equals(action)
             || Intent.ACTION_TIMEZONE_CHANGED.equals(action);
+    }
+
+    public static boolean isSupportedAction(Intent intent) {
+        return intent != null && isSupportedAction(intent.getAction());
     }
 
     @Override
