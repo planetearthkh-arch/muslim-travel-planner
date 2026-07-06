@@ -26,4 +26,11 @@ cpSync(join(templateDir, 'AndroidManifest.xml'), join(mainDir, 'AndroidManifest.
 cpSync(join(templateDir, 'java'), javaTarget, { recursive: true });
 cpSync(join(templateDir, 'res'), join(mainDir, 'res'), { recursive: true });
 
+const testTemplateDir = join(templateDir, 'test');
+if (existsSync(testTemplateDir)) {
+  const testTarget = join(androidDir, 'app', 'src', 'test', 'java', 'com', 'planetearthkids', 'muslimtravelplanner');
+  mkdirSync(testTarget, { recursive: true });
+  cpSync(testTemplateDir, testTarget, { recursive: true });
+}
+
 console.log('\nAndroid Athan alarms are installed. Run: npm run android:open');
