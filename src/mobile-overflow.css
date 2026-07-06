@@ -86,6 +86,34 @@ textarea {
   min-width: 0;
 }
 
+.qibla-compass {
+  --qibla-cardinal-radius: calc((min(76vw, 360px) - 62px) / 2);
+}
+
+.qibla-cardinal {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  transform-origin: center;
+}
+
+.qibla-cardinal.north {
+  transform: translate(-50%, -50%) rotate(var(--compass-rotation)) translateY(calc(-1 * var(--qibla-cardinal-radius)));
+}
+
+.qibla-cardinal.east {
+  transform: translate(-50%, -50%) rotate(calc(var(--compass-rotation) + 90deg)) translateY(calc(-1 * var(--qibla-cardinal-radius)));
+}
+
+.qibla-cardinal.south {
+  transform: translate(-50%, -50%) rotate(calc(var(--compass-rotation) + 180deg)) translateY(calc(-1 * var(--qibla-cardinal-radius)));
+}
+
+.qibla-cardinal.west {
+  transform: translate(-50%, -50%) rotate(calc(var(--compass-rotation) + 270deg)) translateY(calc(-1 * var(--qibla-cardinal-radius)));
+}
+
 @media (max-width: 640px) {
   .app {
     width: 100%;
