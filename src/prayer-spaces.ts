@@ -38,14 +38,25 @@ export type OverpassElement = {
 
 const toRadians = (degrees: number) => degrees * Math.PI / 180;
 
+export function isValidPrayerCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+}
+
 export function distanceKm(fromLat: number, fromLng: number, toLat: number, toLng: number) {
+  if (!isValidPrayerCoordinate(fromLat, fromLng) || !isValidPrayerCoordinate(toLat, toLng)) return Number.NaN;
   const earthRadiusKm = 6371;
   const dLat = toRadians(toLat - fromLat);
   const dLng = toRadians(toLng - fromLng);
   const lat1 = toRadians(fromLat);
   const lat2 = toRadians(toLat);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const safeA = Math.min(1, Math.max(0, a));
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(safeA), Math.sqrt(1 - safeA));
 }
 
 const unsupportedScriptPattern = /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
@@ -126,7 +137,7 @@ const AL_AQSA_COMPOUND_BOUNDS = {
 const AL_AQSA_CENTER = { latitude: 31.7783, longitude: 35.2354 };
 
 function insideBounds(latitude: number, longitude: number, bounds: typeof AL_AQSA_COMPOUND_BOUNDS) {
-  return latitude >= bounds.south && latitude <= bounds.north && longitude >= bounds.west && longitude <= bounds.east;
+  return isValidPrayerCoordinate(latitude, longitude) && latitude >= bounds.south && latitude <= bounds.north && longitude >= bounds.west && longitude <= bounds.east;
 }
 
 function prayerPlaceSearchableNames(tags: OsmTags) {
@@ -384,6 +395,7 @@ export function normalizePrayerPlace(element: OverpassElement, origin: { latitud
   const longitude = element.lon ?? element.center?.lon;
   const type = classifyPrayerPlace(tags);
   if (!type || typeof latitude !== 'number' || typeof longitude !== 'number') return undefined;
+  if (!isValidPrayerCoordinate(latitude, longitude) || !isValidPrayerCoordinate(origin.latitude, origin.longitude)) return undefined;
   if (isAlAqsaCompoundSubstructure(tags, latitude, longitude)) return undefined;
   if (isClearlyNonMuslimNamed(tags)) return undefined;
 
@@ -410,11 +422,13 @@ export function normalizePrayerPlace(element: OverpassElement, origin: { latitud
 }
 
 function queryCanReachAlAqsa(latitude: number, longitude: number, radiusKm: number) {
+  if (!isValidPrayerCoordinate(latitude, longitude) || !Number.isFinite(radiusKm) || radiusKm <= 0) return false;
   return distanceKm(latitude, longitude, AL_AQSA_CENTER.latitude, AL_AQSA_CENTER.longitude) <= radiusKm + 1.5;
 }
 
 export function buildOverpassQuery(latitude: number, longitude: number, radiusKm: number) {
-  const radiusMeters = Math.round(radiusKm * 1000);
+  const safeRadiusKm = Number.isFinite(radiusKm) && radiusKm > 0 ? radiusKm : 1;
+  const radiusMeters = Math.round(safeRadiusKm * 1000);
   const around = `(around:${radiusMeters},${latitude},${longitude})`;
   const selectors = [
     `node["amenity"="place_of_worship"]["religion"="muslim"]${around}`,
@@ -434,7 +448,7 @@ export function buildOverpassQuery(latitude: number, longitude: number, radiusKm
     `relation["prayer_room"="yes"]${around}`,
   ];
 
-  if (queryCanReachAlAqsa(latitude, longitude, radiusKm)) {
+  if (queryCanReachAlAqsa(latitude, longitude, safeRadiusKm)) {
     const namePattern = 'Al[- ]?Aqsa|Masjid[ -]?(?:al[- ]?)?Aqsa|الأقصى|الاقصى';
     for (const key of ['name', 'name:en', 'name:ar', 'official_name', 'official_name:en', 'official_name:ar']) {
       selectors.push(`node["${key}"~"${namePattern}",i]${around}`);
