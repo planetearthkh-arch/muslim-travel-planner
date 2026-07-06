@@ -1,0 +1,50 @@
+name: Verify Audit Fixes
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'mobile/android/**'
+      - 'src/**'
+      - 'scripts/setup-android.mjs'
+      - '.github/workflows/verify-audit-fixes.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  android-native-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npm run android:setup
+      - name: Run Android lint, unit tests, and release build
+        working-directory: android
+        run: ./gradlew lintDebug testDebugUnitTest assembleRelease --stacktrace --warning-mode all
+
+  web-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:browser-smoke
