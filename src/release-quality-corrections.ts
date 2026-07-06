@@ -1,6 +1,6 @@
 type ReleaseLanguage = 'en' | 'ar' | 'id' | 'ms' | 'tr' | 'fr' | 'ur';
 
-export const releaseQualityLabelCorrections = {
+export const releaseQualityLabelCorrections: Record<ReleaseLanguage, Record<string, string>> = {
   en: {
     prototype: 'Release 1.0',
   },
@@ -26,4 +26,4 @@ export const releaseQualityLabelCorrections = {
     prototype: 'ریلیز 1.0',
     prayerAppleMaps: 'Apple Maps میں کھولیں',
   },
-} satisfies Record<ReleaseLanguage, Record<string, string>>;
+};
