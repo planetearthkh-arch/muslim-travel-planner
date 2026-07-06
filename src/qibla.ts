@@ -14,7 +14,7 @@ function isValidLongitude(longitude: number) {
   return Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
 }
 
-export function hasValidCoordinates(latitude: number, longitude: number) {
+function hasValidCoordinates(latitude: number, longitude: number) {
   return isValidLatitude(latitude) && isValidLongitude(longitude);
 }
 
