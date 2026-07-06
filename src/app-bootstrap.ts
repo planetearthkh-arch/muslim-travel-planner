@@ -1,5 +1,6 @@
 import './turkish-halal-copy.js';
 import './prayer-search-bootstrap.js';
+import './ios-safe-area.css';
 
 async function startApp() {
   await import('./main.js');
