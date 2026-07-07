@@ -1,14 +1,15 @@
 export {};
 
-const idleStatuses = '.prayer-status.idle, .prayer-status.ready';
-const toolPanels = '.prayer-app, .halal-app';
+const toolStatusSelector = [
+  '.prayer-app .prayer-status.idle',
+  '.prayer-app .prayer-status.ready',
+  '.halal-app .prayer-status.idle',
+  '.halal-app .prayer-status.ready',
+].join(', ');
 
 function collapseEmptyToolStatuses() {
-  document.querySelectorAll<HTMLElement>(`${toolPanels} ${idleStatuses}`).forEach((status) => {
-    const message = status.textContent?.trim() ?? '';
-    if (message && status.closest('.prayer-app:not(.halal-app)')) {
-      status.textContent = '';
-    }
+  document.querySelectorAll<HTMLElement>(toolStatusSelector).forEach((status) => {
+    if (!status.classList.contains('prayer-status')) return;
 
     const isEmpty = !(status.textContent?.trim());
     status.hidden = isEmpty;
