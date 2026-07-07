@@ -24,7 +24,6 @@ const { default: test } = await loadNodeModule<TestModule>('node:test');
 
 const requiredUsageDescriptions = [
   'NSLocationWhenInUseUsageDescription',
-  'NSLocationAlwaysAndWhenInUseUsageDescription',
   'NSMotionUsageDescription',
 ];
 
