@@ -6,16 +6,16 @@ async function repoFile(path: string) {
   return load('node:fs/promises').then((fs) => fs.readFile(new URL(`../${path}`, import.meta.url), 'utf8'));
 }
 
-test('iOS foreground location permission, Apple-required always purpose string, and portrait-only phone orientation are committed', async () => {
+test('iOS uses foreground-only location permission and portrait-only phone orientation', async () => {
   const plist = await repoFile('ios/App/App/Info.plist');
   assert.equal(plist.includes('<key>NSLocationWhenInUseUsageDescription</key>'), true);
-  assert.equal(plist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>'), true);
+  assert.equal(plist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>'), false);
   assert.match(plist, /<key>UISupportedInterfaceOrientations<\/key>\s*<array>\s*<string>UIInterfaceOrientationPortrait<\/string>\s*<\/array>/);
 
   for (const language of ['en', 'ar', 'id', 'ms', 'tr', 'fr', 'ur']) {
     const localized = await repoFile(`ios/App/App/${language}.lproj/InfoPlist.strings`);
     assert.equal(localized.includes('NSLocationWhenInUseUsageDescription'), true);
-    assert.equal(localized.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), true);
+    assert.equal(localized.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), false);
   }
 });
 
