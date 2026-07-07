@@ -85,20 +85,23 @@ async function waitForServer(url, timeoutMs = 30_000) {
   throw new Error(`Vite preview did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
-async function waitForChromeDebugger(timeoutMs = 30_000) {
+async function waitForChromePageTarget(timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
   while (Date.now() < deadline) {
     try {
-      const version = await requestJson(`http://${host}:${debugPort}/json/version`);
-      if (typeof version.webSocketDebuggerUrl === 'string') return version.webSocketDebuggerUrl;
-      lastError = new Error('Missing webSocketDebuggerUrl');
+      const targets = await requestJson(`http://${host}:${debugPort}/json/list`);
+      const page = Array.isArray(targets)
+        ? targets.find((target) => target.type === 'page' && typeof target.webSocketDebuggerUrl === 'string')
+        : undefined;
+      if (page) return page.webSocketDebuggerUrl;
+      lastError = new Error('Missing page webSocketDebuggerUrl');
     } catch (error) {
       lastError = error;
     }
     await delay(250);
   }
-  throw new Error(`Chrome debugger did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+  throw new Error(`Chrome page debugger did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
 function openWebSocket(url) {
@@ -168,7 +171,7 @@ chrome.stderr.on('data', (chunk) => { chromeOutput += chunk.toString(); });
 
 try {
   await waitForServer(appUrl);
-  const wsUrl = await waitForChromeDebugger();
+  const wsUrl = await waitForChromePageTarget();
   const socket = await openWebSocket(wsUrl);
   const send = createCdpClient(socket);
 
