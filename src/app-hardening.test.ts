@@ -53,3 +53,14 @@ test('native mobile networking and prayer notifications are configured', async (
   assert.match(config, /CapacitorHttp:\s*\{\s*enabled:\s*true/);
   assert.equal(config.includes("presentationOptions: ['sound', 'banner', 'list']"), true);
 });
+
+test('attractions release UI hides diagnostics in native runtime and avoids map reinitialization during enrichment', async () => {
+  const source = await repoFile('src/main.ts');
+
+  assert.equal(source.includes('function isNativeRuntime()'), true);
+  assert.equal(source.includes("return !isNativeRuntime() && ['localhost', '127.0.0.1', ''].includes(window.location.hostname);"), true);
+  assert.equal(source.includes('isLocalDevelopment() && attractionDiagnostics.length'), true);
+  assert.equal(source.includes('function renderAttractionsProgress()'), true);
+  assert.equal(source.includes("if (attractionView === 'map' && attractionsMap)"), true);
+  assert.equal((source.match(/renderAttractionsProgress\(\);/g) ?? []).length, 4);
+});

@@ -3760,8 +3760,28 @@ function recordAttractionDiagnostic(stage: string, error: unknown) {
   if (isLocalDevelopment()) console.warn(`[attractions] ${stage}`, error);
 }
 
+function isNativeRuntime() {
+  const maybeCapacitor = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  return typeof maybeCapacitor?.isNativePlatform === 'function' && maybeCapacitor.isNativePlatform();
+}
+
 function isLocalDevelopment() {
-  return ['localhost', '127.0.0.1', ''].includes(window.location.hostname);
+  return !isNativeRuntime() && ['localhost', '127.0.0.1', ''].includes(window.location.hostname);
+}
+
+function refreshAttractionStatusOnly() {
+  const status = document.querySelector<HTMLElement>('.attractions-app .prayer-status');
+  if (!status) return;
+  status.className = `prayer-status ${attractionStatus}`;
+  status.textContent = attractionStatusMessage(labels[lang]);
+}
+
+function renderAttractionsProgress() {
+  if (attractionView === 'map' && attractionsMap) {
+    refreshAttractionStatusOnly();
+    return;
+  }
+  attractionsPage();
 }
 
 function filteredAttractionResults() {
@@ -3912,7 +3932,7 @@ async function progressiveAttractionEnrichment(sequence: number) {
   const activeCacheKey = attractionCacheKey;
   attractionResults = attractionResults.map((attraction) => candidates.some((candidate) => candidate.id === attraction.id) ? { ...attraction, photoStatus: 'loading' } : attraction);
   attractionStatus = 'photos';
-  attractionsPage();
+  renderAttractionsProgress();
   const cityName = attractionCenter?.label?.split(',')[0] ?? selectedCity().city;
   const batchSize = 3;
   for (let index = 0; index < candidates.length; index += batchSize) {
@@ -3931,12 +3951,12 @@ async function progressiveAttractionEnrichment(sequence: number) {
     const updateMap = new Map(updates.map((attraction) => [attraction.id, attraction]));
     attractionResults = attractionResults.map((candidate) => updateMap.get(candidate.id) ?? candidate);
     if (activeCacheKey) attractionCache.set(activeCacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
-    attractionsPage();
+    renderAttractionsProgress();
     await new Promise((resolve) => window.setTimeout(resolve, 250));
   }
   if (sequence === attractionEnrichmentSequence && attractionStatus === 'photos') {
     attractionStatus = 'ready';
-    attractionsPage();
+    renderAttractionsProgress();
   }
 }
 
@@ -3995,7 +4015,7 @@ async function searchAttractions(center: PrayerCenter) {
         attractionResults = dedupeAttractions([...attractionResults, ...normalized]).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 250);
         attractionStatus = attractionResults.length ? 'ready' : 'searching';
         attractionCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, results: attractionResults });
-        attractionsPage();
+        renderAttractionsProgress();
       } catch (error) {
         lastError = error;
       }
