@@ -23,6 +23,7 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run test:browser-smoke
+      - run: npm run test:mobile-overflow
 
   android:
     runs-on: ubuntu-latest
