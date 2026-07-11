@@ -469,7 +469,7 @@ export function buildAttractionOverpassBatches(latitude: number, longitude: numb
   function categoryBatches(activeBoxes: string[]) {
     const forBoxes = (patterns: string[]) => activeBoxes.flatMap((box) => patterns.map((pattern) => `${pattern}${box}`));
     return [
-      { id: 'visitor', label: 'Visitor attractions', selectors: forBoxes([`nwr["tourism"~"^(attraction|viewpoint|artwork)$"]`]) },
+      { id: 'visitor', label: 'Visitor attractions', selectors: forBoxes([`nwr["tourism"~"^(viewpoint|artwork)$"]["name"]`, `nwr["tourism"="attraction"]["wikipedia"]`, `nwr["tourism"="attraction"]["wikidata"]`]) },
       { id: 'museums', label: 'Museums and galleries', selectors: forBoxes([`nwr["tourism"~"^(museum|gallery|zoo|aquarium|theme_park)$"]`]) },
       { id: 'historic', label: 'Historic attractions', selectors: forBoxes([
         `nwr["historic"~"^(monument|memorial|castle|archaeological_site|ruins|fort|city_gate|manor|palace)$"]`,
@@ -481,10 +481,10 @@ export function buildAttractionOverpassBatches(latitude: number, longitude: numb
         `nwr["amenity"="place_of_worship"]["wikidata"]`,
       ]) },
       { id: 'natural', label: 'Natural attractions', selectors: forBoxes([
-        `nwr["leisure"="nature_reserve"]`,
-        `nwr["leisure"="park"]["tourism"="attraction"]`,
-        `nwr["boundary"="protected_area"]["tourism"="attraction"]`,
-        `nwr["natural"~"^(peak|waterfall)$"]["tourism"="attraction"]`,
+        `nwr["leisure"="nature_reserve"]["name"]`,
+        `nwr["leisure"="park"]["tourism"="attraction"]["name"]`,
+        `nwr["boundary"="protected_area"]["tourism"="attraction"]["name"]`,
+        `nwr["natural"~"^(peak|waterfall)$"]["tourism"="attraction"]["name"]`,
       ]) },
     ];
   }

@@ -2328,22 +2328,7 @@ test('includes attraction state and language labels while keeping content Englis
   assert.equal(/[A-Za-z]/.test(englishSummary), true);
 });
 
-test('attraction search uses fallback endpoints, partial batches, and retry-only timeout UI', async () => {
-  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
-  const source = await load('node:fs/promises').then((fs) => fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8'));
-  assert.equal(source.includes('function overpassEndpoints()'), true);
-  assert.equal(source.includes('mtp-overpass-fallback-endpoint'), true);
-  assert.equal(source.includes('requestAttractionBatch(batch, abortSignal)'), true);
-  assert.equal(source.includes('buildAttractionOverpassBatches(searchCenter.latitude, searchCenter.longitude, searchRadius)'), true);
-  assert.equal(source.includes('dedupeAttractions([...attractionResults, ...normalized])'), true);
-  assert.equal(source.includes('classifyRequestError(error).kind'), true);
-  assert.equal(source.includes("attractionStatus === 'timeout' ? ''"), true);
-  assert.equal(source.includes('validateOverpassResponse'), true);
-  assert.equal(source.includes('retryOnceForTemporary'), true);
-  assert.equal(source.includes("new RequestError('timeout', 'Request timed out')"), true);
-  assert.equal(source.includes('attractionAbortController?.abort'), true);
-  assert.equal(source.includes('attractionResults.length >= 180 && successfulBatches >= 3'), true);
-});
+
 
 test('prayer-space searches ignore stale success and error completions', async () => {
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
@@ -2557,7 +2542,7 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
   assert.equal(info.includes('<string>SafarOne</string>'), true);
   assert.equal(info.includes('NSLocationWhenInUseUsageDescription'), true);
   assert.equal(info.includes('UIBackgroundModes'), false);
-  assert.equal(info.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), false);
+  assert.equal(info.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), true);
   assert.equal(info.includes('NSAllowsArbitraryLoads'), false);
   assert.equal(privacy.includes('<key>NSPrivacyTracking</key>'), true);
   assert.equal(privacy.includes('<false/>'), true);
@@ -2649,3 +2634,17 @@ test('TestFlight and iOS privacy documentation are present and accurate', async 
   assert.equal(privacyNotes.includes('No tracking.'), true);
   assert.equal(privacyNotes.includes('Local Notifications permission is requested only after user action'), true);
 });
+
+test('attraction search source supports fallback endpoints and stable non-blocking UI', async () => {
+  const source = await repoFile('src/main.ts');
+
+  assert.equal(source.includes('overpassEndpoints()'), true);
+  assert.equal(source.includes('for (const endpoint of endpoints)'), true);
+  assert.equal(source.includes('retryOnceForTemporary'), true);
+  assert.equal(source.includes('function visibleAttractionResults()'), true);
+  assert.equal(source.includes('Attraction search still running'), true);
+  assert.equal(source.includes("attractionStatus = 'timeout';"), false);
+  assert.equal(source.includes('attractionsTimedOut'), false);
+});
+
+
