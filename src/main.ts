@@ -3555,6 +3555,11 @@ function formatWeatherTime(value: string, options: Intl.DateTimeFormatOptions = 
   return new Intl.DateTimeFormat(localeForLanguage(lang), { ...options, timeZone }).format(date);
 }
 
+function formatCurrentWeatherLocalTime(location: WeatherLocation, forecast: WeatherForecast | null) {
+  const timeZone = forecast?.timezone || location.timezone || selectedCity().timezone;
+  return new Intl.DateTimeFormat(localeForLanguage(lang), { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(new Date());
+}
+
 const formatPercent = (value: number | null, copy: typeof labels[Language]) => value === null ? copy.weatherValueUnavailable : `${value}%`;
 const sumAvailable = (...values: Array<number | null>) => values.some((value) => value !== null) ? values.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
 
@@ -3675,7 +3680,7 @@ function weatherPage() {
           <label>${copy.weatherPrecipUnit}<select id="weather-precip-unit"><option value="mm" ${weatherUnits.precipitation === 'mm' ? 'selected' : ''}>${copy.weatherMm}</option><option value="inch" ${weatherUnits.precipitation === 'inch' ? 'selected' : ''}>${copy.weatherInch}</option></select></label>
         </div>
         <p class="prayer-status ${weatherStatus}" role="status">${weatherStatusMessage(copy)}</p>
-        <div class="destination-box"><h2>${esc(location.label)}</h2><p>${copy.weatherLocalTime}: ${forecast ? formatWeatherTime(forecast.current.time, { dateStyle: 'medium', timeStyle: 'short' }) : ''}</p><p>${copy.weatherTimezone}: ${forecast?.timezone ?? location.timezone ?? ''}</p><p>${copy.weatherCoordinates}: ${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}</p></div>
+        <div class="destination-box"><h2>${esc(location.label)}</h2><p>${copy.weatherLocalTime}: ${formatCurrentWeatherLocalTime(location, forecast)}</p><p>${copy.weatherTimezone}: ${forecast?.timezone ?? location.timezone ?? ''}</p><p>${copy.weatherCoordinates}: ${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}</p></div>
         ${forecast ? `<section class="card weather-current" aria-label="${copy.weatherCurrent}"><div class="card-top"><span>${copy.weatherCurrent}</span><span class="badge ${forecast.cached ? 'unverified' : 'verified'}">${forecast.cached ? copy.weatherCached : copy.weatherUpdated}</span></div><h2>${formatTemperature(forecast.current.temperature, weatherUnits, copy.weatherValueUnavailable)}</h2>${weatherRows(forecast, copy)}</section><section><div class="result-header"><h2>${copy.weatherHourly}</h2><button type="button" class="ghost" id="toggle-weather-hours">${weatherHours === 24 ? copy.weatherExpand48 : copy.weatherShow24}</button></div>${hourlyWeatherList(forecast, copy)}</section><section><h2>${copy.weatherDaily}</h2>${dailyWeatherList(forecast, copy)}</section>${travelWeatherSection(forecast, copy)}${prayerWeatherSection(forecast, copy)}` : `<div class="empty-actions"><button type="button" id="retry-weather" class="ghost">${copy.weatherRetry}</button><button type="button" id="another-weather-city">${copy.weatherSearchAnother}</button></div>`}
         <p class="map-status"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">${copy.weatherAttribution}</a> · <a href="${OPEN_METEO_FORECAST_URL}" target="_blank" rel="noopener noreferrer">Open-Meteo API</a></p>
       </section>
@@ -3729,7 +3734,7 @@ function attractionStatusMessage(copy: typeof labels[Language]) {
   if (attractionStatus === 'denied') return copy.attractionsLocationDenied;
   if (attractionStatus === 'unavailable') return copy.attractionsLocationUnavailable;
   if (attractionStatus === 'service-unavailable') return attractionError || copy.attractionsServiceUnavailable;
-  if (attractionStatus === 'timeout') return copy.attractionsTimedOut;
+  if (attractionStatus === 'timeout') return copy.attractionsServiceUnavailable;
   if (attractionStatus === 'offline') return copy.attractionsOffline;
   if (attractionStatus === 'cached') return copy.attractionsCached;
   if (attractionStatus === 'empty') return copy.attractionsNoResults;
@@ -3788,6 +3793,15 @@ function filteredAttractionResults() {
   return sortAttractions(filterAttractions(attractionResults, attractionFilters), attractionSort);
 }
 
+function visibleAttractionResults() {
+  const filtered = filteredAttractionResults();
+  if (filtered.length) return filtered;
+  if ((attractionStatus === 'photos' || attractionStatus === 'history' || attractionStatus === 'ready' || attractionStatus === 'cached') && attractionResults.length) {
+    return sortAttractions(attractionResults, attractionSort);
+  }
+  return filtered;
+}
+
 function destinationAttractionCenter(city = selectedCity()): PrayerCenter {
   return { latitude: city.coordinates.lat, longitude: city.coordinates.lng, label: `${city.city}, ${city.country}`, timezone: city.timezone };
 }
@@ -3806,7 +3820,7 @@ async function requestAttractionBatch(batch: AttractionQueryBatch, signal?: Abor
   const endpoints = overpassEndpoints();
   for (const endpoint of endpoints) {
     try {
-      const result = await requestOverpass(endpoint, { ...overpassPostOptions(batch.query), signal }, 9000);
+      const result = await requestOverpass(endpoint, { ...overpassPostOptions(batch.query), signal }, 6000);
       recordServiceSuccess(endpoint);
       return result;
     } catch (error) {
@@ -3990,11 +4004,8 @@ async function searchAttractions(center: PrayerCenter) {
   attractionsPage();
   const watchdog = window.setTimeout(() => {
     if (sequence !== attractionSearchSequence || attractionStatus !== 'searching') return;
-    attractionAbortController?.abort(new RequestError('timeout', 'Request timed out'));
-    attractionStatus = 'timeout';
-    attractionError = labels[lang].attractionsTimedOut;
-    attractionsPage();
-  }, 14000);
+    recordAttractionDiagnostic('Attraction search still running', new RequestError('timeout', 'Attraction search still running'));
+  }, 90000);
   try {
     const batches = buildAttractionOverpassBatches(searchCenter.latitude, searchCenter.longitude, searchRadius);
     let successfulBatches = 0;
@@ -4042,7 +4053,7 @@ async function searchAttractions(center: PrayerCenter) {
     } else {
       attractionResults = [];
       attractionStatus = isTemporaryOverpassError(error) ? 'timeout' : 'service-unavailable';
-      attractionError = isTemporaryOverpassError(error) ? labels[lang].attractionsTimedOut : labels[lang].attractionsServiceUnavailable;
+      attractionError = isTemporaryOverpassError(error) ? labels[lang].attractionsServiceUnavailable : labels[lang].attractionsServiceUnavailable;
     }
   } finally {
     window.clearTimeout(watchdog);
@@ -4075,26 +4086,50 @@ function requestAttractionLocation() {
   );
 }
 
+function cancelActiveAttractionWork() {
+  attractionSearchSequence += 1;
+  attractionEnrichmentSequence += 1;
+  if (attractionSearchTimer) {
+    window.clearTimeout(attractionSearchTimer);
+    attractionSearchTimer = undefined;
+  }
+  attractionAbortController?.abort();
+  attractionEnrichmentAbortController?.abort();
+}
+
 async function searchAttractionDestination() {
   const query = attractionManualQuery.trim();
   if (!query) return;
+  cancelActiveAttractionWork();
   const sequence = ++attractionSearchSequence;
   const isCurrentAttractionSearch = () => sequence === attractionSearchSequence;
-  attractionEnrichmentSequence += 1;
-  const city = cities.find((candidate) => candidate.city.toLowerCase() === query.toLowerCase());
-  if (city) {
-    if (!isCurrentAttractionSearch()) return;
-    await searchAttractions(destinationAttractionCenter(city));
-    return;
-  }
+  attractionError = '';
+  attractionDiagnostics = [];
+  selectedAttractionId = '';
+  attractionResults = [];
   attractionStatus = 'searching';
   attractionsPage();
-  const center = await resolveRestaurantDestination(query);
-  if (!isCurrentAttractionSearch()) return;
-  if (center) await searchAttractions(center);
-  else {
+  try {
+    const city = cities.find((candidate) => candidate.city.toLowerCase() === query.toLowerCase());
+    if (city) {
+      if (!isCurrentAttractionSearch()) return;
+      await searchAttractions(destinationAttractionCenter(city));
+      return;
+    }
+    const center = await resolveRestaurantDestination(query);
+    if (!isCurrentAttractionSearch()) return;
+    if (center) await searchAttractions(center);
+    else {
+      attractionResults = [];
+      attractionStatus = 'empty';
+      attractionsPage();
+    }
+  } catch (error) {
+    recordAttractionDiagnostic(`Attraction city switch ${query}`, error);
+    if (!isCurrentAttractionSearch()) return;
     attractionResults = [];
-    attractionStatus = 'empty';
+    attractionStatus = 'service-unavailable';
+    attractionError = labels[lang].attractionsServiceUnavailable;
     attractionsPage();
   }
 }
@@ -4112,13 +4147,23 @@ function attractionBrowserDirectionsUrl(attraction: Attraction) {
   return `https://www.openstreetmap.org/directions?to=${attraction.latitude},${attraction.longitude}#map=17/${attraction.latitude}/${attraction.longitude}`;
 }
 
+
 async function initializeAttractionsMap() {
   attractionsMap?.remove();
   attractionsMap = undefined;
   const mapStyle = await prepareMapLanguage();
-  if (!mapStyle) return;
   const element = document.querySelector<HTMLElement>('#attractions-map');
-  if (!element || !attractionCenter || !window.maplibregl) return;
+  if (!element || !attractionCenter) return;
+  const results = visibleAttractionResults();
+
+  if (!mapStyle || !window.maplibregl) {
+    replaceMapFallback(element, labels[lang].mapUnavailable);
+    if (results.length) {
+      element.insertAdjacentHTML('afterend', `<div class="place-list attraction-map-fallback-list">${results.map((attraction) => attractionCard(attraction, labels[lang])).join('')}</div>`);
+    }
+    return;
+  }
+
   try {
     element.replaceChildren();
     attractionsMap = new window.maplibregl.Map({
@@ -4129,10 +4174,34 @@ async function initializeAttractionsMap() {
       attributionControl: true,
     });
     attractionsMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), document.documentElement.dir === 'rtl' ? 'top-right' : 'top-left');
-    for (const attraction of filteredAttractionResults()) {
+
+    for (const attraction of results) {
       const info = `${attractionCategoryLabel(attraction.category, labels[lang])}: ${attraction.name}`;
-      new window.maplibregl.Marker({ color: attraction.id === selectedAttractionId ? '#7c3aed' : '#0f766e' }).setLngLat([attraction.longitude, attraction.latitude]).setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(`${info}. ${attraction.history || categoryExplanation(attraction.category)}`)).addTo(attractionsMap);
+      new window.maplibregl.Marker({ color: attraction.id === selectedAttractionId ? '#7c3aed' : '#0f766e' })
+        .setLngLat([attraction.longitude, attraction.latitude])
+        .setPopup(new window.maplibregl.Popup({ offset: 18 }).setText(`${info}. ${attraction.history || categoryExplanation(attraction.category)}`))
+        .addTo(attractionsMap);
     }
+
+    const fitAttractionMarkers = () => {
+      if (!attractionsMap || !results.length) return;
+      attractionsMap.resize?.();
+      const lngs = results.map((attraction) => attraction.longitude);
+      const lats = results.map((attraction) => attraction.latitude);
+      const minLng = Math.min(...lngs);
+      const maxLng = Math.max(...lngs);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const map = attractionsMap;
+      if (!map?.fitBounds) return;
+      const padLng = minLng === maxLng ? 0.01 : 0;
+      const padLat = minLat === maxLat ? 0.01 : 0;
+      map.fitBounds([[minLng - padLng, minLat - padLat], [maxLng + padLng, maxLat + padLat]], { padding: 60, maxZoom: 15 });
+    };
+
+    attractionsMap.on('load', fitAttractionMarkers);
+    window.setTimeout(fitAttractionMarkers, 350);
+
     attractionsMap.on('moveend', () => {
       attractionMapMoved = true;
       const button = document.querySelector<HTMLButtonElement>('#attractions-search-this-area');
@@ -4140,6 +4209,9 @@ async function initializeAttractionsMap() {
     });
   } catch {
     replaceMapFallback(element, labels[lang].mapUnavailable);
+    if (results.length) {
+      element.insertAdjacentHTML('afterend', `<div class="place-list attraction-map-fallback-list">${results.map((attraction) => attractionCard(attraction, labels[lang])).join('')}</div>`);
+    }
   }
 }
 
@@ -4210,6 +4282,9 @@ function attractionsPage() {
   const copy = labels[lang];
   const dir = languageDirection(lang);
   const results = filteredAttractionResults();
+  const displayAttractionResults = results.length
+    ? results
+    : (['photos', 'history'].includes(attractionStatus) && attractionResults.length ? sortAttractions(attractionResults, attractionSort) : results);
   document.documentElement.lang = lang;
   document.documentElement.dir = dir;
   root.innerHTML = `<main dir="${dir}" class="app prayer-app attractions-app">
@@ -4224,7 +4299,7 @@ function attractionsPage() {
       <div class="place-actions"><button type="button" id="attractions-search-this-area" class="ghost" ${attractionMapMoved ? '' : 'hidden'}>${copy.attractionsSearch}</button><button type="button" id="attractions-recentre" class="ghost">${copy.toiletsRecentre}</button><button type="button" id="attractions-fit-results" class="ghost">${copy.toiletsFitResults}</button></div>
       ${savedAttractionsMarkup(copy)}
       ${selectedAttractionDetail(copy)}
-      ${attractionView === 'map' ? `<div id="attractions-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : `<div class="${attractionView === 'photos' ? 'attraction-grid' : 'place-list'}">${results.length ? results.map((attraction) => attractionCard(attraction, copy)).join('') : attractionStatus === 'ready' ? `<p>${copy.attractionsNoResults}</p>` : ''}</div>`}
+      ${attractionView === 'map' ? `<div id="attractions-map" class="city-map prayer-map"><p class="map-fallback">${copy.mapUnavailable}</p></div>` : `<div class="${attractionView === 'photos' ? 'attraction-grid' : 'place-list'}">${displayAttractionResults.length ? displayAttractionResults.map((attraction) => attractionCard(attraction, copy)).join('') : attractionStatus === 'ready' ? `<p>${copy.attractionsNoResults}</p>` : ''}</div>`}
       ${(['empty', 'timeout', 'service-unavailable', 'offline', 'cached'].includes(attractionStatus) || !results.length && attractionResults.length > 0) ? `<div class="empty-actions"><button type="button" id="retry-attractions" class="ghost">${copy.weatherRetry}</button>${attractionStatus === 'timeout' ? '' : `<button type="button" id="increase-attraction-radius">${copy.toiletsIncreaseRadius}</button>`}<button type="button" id="another-attraction-city" class="ghost">${copy.attractionsSearchAnother}</button></div>` : ''}
       ${isLocalDevelopment() && attractionDiagnostics.length ? `<details class="dev-diagnostics"><summary>Attraction enrichment diagnostics</summary><ul>${attractionDiagnostics.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
       <p class="map-status">${copy.osmAttribution} · Wikimedia Commons · Wikipedia · Wikidata</p>
@@ -4239,9 +4314,27 @@ function bindAttractionsPage() {
   document.querySelector<HTMLSelectElement>('#lang')?.addEventListener('change', (event) => { if (!setAppLanguage((event.target as HTMLSelectElement).value)) return; attractionsPage(); });
   document.querySelector<HTMLButtonElement>('#back-from-attractions')?.addEventListener('click', () => { view = 'planner'; attractionAbortController?.abort(); attractionEnrichmentAbortController?.abort(); attractionsMap?.remove(); attractionsMap = undefined; if (window.location.hash) history.pushState(null, '', window.location.pathname + window.location.search); render(); });
   document.querySelector<HTMLButtonElement>('#use-attraction-location')?.addEventListener('click', requestAttractionLocation);
-  document.querySelector<HTMLButtonElement>('#use-attraction-destination')?.addEventListener('click', () => void searchAttractions(destinationAttractionCenter()));
+  document.querySelector<HTMLButtonElement>('#use-attraction-destination')?.addEventListener('click', () => {
+    const typed = document.querySelector<HTMLInputElement>('#attraction-manual-query')?.value.trim() ?? '';
+    if (typed) {
+      attractionManualQuery = typed;
+      void searchAttractionDestination();
+      return;
+    }
+    cancelActiveAttractionWork();
+    attractionManualQuery = selectedCity().city;
+    void searchAttractions(destinationAttractionCenter());
+  });
   document.querySelector<HTMLSelectElement>('#attraction-radius')?.addEventListener('change', (event) => { attractionRadiusKm = Number((event.target as HTMLSelectElement).value) as typeof attractionRadii[number]; if (attractionCenter) void searchAttractions(attractionCenter); });
-  document.querySelector<HTMLFormElement>('#manual-attraction-search')?.addEventListener('submit', (event) => { event.preventDefault(); attractionManualQuery = document.querySelector<HTMLInputElement>('#attraction-manual-query')?.value ?? ''; void searchAttractionDestination(); });
+  document.querySelector<HTMLInputElement>('#attraction-manual-query')?.addEventListener('input', (event) => {
+    attractionManualQuery = (event.target as HTMLInputElement).value;
+    if (['requesting', 'searching', 'photos', 'history'].includes(attractionStatus)) cancelActiveAttractionWork();
+  });
+  document.querySelector<HTMLFormElement>('#manual-attraction-search')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    attractionManualQuery = document.querySelector<HTMLInputElement>('#attraction-manual-query')?.value ?? '';
+    void searchAttractionDestination();
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-attraction-view]').forEach((button) => button.addEventListener('click', () => { attractionView = button.dataset.attractionView as AttractionView; attractionsPage(); }));
   document.querySelector<HTMLSelectElement>('#attraction-category-filter')?.addEventListener('change', (event) => { attractionFilters = { ...attractionFilters, category: (event.target as HTMLSelectElement).value as AttractionFilters['category'] }; attractionsPage(); });
   document.querySelectorAll<HTMLInputElement>('[data-attraction-filter]').forEach((input) => input.addEventListener('change', () => { attractionFilters = { ...attractionFilters, [input.dataset.attractionFilter ?? 'photo']: input.checked }; attractionsPage(); }));

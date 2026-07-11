@@ -1,1 +1,2 @@
 "NSLocationWhenInUseUsageDescription" = "SafarOne, Kıble yönünü veya yakındaki seyahat yerlerini istediğinizde konumunuzu yalnızca o anda kullanır.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "SafarOne konumunuzu yalnızca konum özelliklerini seçtiğinizde; yakındaki namaz alanları, helal yemek, gezilecek yerler, ulaşım, hava durumu ve kıble yönü gibi Müslüman seyahat hizmetlerini göstermek için kullanır.";
