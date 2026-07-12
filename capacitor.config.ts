@@ -4,12 +4,13 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.planetearthkids.muslimtravelplanner',
-  appName: 'SafarOne',
+  appName: 'SafarMate',
   webDir: 'dist-native',
   android: {
     allowMixedContent: false,
   },
   ios: {
+    // Legacy WebView origin retained to preserve existing native local storage after the rebrand.
     scheme: 'SafarOne',
     contentInset: 'automatic',
   },

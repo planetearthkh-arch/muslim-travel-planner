@@ -1,12 +1,12 @@
-# SafarOne Privacy Policy
+# SafarMate Privacy Policy
 
-Effective date: July 11, 2026
+Effective date: July 12, 2026
 
-SafarOne: Muslim Trip Planner is designed to help Muslim travelers plan trips with useful tools such as Qibla direction, prayer spaces, halal food search, weather, attractions, transport helpers, and saved trips.
+SafarMate: Muslim Trip Planner is designed to help Muslim travelers plan trips with useful tools such as Qibla direction, prayer spaces, halal food search, weather, attractions, transport helpers, and saved trips.
 
 ## Data Collection
 
-SafarOne does not require users to create an account or sign in.
+SafarMate does not require users to create an account or sign in.
 
 The app may use your device location only when you choose location-based features, such as Qibla direction, nearby prayer spaces, halal food, attractions, weather, or travel services.
 
@@ -18,7 +18,7 @@ Location data is not used for tracking and is not sold.
 
 ## Data Sharing
 
-SafarOne does not sell user data to advertisers or data brokers.
+SafarMate does not sell user data to advertisers or data brokers.
 
 Some app features may request information from third-party map, weather, or place-data services to provide results. These services may process requests according to their own privacy policies.
 

@@ -1,4 +1,4 @@
-# SafarOne TestFlight Beta Notes
+# SafarMate TestFlight Beta Notes
 
 ## What to Test
 
@@ -18,5 +18,5 @@ Plan a trip, save it locally, reopen it offline, and try the main travel tools:
 - Live maps, weather, exchange rates, opening status, nearby-place searches, directions, and external websites require internet access.
 - Saved trips and travel details are stored locally on the device and are not cloud-synced.
 - Map and place information comes from contributed open-data sources and may be incomplete or outdated.
-- Halal information is based on source data and is not guaranteed or certified by SafarOne.
+- Halal information is based on source data and is not guaranteed or certified by SafarMate.
 - iPhone prayer notifications currently use the default iOS notification sound unless a licensed short sound is added in a later build.

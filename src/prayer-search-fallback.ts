@@ -133,7 +133,7 @@ export function prayerJsonResponse(payload: PrayerSearchPayload) {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
-      'X-SafarOne-Prayer-Source': 'persistent-fallback',
+      'X-SafarMate-Prayer-Source': 'persistent-fallback',
     },
   });
 }

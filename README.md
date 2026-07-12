@@ -1,6 +1,6 @@
-# SafarOne
+# SafarMate
 
-SafarOne is a Muslim travel planner for prayer-aware itineraries, saved trips, travel tools, nearby open-map place search, optional offline access to saved trip information, and native mobile packaging.
+SafarMate is a Muslim travel planner for prayer-aware itineraries, saved trips, travel tools, nearby open-map place search, optional offline access to saved trip information, and native mobile packaging.
 
 ## Scope
 

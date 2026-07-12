@@ -1,4 +1,4 @@
-# SafarOne TestFlight Checklist
+# SafarMate TestFlight Checklist
 
 This checklist is for the app owner. Do not commit Apple IDs, certificates, provisioning profiles, API keys, private keys, `.ipa` files, or archives to the repository.
 
@@ -6,7 +6,7 @@ This checklist is for the app owner. Do not commit Apple IDs, certificates, prov
 
 1. Confirm active Apple Developer Program membership.
 2. Register or confirm the bundle ID: `com.planetearthkids.muslimtravelplanner`.
-3. Create the SafarOne app record in App Store Connect.
+3. Create the SafarMate app record in App Store Connect.
 4. Set the primary language and SKU in App Store Connect.
 5. Open `ios/App/App.xcworkspace`.
 6. Select the owner’s Apple Development Team under Signing & Capabilities.
@@ -25,7 +25,7 @@ This checklist is for the app owner. Do not commit Apple IDs, certificates, prov
 4. Wait for App Store Connect build processing.
 5. Complete export-compliance questions truthfully.
 6. Add TestFlight beta information:
-   - Beta app name: SafarOne
+   - Beta app name: SafarMate
    - Feedback email: `planetearthkh@gmail.com`
    - Privacy URL: `https://planetearthkh-arch.github.io/muslim-travel-planner/privacy.html`
    - Support URL: `https://planetearthkh-arch.github.io/muslim-travel-planner/support.html`
@@ -49,7 +49,7 @@ This checklist is for the app owner. Do not commit Apple IDs, certificates, prov
 
 ## iOS Prayer Notification Sound
 
-SafarOne currently uses the default iOS local-notification sound for prayer notifications. Do not bundle or download third-party Athan audio without clear permission.
+SafarMate currently uses the default iOS local-notification sound for prayer notifications. Do not bundle or download third-party Athan audio without clear permission.
 
 To add a custom iOS prayer notification sound later:
 
