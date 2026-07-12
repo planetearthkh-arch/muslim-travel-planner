@@ -31,13 +31,13 @@ let browserAudio: HTMLAudioElement | undefined;
 
 type NotificationCopy = { prayer: Record<PrayerName, string>; title: string; testTitle: string; testBody: string };
 const notificationCopy: Record<string, NotificationCopy> = {
-  en: { prayer: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' }, title: 'prayer', testTitle: 'SafarOne prayer notification', testBody: 'Prayer notification sound' },
-  ar: { prayer: { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' }, title: 'صلاة', testTitle: 'إشعار الصلاة من SafarOne', testBody: 'صوت إشعار الصلاة' },
-  ur: { prayer: { Fajr: 'فجر', Dhuhr: 'ظہر', Asr: 'عصر', Maghrib: 'مغرب', Isha: 'عشاء' }, title: 'نماز', testTitle: 'SafarOne نماز کی اطلاع', testBody: 'نماز کی اطلاع کی آواز' },
-  id: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' }, title: 'salat', testTitle: 'Notifikasi salat SafarOne', testBody: 'Suara notifikasi salat' },
-  ms: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Maghrib', Isha: 'Isyak' }, title: 'solat', testTitle: 'Pemberitahuan solat SafarOne', testBody: 'Bunyi pemberitahuan solat' },
-  tr: { prayer: { Fajr: 'Sabah', Dhuhr: 'Öğle', Asr: 'İkindi', Maghrib: 'Akşam', Isha: 'Yatsı' }, title: 'namazı', testTitle: 'SafarOne namaz bildirimi', testBody: 'Namaz bildirimi sesi' },
-  fr: { prayer: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' }, title: 'prière', testTitle: 'Notification de prière SafarOne', testBody: 'Son de notification de prière' },
+  en: { prayer: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' }, title: 'prayer', testTitle: 'SafarMate prayer notification', testBody: 'Prayer notification sound' },
+  ar: { prayer: { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' }, title: 'صلاة', testTitle: 'إشعار الصلاة من SafarMate', testBody: 'صوت إشعار الصلاة' },
+  ur: { prayer: { Fajr: 'فجر', Dhuhr: 'ظہر', Asr: 'عصر', Maghrib: 'مغرب', Isha: 'عشاء' }, title: 'نماز', testTitle: 'SafarMate نماز کی اطلاع', testBody: 'نماز کی اطلاع کی آواز' },
+  id: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' }, title: 'salat', testTitle: 'Notifikasi salat SafarMate', testBody: 'Suara notifikasi salat' },
+  ms: { prayer: { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Maghrib', Isha: 'Isyak' }, title: 'solat', testTitle: 'Pemberitahuan solat SafarMate', testBody: 'Bunyi pemberitahuan solat' },
+  tr: { prayer: { Fajr: 'Sabah', Dhuhr: 'Öğle', Asr: 'İkindi', Maghrib: 'Akşam', Isha: 'Yatsı' }, title: 'namazı', testTitle: 'SafarMate namaz bildirimi', testBody: 'Namaz bildirimi sesi' },
+  fr: { prayer: { Fajr: 'Fajr', Dhuhr: 'Dhuhr', Asr: 'Asr', Maghrib: 'Maghrib', Isha: 'Isha' }, title: 'prière', testTitle: 'Notification de prière SafarMate', testBody: 'Son de notification de prière' },
 };
 
 function copyFor(language: Language | string) {
@@ -166,14 +166,14 @@ function nativeNotificationId(alarm: PrayerAlarm) {
   return NATIVE_PRAYER_NOTIFICATION_MIN + (alarm.id % (NATIVE_PRAYER_NOTIFICATION_MAX - NATIVE_PRAYER_NOTIFICATION_MIN));
 }
 
-function isSafarOneNotificationId(id: number) {
+function isSafarMateNotificationId(id: number) {
   return id === NATIVE_TEST_NOTIFICATION_ID || (id >= NATIVE_PRAYER_NOTIFICATION_MIN && id <= NATIVE_PRAYER_NOTIFICATION_MAX);
 }
 
 async function cancelNativePrayerNotifications() {
   const pending = await LocalNotifications.getPending();
   const notifications = pending.notifications
-    .filter((notification) => isSafarOneNotificationId(notification.id))
+    .filter((notification) => isSafarMateNotificationId(notification.id))
     .map((notification) => ({ id: notification.id }));
   if (notifications.length) await LocalNotifications.cancel({ notifications });
 }
@@ -297,7 +297,7 @@ export async function hasScheduledAthanAlarms() {
     }
     if (Capacitor.isNativePlatform()) {
       const pending = await LocalNotifications.getPending();
-      return pending.notifications.some((notification) => isSafarOneNotificationId(notification.id));
+      return pending.notifications.some((notification) => isSafarMateNotificationId(notification.id));
     }
     return browserTimers.length > 0;
   } catch {

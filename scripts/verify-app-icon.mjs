@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname;
-const master = join(root, 'resources/safarone-app-icon-1024.png');
+const master = join(root, 'resources/safarmate-app-icon-1024.png');
 const appIconDir = join(root, 'ios/App/App/Assets.xcassets/AppIcon.appiconset');
 const contentsPath = join(appIconDir, 'Contents.json');
 const isMac = process.platform === 'darwin';
@@ -13,7 +13,7 @@ function fail(message) {
   process.exit(1);
 }
 
-if (!existsSync(master)) fail('Missing resources/safarone-app-icon-1024.png');
+if (!existsSync(master)) fail('Missing resources/safarmate-app-icon-1024.png');
 
 const fileInfo = execFileSync('file', [master], { encoding: 'utf8' });
 if (!/PNG image data/.test(fileInfo)) fail('App icon master must be a PNG.');
@@ -65,4 +65,4 @@ for (const [filename] of icons) {
 
 if (!existsSync(join(appIconDir, 'Icon-App-1024x1024@1x.png'))) fail('Missing committed 1024x1024 App Store marketing icon.');
 
-console.log('SafarOne app icon master is valid and iOS AppIcon assets are present.');
+console.log('SafarMate app icon master is valid and iOS AppIcon assets are present.');

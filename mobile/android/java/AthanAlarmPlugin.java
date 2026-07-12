@@ -181,7 +181,7 @@ public class AthanAlarmPlugin extends Plugin {
     @PluginMethod
     public void test(PluginCall call) {
         Intent intent = new Intent(getContext(), AthanPlaybackService.class);
-        intent.putExtra("prayer", call.getString("prayer", "SafarOne prayer notification"));
+        intent.putExtra("prayer", call.getString("prayer", "SafarMate prayer notification"));
         intent.putExtra("city", call.getString("city", "Prayer notification sound"));
         intent.putExtra("language", call.getString("language", "en"));
         ContextCompat.startForegroundService(getContext(), intent);

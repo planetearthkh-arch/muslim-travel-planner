@@ -1,5 +1,5 @@
 export const frenchLabels: Record<string, string> = {
-  title: 'SafarOne',
+  title: 'SafarMate',
   subtitle: 'Planificateur de voyage musulman',
   tagline: 'Planifiez avec foi. Voyagez en paix.',
   prototype: '',

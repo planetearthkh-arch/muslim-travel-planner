@@ -1,6 +1,6 @@
 export {};
 
-const HALAL_DESTINATION_KEY = 'safarone-halal-destination';
+const HALAL_DESTINATION_KEY = 'safarmate-halal-destination';
 let autoSearchStarted = false;
 
 const halalEnhancementCopy = {

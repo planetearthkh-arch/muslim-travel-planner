@@ -19,7 +19,7 @@ export function getSafeStorage(): Storage {
   }
   try {
     const storage = window.localStorage;
-    const probe = '__safarone_storage_probe__';
+    const probe = '__safarmate_storage_probe__';
     storage.setItem(probe, '1');
     storage.removeItem(probe);
     persistentStorageAvailable = true;

@@ -16,7 +16,7 @@ const globalState = globalThis as typeof globalThis & { __safarOnePrayerFetchIns
 function livePrayerJsonResponse(payload: { elements: unknown[] }, response: Response) {
   const headers = new Headers(response.headers);
   headers.set('Content-Type', 'application/json');
-  headers.set('X-SafarOne-Prayer-Source', 'live-sanitized');
+  headers.set('X-SafarMate-Prayer-Source', 'live-sanitized');
   return new Response(JSON.stringify(payload), {
     status: response.status,
     statusText: response.statusText,

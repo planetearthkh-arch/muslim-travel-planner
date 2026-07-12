@@ -1,16 +1,16 @@
 # In-Flight Prayer & Qibla
 
-SafarOne Flight Mode provides the best available estimate based on live GPS or the stored flight route. It is designed for use after the traveller prepares a flight while online or before departure; the in-flight calculations themselves do not need a runtime network request.
+SafarMate Flight Mode provides the best available estimate based on live GPS or the stored flight route. It is designed for use after the traveller prepares a flight while online or before departure; the in-flight calculations themselves do not need a runtime network request.
 
 ## GPS Mode
 
-When the user explicitly enables live GPS, SafarOne asks the platform for high-accuracy location updates. The app uses finite latitude, longitude, timestamp, accuracy, altitude, and GPS course-over-ground values when available. If the course value is unavailable, SafarOne can derive a track from recent GPS fixes.
+When the user explicitly enables live GPS, SafarMate asks the platform for high-accuracy location updates. The app uses finite latitude, longitude, timestamp, accuracy, altitude, and GPS course-over-ground values when available. If the course value is unavailable, SafarMate can derive a track from recent GPS fixes.
 
 This is labelled as GPS track over ground. It is not called aircraft heading, cabin direction, or magnetic compass direction.
 
 ## Route-Estimate Mode
 
-If GPS is denied, unavailable, inaccurate, or stale, SafarOne automatically falls back to the saved route estimate. The user can use elapsed-time progress or adjust a 0-100% route progress slider.
+If GPS is denied, unavailable, inaccurate, or stale, SafarMate automatically falls back to the saved route estimate. The user can use elapsed-time progress or adjust a 0-100% route progress slider.
 
 The route is a direct airport-to-airport great-circle estimate unless the user adds optional waypoints. Airline routing, air-traffic-control routing, weather deviations, holding patterns, and runway procedures can differ from this estimate.
 
@@ -22,11 +22,11 @@ Flight Mode uses no magnetic compass and no DeviceOrientation dependency. Qibla 
 
 Prayer calculations use the existing local `adhan` package and the selected calculation method. Flight Mode computes Fajr, Sunrise, Dhuhr, Asr, Maghrib, and Isha for the active latitude, longitude, and timestamp, including adjacent-day continuity for long flights and midnight crossings.
 
-UTC is the primary in-flight display. Optional departure and arrival IANA time zones are shown only when valid. SafarOne does not infer a civil time zone from longitude.
+UTC is the primary in-flight display. Optional departure and arrival IANA time zones are shown only when valid. SafarMate does not infer a civil time zone from longitude.
 
 ## Altitude Note
 
-Cruise altitude is stored and displayed as context only. SafarOne does not silently alter Fajr, Isha, sunrise, or sunset boundaries with an unverified altitude formula.
+Cruise altitude is stored and displayed as context only. SafarMate does not silently alter Fajr, Isha, sunrise, or sunset boundaries with an unverified altitude formula.
 
 At cruising altitude, the visible horizon and observed sunrise or sunset may differ from ground-level calculations. Follow trusted religious guidance.
 
@@ -38,9 +38,9 @@ The current index is intentionally compact for launch and can be regenerated fro
 
 ## On-Device Privacy
 
-Prepared flight plans are stored locally in the browser or native WebView storage under a versioned SafarOne key. They include airports, optional waypoints, schedule, planned duration, prayer method, optional altitude, and optional time-zone names.
+Prepared flight plans are stored locally in the browser or native WebView storage under a versioned SafarMate key. They include airports, optional waypoints, schedule, planned duration, prayer method, optional altitude, and optional time-zone names.
 
-Flight Mode does not store passport numbers, booking references, identity documents, payment cards, or loyalty credentials. It does not send prepared flight plans to a SafarOne server.
+Flight Mode does not store passport numbers, booking references, identity documents, payment cards, or loyalty credentials. It does not send prepared flight plans to a SafarMate server.
 
 ## Offline Behavior
 

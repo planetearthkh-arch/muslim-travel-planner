@@ -1,6 +1,6 @@
 import { validateFlightPlan, type PreparedFlightPlan } from './flight-mode.js';
 
-export const FLIGHT_MODE_STORAGE_KEY = 'safarone-flight-mode-v1';
+export const FLIGHT_MODE_STORAGE_KEY = 'safarmate-flight-mode-v1';
 
 export type StoredFlightMode = {
   schemaVersion: 1;

@@ -53,7 +53,7 @@ test('external map fields are escaped before insertion', async () => {
   }
 });
 
-test('service worker deletes only SafarOne caches and includes the bundled RTL plugin in the current shell', async () => {
+test('service worker deletes only SafarMate caches and includes the bundled RTL plugin in the current shell', async () => {
   const worker = await repoFile('public/sw.js');
   assert.match(worker, /key\.startsWith\(CACHE_PREFIX\)/);
   assert.match(worker, /mtp-app-shell-v17/);

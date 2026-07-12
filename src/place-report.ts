@@ -41,43 +41,43 @@ type ReportCopy = {
 
 const reportCopy: Record<Language, ReportCopy> = {
   en: {
-    heading: 'SafarOne place report', issueTitle: 'Place report', feature: 'Feature', place: 'Place', destination: 'Destination',
+    heading: 'SafarMate place report', issueTitle: 'Place report', feature: 'Feature', place: 'Place', destination: 'Destination',
     sourceObject: 'Source object', sourceUrl: 'Source URL', coordinates: 'Mapped coordinates', reason: 'Reason', note: 'Note',
     language: 'Language', timestamp: 'Timestamp', notice: 'Opening this issue page does not submit automatically. A GitHub account may be required.',
     reasons: { 'wrong-name': 'Wrong name', 'wrong-location': 'Wrong location', closed: 'Place is closed or removed', 'wrong-category': 'Wrong category', hours: 'Opening hours are wrong', contact: 'Phone or website is wrong', accessibility: 'Accessibility information is wrong', halal: 'Halal information is wrong', other: 'Other' },
   },
   ar: {
-    heading: 'تقرير مكان من SafarOne', issueTitle: 'تقرير مكان', feature: 'الميزة', place: 'المكان', destination: 'الوجهة',
+    heading: 'تقرير مكان من SafarMate', issueTitle: 'تقرير مكان', feature: 'الميزة', place: 'المكان', destination: 'الوجهة',
     sourceObject: 'عنصر المصدر', sourceUrl: 'رابط المصدر', coordinates: 'الإحداثيات على الخريطة', reason: 'السبب', note: 'ملاحظة',
     language: 'اللغة', timestamp: 'الوقت', notice: 'فتح صفحة البلاغ لا يرسله تلقائيًا، وقد يلزم حساب GitHub.',
     reasons: { 'wrong-name': 'الاسم غير صحيح', 'wrong-location': 'الموقع غير صحيح', closed: 'المكان مغلق أو أزيل', 'wrong-category': 'الفئة غير صحيحة', hours: 'ساعات العمل غير صحيحة', contact: 'الهاتف أو الموقع الإلكتروني غير صحيح', accessibility: 'معلومات سهولة الوصول غير صحيحة', halal: 'معلومات الحلال غير صحيحة', other: 'أخرى' },
   },
   id: {
-    heading: 'Laporan tempat SafarOne', issueTitle: 'Laporan tempat', feature: 'Fitur', place: 'Tempat', destination: 'Tujuan',
+    heading: 'Laporan tempat SafarMate', issueTitle: 'Laporan tempat', feature: 'Fitur', place: 'Tempat', destination: 'Tujuan',
     sourceObject: 'Objek sumber', sourceUrl: 'URL sumber', coordinates: 'Koordinat peta', reason: 'Alasan', note: 'Catatan',
     language: 'Bahasa', timestamp: 'Waktu', notice: 'Membuka halaman laporan ini tidak mengirimkannya secara otomatis. Akun GitHub mungkin diperlukan.',
     reasons: { 'wrong-name': 'Nama salah', 'wrong-location': 'Lokasi salah', closed: 'Tempat tutup atau telah dihapus', 'wrong-category': 'Kategori salah', hours: 'Jam buka salah', contact: 'Telepon atau situs web salah', accessibility: 'Informasi aksesibilitas salah', halal: 'Informasi halal salah', other: 'Lainnya' },
   },
   ms: {
-    heading: 'Laporan tempat SafarOne', issueTitle: 'Laporan tempat', feature: 'Ciri', place: 'Tempat', destination: 'Destinasi',
+    heading: 'Laporan tempat SafarMate', issueTitle: 'Laporan tempat', feature: 'Ciri', place: 'Tempat', destination: 'Destinasi',
     sourceObject: 'Objek sumber', sourceUrl: 'URL sumber', coordinates: 'Koordinat peta', reason: 'Sebab', note: 'Catatan',
     language: 'Bahasa', timestamp: 'Masa', notice: 'Membuka halaman laporan ini tidak menghantarnya secara automatik. Akaun GitHub mungkin diperlukan.',
     reasons: { 'wrong-name': 'Nama salah', 'wrong-location': 'Lokasi salah', closed: 'Tempat ditutup atau telah dialih keluar', 'wrong-category': 'Kategori salah', hours: 'Waktu operasi salah', contact: 'Telefon atau laman web salah', accessibility: 'Maklumat aksesibiliti salah', halal: 'Maklumat halal salah', other: 'Lain-lain' },
   },
   tr: {
-    heading: 'SafarOne yer bildirimi', issueTitle: 'Yer bildirimi', feature: 'Özellik', place: 'Yer', destination: 'Varış noktası',
+    heading: 'SafarMate yer bildirimi', issueTitle: 'Yer bildirimi', feature: 'Özellik', place: 'Yer', destination: 'Varış noktası',
     sourceObject: 'Kaynak nesnesi', sourceUrl: 'Kaynak URL', coordinates: 'Harita koordinatları', reason: 'Neden', note: 'Not',
     language: 'Dil', timestamp: 'Zaman', notice: 'Bu bildirim sayfasını açmak bildirimi otomatik olarak göndermez. Bir GitHub hesabı gerekebilir.',
     reasons: { 'wrong-name': 'Ad yanlış', 'wrong-location': 'Konum yanlış', closed: 'Yer kapalı veya kaldırılmış', 'wrong-category': 'Kategori yanlış', hours: 'Çalışma saatleri yanlış', contact: 'Telefon veya web sitesi yanlış', accessibility: 'Erişilebilirlik bilgisi yanlış', halal: 'Helal bilgisi yanlış', other: 'Diğer' },
   },
   fr: {
-    heading: 'Signalement de lieu SafarOne', issueTitle: 'Signalement de lieu', feature: 'Fonction', place: 'Lieu', destination: 'Destination',
+    heading: 'Signalement de lieu SafarMate', issueTitle: 'Signalement de lieu', feature: 'Fonction', place: 'Lieu', destination: 'Destination',
     sourceObject: 'Objet source', sourceUrl: 'URL source', coordinates: 'Coordonnées cartographiques', reason: 'Motif', note: 'Note',
     language: 'Langue', timestamp: 'Horodatage', notice: 'L’ouverture de cette page ne transmet pas automatiquement le signalement. Un compte GitHub peut être nécessaire.',
     reasons: { 'wrong-name': 'Nom incorrect', 'wrong-location': 'Emplacement incorrect', closed: 'Lieu fermé ou supprimé', 'wrong-category': 'Catégorie incorrecte', hours: 'Horaires incorrects', contact: 'Téléphone ou site web incorrect', accessibility: 'Informations d’accessibilité incorrectes', halal: 'Informations halal incorrectes', other: 'Autre' },
   },
   ur: {
-    heading: 'SafarOne مقام رپورٹ', issueTitle: 'مقام رپورٹ', feature: 'خصوصیت', place: 'مقام', destination: 'منزل',
+    heading: 'SafarMate مقام رپورٹ', issueTitle: 'مقام رپورٹ', feature: 'خصوصیت', place: 'مقام', destination: 'منزل',
     sourceObject: 'ماخذ آبجیکٹ', sourceUrl: 'ماخذ یو آر ایل', coordinates: 'نقشے کے نقاط', reason: 'وجہ', note: 'نوٹ',
     language: 'زبان', timestamp: 'وقت', notice: 'اس رپورٹ صفحے کو کھولنے سے رپورٹ خودکار طور پر جمع نہیں ہوتی۔ GitHub اکاؤنٹ درکار ہو سکتا ہے۔',
     reasons: { 'wrong-name': 'نام غلط ہے', 'wrong-location': 'مقام غلط ہے', closed: 'مقام بند یا حذف ہو چکا ہے', 'wrong-category': 'زمرہ غلط ہے', hours: 'اوقات غلط ہیں', contact: 'فون یا ویب سائٹ غلط ہے', accessibility: 'رسائی کی معلومات غلط ہیں', halal: 'حلال معلومات غلط ہیں', other: 'دیگر' },

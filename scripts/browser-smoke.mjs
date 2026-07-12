@@ -64,7 +64,7 @@ const preview = spawn(viteBinary, ['preview', '--host', host, '--port', String(p
 preview.stdout.on('data', (chunk) => { previewOutput += chunk.toString(); });
 preview.stderr.on('data', (chunk) => { previewOutput += chunk.toString(); });
 
-const profileDirectory = await mkdtemp(path.join(tmpdir(), 'safarone-browser-smoke-'));
+const profileDirectory = await mkdtemp(path.join(tmpdir(), 'safarmate-browser-smoke-'));
 try {
   await waitForServer(appUrl);
   const result = spawnSync(chromeBinary, [
@@ -91,7 +91,7 @@ try {
 
   const dom = result.stdout;
   const root = dom.match(/<div id="root"[^>]*>([\s\S]*?)<\/div>/i);
-  if (!dom.includes('<title>SafarOne — Muslim Travel Planner</title>')) {
+  if (!dom.includes('<title>SafarMate — Muslim Travel Planner</title>')) {
     throw new Error('The built page title was not rendered.');
   }
   if (!root || !root[1].trim()) {
