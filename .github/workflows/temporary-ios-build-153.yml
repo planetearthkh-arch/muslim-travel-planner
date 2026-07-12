@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   prepare:
-    if: github.event.workflow_run.id == 29204461272 && github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: macos-latest
     steps:
       - name: Check out release branch
