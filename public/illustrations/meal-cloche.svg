@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 320" role="img" aria-labelledby="title desc">
+  <title id="title">Decorative halal meal illustration</title>
+  <desc id="desc">A soft vector restaurant cloche with herbs, a table, and a small halal badge.</desc>
+  <defs>
+    <linearGradient id="cloche" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#27a88b"/>
+      <stop offset="1" stop-color="#08695f"/>
+    </linearGradient>
+  </defs>
+  <g fill="#dff3ed" opacity=".74"><ellipse cx="118" cy="80" rx="76" ry="27"/><ellipse cx="352" cy="66" rx="65" ry="22"/></g>
+  <path d="M0 262c82-19 164-13 235-2 77 11 144 8 225-12v72H0z" fill="#eef5ed"/>
+  <g transform="translate(70 63)">
+    <ellipse cx="162" cy="190" rx="140" ry="20" fill="#d7e6df"/>
+    <path d="M42 178c5-78 58-126 120-126s115 48 120 126z" fill="url(#cloche)"/>
+    <path d="M30 178h264" stroke="#075f57" stroke-width="13" stroke-linecap="round"/>
+    <circle cx="162" cy="41" r="16" fill="#d9a51c"/>
+    <rect x="151" y="17" width="22" height="26" rx="11" fill="#0b766a"/>
+    <path d="M88 130c24-21 47-22 70-3m7-8c22-18 45-17 68 4" fill="none" stroke="#baf0df" stroke-width="7" stroke-linecap="round" opacity=".7"/>
+  </g>
+  <g fill="#76bd70">
+    <path d="M65 222c31-42 47-33 50-3-24 4-39 5-50 3z"/>
+    <path d="M396 219c-29-39-45-30-48-2 23 4 38 5 48 2z"/>
+  </g>
+  <g transform="translate(330 48)">
+    <circle cx="48" cy="48" r="43" fill="#f5cd58" opacity=".95"/>
+    <circle cx="48" cy="48" r="34" fill="#fff7d8"/>
+    <path d="M34 53c7 10 17 14 29 7 6-4 10-10 11-18-9 3-15 1-20-5-6 9-13 14-20 16z" fill="#0b766a"/>
+    <path d="M31 66h35" stroke="#0b766a" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>
