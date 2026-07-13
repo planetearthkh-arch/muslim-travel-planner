@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 300" role="img" aria-labelledby="title desc">
+  <title id="title">Decorative green city bus</title>
+  <desc id="desc">A soft vector illustration of a green bus, road, trees, clouds, and a distant skyline.</desc>
+  <defs>
+    <linearGradient id="bus" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#15967f"/>
+      <stop offset="1" stop-color="#07695f"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8f2f4"/>
+      <stop offset="1" stop-color="#8fc8ce"/>
+    </linearGradient>
+  </defs>
+  <g opacity=".34" fill="#8dd4c3">
+    <path d="M305 145h170v74H305z"/>
+    <path d="M328 145c0-38 58-38 58 0z"/>
+    <rect x="392" y="112" width="16" height="107" rx="3"/>
+    <path d="M395 112l5-24 5 24z"/>
+    <circle cx="400" cy="84" r="3"/>
+    <rect x="435" y="125" width="14" height="94" rx="3"/>
+    <path d="M438 125l4-21 4 21z"/>
+  </g>
+  <g fill="#b6dfaf">
+    <circle cx="58" cy="190" r="28"/><rect x="53" y="186" width="10" height="48" rx="5" fill="#6d9f69"/>
+    <circle cx="476" cy="193" r="24"/><rect x="472" y="190" width="8" height="44" rx="4" fill="#6d9f69"/>
+  </g>
+  <path d="M0 235c95-15 191-10 286 0s159 11 234-2v67H0z" fill="#eef5ef"/>
+  <path d="M0 258h520" stroke="#cad8d1" stroke-width="6"/>
+  <path d="M34 258h78m50 0h78m50 0h78m50 0h68" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <g transform="translate(112 114)">
+    <rect x="0" y="0" width="302" height="128" rx="24" fill="url(#bus)"/>
+    <rect x="22" y="19" width="67" height="48" rx="9" fill="url(#glass)"/>
+    <rect x="99" y="19" width="62" height="48" rx="9" fill="url(#glass)"/>
+    <rect x="171" y="19" width="62" height="48" rx="9" fill="url(#glass)"/>
+    <rect x="242" y="19" width="37" height="48" rx="9" fill="url(#glass)"/>
+    <rect x="22" y="78" width="46" height="28" rx="8" fill="#0b5a53" opacity=".8"/>
+    <rect x="225" y="73" width="54" height="46" rx="9" fill="#f4fbf7" opacity=".92"/>
+    <path d="M238 82h27v29h-27z" fill="#9cd8ca"/>
+    <circle cx="70" cy="126" r="28" fill="#163f3b"/>
+    <circle cx="70" cy="126" r="12" fill="#c7d6d0"/>
+    <circle cx="238" cy="126" r="28" fill="#163f3b"/>
+    <circle cx="238" cy="126" r="12" fill="#c7d6d0"/>
+    <circle cx="294" cy="83" r="6" fill="#ffd76a"/>
+    <path d="M12 96h280" stroke="#6bd0b7" stroke-width="5" opacity=".55"/>
+  </g>
+  <g fill="none" stroke="#65bba7" stroke-width="3" stroke-linecap="round" opacity=".38">
+    <path d="M74 74c12-9 24-9 36 0"/><path d="M87 73c5-5 10-5 15 0"/>
+    <path d="M429 60c12-9 24-9 36 0"/>
+  </g>
+</svg>
