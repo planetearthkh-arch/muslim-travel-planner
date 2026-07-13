@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 330" role="img" aria-labelledby="title desc">
+  <title id="title">Decorative mosque illustration</title>
+  <desc id="desc">A soft vector mosque with domes, minarets, trees, and a crescent moon.</desc>
+  <defs>
+    <linearGradient id="mosque" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#39a98e"/>
+      <stop offset="1" stop-color="#0b6d62"/>
+    </linearGradient>
+  </defs>
+  <circle cx="396" cy="56" r="22" fill="#f3cf61" opacity=".86"/>
+  <circle cx="405" cy="50" r="22" fill="#f8fcfa"/>
+  <g fill="#dff3ed" opacity=".72"><ellipse cx="100" cy="83" rx="70" ry="25"/><ellipse cx="350" cy="102" rx="82" ry="27"/></g>
+  <path d="M0 272c87-25 169-17 246-5 78 12 151 5 234-14v77H0z" fill="#eaf4e7"/>
+  <g transform="translate(66 73)" fill="url(#mosque)">
+    <rect x="80" y="113" width="218" height="132" rx="8"/>
+    <path d="M100 113c0-66 178-66 178 0z"/>
+    <rect x="167" y="67" width="42" height="55"/>
+    <path d="M171 67c0-28 34-28 34 0z"/>
+    <rect x="30" y="66" width="31" height="179" rx="4"/>
+    <path d="M35 66l11-43 10 43z"/>
+    <circle cx="46" cy="18" r="4" fill="#d9a51c"/>
+    <rect x="316" y="52" width="31" height="193" rx="4"/>
+    <path d="M321 52l10-43 11 43z"/>
+    <circle cx="331" cy="4" r="4" fill="#d9a51c"/>
+    <g fill="#d7f3ea">
+      <rect x="107" y="153" width="31" height="49" rx="15"/>
+      <rect x="151" y="153" width="31" height="49" rx="15"/>
+      <rect x="195" y="153" width="31" height="49" rx="15"/>
+      <rect x="239" y="153" width="31" height="49" rx="15"/>
+    </g>
+    <rect x="163" y="198" width="52" height="47" rx="25" fill="#0a524a"/>
+  </g>
+  <g fill="#83c779"><circle cx="67" cy="275" r="31"/><circle cx="413" cy="278" r="28"/><circle cx="114" cy="291" r="22"/></g>
+  <g fill="#5b8959"><rect x="62" y="273" width="10" height="37" rx="5"/><rect x="408" y="276" width="10" height="35" rx="5"/></g>
+</svg>
