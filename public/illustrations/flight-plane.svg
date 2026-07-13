@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 280" role="img" aria-labelledby="title desc">
+  <title id="title">Decorative passenger airplane</title>
+  <desc id="desc">A soft vector airplane flying above clouds with a curved route line.</desc>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f9fffd"/>
+      <stop offset="1" stop-color="#b8ded8"/>
+    </linearGradient>
+  </defs>
+  <g fill="#dff3ed" opacity=".66">
+    <ellipse cx="125" cy="215" rx="105" ry="34"/>
+    <ellipse cx="365" cy="224" rx="140" ry="42"/>
+  </g>
+  <path d="M60 190c96-124 213-145 367-90" fill="none" stroke="#8ed3c2" stroke-width="4" stroke-dasharray="11 11" stroke-linecap="round" opacity=".7"/>
+  <g transform="translate(145 70) rotate(-10 120 70)">
+    <path d="M15 67c0-10 8-18 18-18h186c15 0 29 6 40 16l19 17-22 11-44-11H34c-11 0-19-6-19-15z" fill="url(#body)" stroke="#6baea0" stroke-width="3"/>
+    <path d="M111 49l48-42h27l-22 42z" fill="#d6eee8" stroke="#6baea0" stroke-width="3"/>
+    <path d="M122 82l42 40h28l-24-40z" fill="#cae6df" stroke="#6baea0" stroke-width="3"/>
+    <path d="M228 52l31-25h18l-8 44z" fill="#0b766a"/>
+    <circle cx="58" cy="64" r="4" fill="#6baea0"/>
+    <circle cx="79" cy="64" r="4" fill="#6baea0"/>
+    <circle cx="100" cy="64" r="4" fill="#6baea0"/>
+    <circle cx="121" cy="64" r="4" fill="#6baea0"/>
+    <circle cx="142" cy="64" r="4" fill="#6baea0"/>
+    <circle cx="163" cy="64" r="4" fill="#6baea0"/>
+  </g>
+  <g fill="none" stroke="#6ebda9" stroke-width="3" stroke-linecap="round" opacity=".42">
+    <path d="M58 72c12-9 24-9 36 0"/><path d="M72 71c5-5 10-5 15 0"/>
+    <path d="M431 54c11-8 22-8 33 0"/>
+  </g>
+</svg>
