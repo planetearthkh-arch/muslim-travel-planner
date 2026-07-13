@@ -1,0 +1,118 @@
+/* Selective decorative illustrations for SafarMate.
+   Keep maps, forms, filters, and core controls clean and fully interactive. */
+
+.qibla-hero {
+  isolation: isolate;
+}
+
+.qibla-hero > * {
+  position: relative;
+  z-index: 2;
+}
+
+.qibla-app .qibla-hero::after,
+.flight-mode-app .qibla-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: -2%;
+  inset-block-end: -8%;
+  width: min(52%, 520px);
+  height: 88%;
+  background: url('/muslim-travel-planner/illustrations/city-skyline.svg') center bottom / contain no-repeat;
+  opacity: .24;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.flight-mode-app .qibla-hero::before {
+  content: "";
+  position: absolute;
+  inset-inline-end: 7%;
+  inset-block-start: 10%;
+  width: min(34%, 330px);
+  height: 42%;
+  background: url('/muslim-travel-planner/illustrations/flight-plane.svg') center / contain no-repeat;
+  opacity: .38;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.itinerary-card:is(.travel, .attraction, .prayer, .meal) {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 158px;
+}
+
+.itinerary-card:is(.travel, .attraction, .prayer, .meal) > * {
+  position: relative;
+  z-index: 2;
+}
+
+.itinerary-card:is(.travel, .attraction, .prayer, .meal)::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 4px;
+  inset-block-end: 0;
+  width: min(37%, 230px);
+  height: 86%;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  background-size: contain;
+  opacity: .93;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.itinerary-card.travel::after {
+  background-image: url('/muslim-travel-planner/illustrations/travel-bus.svg');
+}
+
+.itinerary-card.attraction::after {
+  background-image: url('/muslim-travel-planner/illustrations/attraction-landmark.svg');
+}
+
+.itinerary-card.prayer::after {
+  background-image: url('/muslim-travel-planner/illustrations/prayer-mosque.svg');
+}
+
+.itinerary-card.meal::after {
+  background-image: url('/muslim-travel-planner/illustrations/meal-cloche.svg');
+}
+
+@media (min-width: 680px) {
+  .itinerary-card:is(.travel, .attraction, .prayer, .meal) {
+    padding-inline-end: min(35%, 250px);
+  }
+}
+
+@media (max-width: 679px) {
+  .qibla-app .qibla-hero::after,
+  .flight-mode-app .qibla-hero::after {
+    width: 62%;
+    opacity: .16;
+  }
+
+  .flight-mode-app .qibla-hero::before {
+    inset-inline-end: 2%;
+    width: 44%;
+    opacity: .22;
+  }
+
+  .itinerary-card:is(.travel, .attraction, .prayer, .meal)::after {
+    inset-inline-end: -3%;
+    width: 58%;
+    height: 68%;
+    opacity: .13;
+    filter: saturate(.85);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .qibla-app .qibla-hero::after,
+  .flight-mode-app .qibla-hero::after,
+  .flight-mode-app .qibla-hero::before,
+  .itinerary-card:is(.travel, .attraction, .prayer, .meal)::after {
+    opacity: .08;
+  }
+}
