@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 340" role="img" aria-labelledby="title desc">
+  <title id="title">Decorative historic landmark</title>
+  <desc id="desc">A soft vector illustration of a domed historic landmark with minarets, trees, and clouds.</desc>
+  <defs>
+    <linearGradient id="stone" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2c78c"/>
+      <stop offset="1" stop-color="#c98d55"/>
+    </linearGradient>
+    <linearGradient id="roof" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8ca3a0"/>
+      <stop offset="1" stop-color="#4d6e69"/>
+    </linearGradient>
+  </defs>
+  <g fill="#dff3ed" opacity=".8">
+    <ellipse cx="95" cy="108" rx="80" ry="30"/>
+    <ellipse cx="403" cy="84" rx="70" ry="24"/>
+  </g>
+  <g fill="none" stroke="#5bb69f" stroke-linecap="round" stroke-width="3" opacity=".36">
+    <path d="M58 54c13-10 26-10 39 0"/><path d="M73 53c5-5 10-5 15 0"/>
+    <path d="M420 43c12-9 24-9 36 0"/>
+  </g>
+  <path d="M0 286c92-30 179-18 259-4 78 14 155 8 241-15v73H0z" fill="#eaf4e7"/>
+  <g transform="translate(72 75)">
+    <rect x="62" y="113" width="250" height="134" rx="8" fill="url(#stone)"/>
+    <rect x="91" y="83" width="192" height="52" rx="7" fill="#dda86f"/>
+    <path d="M110 83c0-68 154-68 154 0z" fill="url(#roof)"/>
+    <rect x="176" y="47" width="24" height="43" fill="#d7a16b"/>
+    <path d="M178 47c0-19 20-19 20 0z" fill="#697f7c"/>
+    <rect x="36" y="54" width="24" height="193" rx="4" fill="#d19a61"/>
+    <path d="M40 54l8-38 8 38z" fill="#607a76"/>
+    <circle cx="48" cy="12" r="4" fill="#d5a218"/>
+    <rect x="314" y="38" width="24" height="209" rx="4" fill="#d19a61"/>
+    <path d="M318 38l8-38 8 38z" fill="#607a76"/>
+    <circle cx="326" cy="-4" r="4" fill="#d5a218"/>
+    <g fill="#f8e4ca">
+      <rect x="84" y="151" width="30" height="49" rx="15"/>
+      <rect x="126" y="151" width="30" height="49" rx="15"/>
+      <rect x="168" y="151" width="30" height="49" rx="15"/>
+      <rect x="210" y="151" width="30" height="49" rx="15"/>
+      <rect x="252" y="151" width="30" height="49" rx="15"/>
+    </g>
+    <rect x="160" y="204" width="54" height="43" rx="26" fill="#6d5a46"/>
+    <path d="M62 226h250" stroke="#b87947" stroke-width="6" opacity=".45"/>
+  </g>
+  <g fill="#7cbf76">
+    <circle cx="66" cy="260" r="34"/><circle cx="433" cy="267" r="31"/>
+    <circle cx="389" cy="283" r="24"/><circle cx="108" cy="285" r="24"/>
+  </g>
+  <g fill="#567f55">
+    <rect x="61" y="258" width="10" height="42" rx="5"/><rect x="428" y="265" width="10" height="38" rx="5"/>
+  </g>
+</svg>
