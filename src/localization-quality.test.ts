@@ -5,13 +5,13 @@ import './turkish-halal-copy.js';
 
 // Release guard: every supported language must remain complete and professionally named.
 const expectedIdentity = {
-  en: ['SafarOne', 'Muslim Travel Planner'],
-  ar: ['SafarOne', 'مخطط سفر للمسلمين'],
-  id: ['SafarOne', 'Perencana Perjalanan Muslim'],
-  ms: ['SafarOne', 'Perancang Perjalanan Muslim'],
-  tr: ['SafarOne', 'Müslüman Seyahat Planlayıcısı'],
-  fr: ['SafarOne', 'Planificateur de voyage musulman'],
-  ur: ['SafarOne', 'مسلمان سفری منصوبہ ساز'],
+  en: ['SafarMate', 'Muslim Travel Planner'],
+  ar: ['SafarMate', 'مخطط سفر للمسلمين'],
+  id: ['SafarMate', 'Perencana Perjalanan Muslim'],
+  ms: ['SafarMate', 'Perancang Perjalanan Muslim'],
+  tr: ['SafarMate', 'Müslüman Seyahat Planlayıcısı'],
+  fr: ['SafarMate', 'Planificateur de voyage musulman'],
+  ur: ['SafarMate', 'مسلمان سفری منصوبہ ساز'],
 } as const;
 
 test('all supported languages have the same complete label key set and correct identity', () => {

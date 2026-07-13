@@ -2,7 +2,7 @@
 
 This is a developer checklist for App Store Connect privacy answers. It is not legal advice.
 
-SafarOne does not include accounts, analytics SDKs, advertising SDKs, tracking, push notifications, background location, in-app purchases, contacts access, photo-library access, microphone access, camera access, health access, Bluetooth access, or direct calendar permission.
+SafarMate does not include accounts, analytics SDKs, advertising SDKs, tracking, push notifications, background location, in-app purchases, contacts access, photo-library access, microphone access, camera access, health access, Bluetooth access, or direct calendar permission.
 
 ## Data and Permissions Used
 

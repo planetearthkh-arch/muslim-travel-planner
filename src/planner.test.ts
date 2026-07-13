@@ -713,7 +713,7 @@ test('offline app shell uses local MapLibre bundle, manifest, and conservative s
   assert.equal(JSON.parse(manifest).start_url, '/muslim-travel-planner/');
 });
 
-test('SafarOne branding, metadata, manifest, and launch pages are truthful', async () => {
+test('SafarMate branding, metadata, manifest, and launch pages are truthful', async () => {
   const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ readFile: (path: URL, encoding: string) => Promise<string> }>;
   const fs = await load('node:fs/promises');
   const index = await fs.readFile(new URL('../index.html', import.meta.url), 'utf8');
@@ -724,25 +724,25 @@ test('SafarOne branding, metadata, manifest, and launch pages are truthful', asy
   const privacy = await fs.readFile(new URL('../public/privacy.html', import.meta.url), 'utf8');
   const support = await fs.readFile(new URL('../public/support.html', import.meta.url), 'utf8');
   const checklist = await fs.readFile(new URL('../LAUNCH_CHECKLIST.md', import.meta.url), 'utf8');
-  assert.equal(labels.en.title, 'SafarOne');
+  assert.equal(labels.en.title, 'SafarMate');
   assert.equal(labels.en.subtitle, 'Muslim Travel Planner');
   assert.equal(labels.en.tagline, 'Plan with faith. Travel with peace.');
-  assert.equal(labels.ar.title, 'SafarOne');
+  assert.equal(labels.ar.title, 'SafarMate');
   assert.equal(labels.ar.subtitle, 'مخطط سفر للمسلمين');
   assert.equal(labels.ar.tagline, 'خطّط بإيمان. وسافر بطمأنينة.');
-  assert.equal(labels.id.title, 'SafarOne');
+  assert.equal(labels.id.title, 'SafarMate');
   assert.equal(labels.id.subtitle, 'Perencana Perjalanan Muslim');
   assert.equal(labels.id.tagline, 'Rencanakan dengan iman. Bepergian dengan tenang.');
-  assert.equal(labels.ms.title, 'SafarOne');
+  assert.equal(labels.ms.title, 'SafarMate');
   assert.equal(labels.ms.subtitle, 'Perancang Perjalanan Muslim');
   assert.equal(labels.ms.tagline, 'Rancang dengan iman. Mengembara dengan tenang.');
-  assert.equal(index.includes('<title>SafarOne — Muslim Travel Planner</title>'), true);
+  assert.equal(index.includes('<title>SafarMate — Muslim Travel Planner</title>'), true);
   assert.equal(index.includes('Prayer-aware trip planning with local saved itineraries, travel tools, and optional offline access to saved trip information.'), true);
-  assert.equal(manifest.name, 'SafarOne — Muslim Travel Planner');
-  assert.equal(manifest.short_name, 'SafarOne');
+  assert.equal(manifest.name, 'SafarMate — Muslim Travel Planner');
+  assert.equal(manifest.short_name, 'SafarMate');
   assert.equal(manifest.start_url, '/muslim-travel-planner/');
   assert.equal(manifest.scope, '/muslim-travel-planner/');
-  assert.equal(icon.includes('aria-label="SafarOne"'), true);
+  assert.equal(icon.includes('aria-label="SafarMate"'), true);
   assert.equal(savedTrips.includes("SAVED_TRIPS_STORAGE_KEY = 'mtp-saved-trips-v1'"), true);
   assert.equal(main.includes('function staticPageUrl'), true);
   assert.equal(main.includes('return staticLegalPageUrl(page, lang);'), true);
@@ -970,7 +970,7 @@ test('trip sharing UI preserves saved snapshots and print-safe controls', async 
 });
 
 test('provides natural Indonesian interface labels without translating place names', () => {
-  assert.equal(labels.id.title, 'SafarOne');
+  assert.equal(labels.id.title, 'SafarMate');
   assert.equal(labels.id.subtitle, 'Perencana Perjalanan Muslim');
   assert.equal(labels.id.plan, 'Buat Rencana Perjalanan');
   assert.equal(labels.id.replan, 'Rencanakan Ulang dari Sini');
@@ -2492,7 +2492,7 @@ test('native build keeps GitHub Pages web build separate from Capacitor assets',
   assert.equal(viteNative.includes("outDir: 'dist-native'"), true);
   assert.equal(capacitorConfig.includes("webDir: 'dist-native'"), true);
   assert.equal(capacitorConfig.includes("appId: 'com.planetearthkids.muslimtravelplanner'"), true);
-  assert.equal(capacitorConfig.includes("appName: 'SafarOne'"), true);
+  assert.equal(capacitorConfig.includes("appName: 'SafarMate'"), true);
   assert.equal(packageJson.includes('"build": "npm run typecheck && vite build"'), true);
   assert.equal(packageJson.includes('"build:native": "npm run typecheck && npm run icon:verify && vite build --config vite.native.config.ts"'), true);
   assert.equal(packageJson.includes('"ios:sync": "npm run build:native && npx cap sync ios"'), true);
@@ -2521,7 +2521,7 @@ test('native platform helpers use official Capacitor bridges with web fallbacks'
   assert.equal(offline.includes('if (isNativePlatform()) return Promise.resolve(false);'), true);
 });
 
-test('iOS project is configured for SafarOne TestFlight preparation without hardcoded signing', async () => {
+test('iOS project is configured for SafarMate TestFlight preparation without hardcoded signing', async () => {
   const pbx = await repoFile('ios/App/App.xcodeproj/project.pbxproj');
   const info = await repoFile('ios/App/App/Info.plist');
   const privacy = await repoFile('ios/App/App/PrivacyInfo.xcprivacy');
@@ -2532,14 +2532,14 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
   assert.equal(new Set(buildVersions).size, 1);
   assert.equal(buildVersions.every((version) => version >= 100), true);
   assert.equal(pbx.includes('TARGETED_DEVICE_FAMILY = 1;'), true);
-  assert.equal(pbx.includes('PRODUCT_NAME = SafarOne;'), true);
+  assert.equal(pbx.includes('PRODUCT_NAME = SafarMate;'), true);
   assert.equal(pbx.includes('CODE_SIGN_STYLE = Automatic;'), true);
   assert.equal(pbx.includes('DEVELOPMENT_TEAM ='), false);
   assert.equal(pbx.includes('PrivacyInfo.xcprivacy in Resources'), true);
   assert.equal(pbx.includes('ar InfoPlist.strings in Resources'), true);
   assert.equal(pbx.includes('ms InfoPlist.strings in Resources'), true);
   assert.equal(pbx.includes('tr InfoPlist.strings in Resources'), true);
-  assert.equal(info.includes('<string>SafarOne</string>'), true);
+  assert.equal(info.includes('<string>SafarMate</string>'), true);
   assert.equal(info.includes('NSLocationWhenInUseUsageDescription'), true);
   assert.equal(info.includes('UIBackgroundModes'), false);
   assert.equal(info.includes('NSLocationAlwaysAndWhenInUseUsageDescription'), true);
@@ -2551,12 +2551,12 @@ test('iOS project is configured for SafarOne TestFlight preparation without hard
 
 test('iOS localized location permission strings exist in all launch languages', async () => {
   const expected = {
-    en: 'SafarOne uses your location only when you request Qibla direction or nearby travel places.',
-    ar: 'يستخدم SafarOne موقعك فقط عندما تطلب اتجاه القبلة أو أماكن السفر القريبة.',
-    id: 'SafarOne menggunakan lokasi Anda hanya saat Anda meminta arah Kiblat atau tempat perjalanan terdekat.',
-    ms: 'SafarOne menggunakan lokasi anda hanya apabila anda meminta arah kiblat atau tempat perjalanan berdekatan.',
-    tr: 'SafarOne, Kıble yönünü veya yakındaki seyahat yerlerini istediğinizde konumunuzu yalnızca o anda kullanır.',
-    ur: 'SafarOne آپ کا مقام صرف اس وقت استعمال کرتا ہے جب آپ قبلہ کی سمت یا قریبی سفری مقامات طلب کرتے ہیں۔',
+    en: 'SafarMate uses your location only when you request Qibla direction or nearby travel places.',
+    ar: 'يستخدم SafarMate موقعك فقط عندما تطلب اتجاه القبلة أو أماكن السفر القريبة.',
+    id: 'SafarMate menggunakan lokasi Anda hanya saat Anda meminta arah Kiblat atau tempat perjalanan terdekat.',
+    ms: 'SafarMate menggunakan lokasi anda hanya apabila anda meminta arah kiblat atau tempat perjalanan berdekatan.',
+    tr: 'SafarMate, Kıble yönünü veya yakındaki seyahat yerlerini istediğinizde konumunuzu yalnızca o anda kullanır.',
+    ur: 'SafarMate آپ کا مقام صرف اس وقت استعمال کرتا ہے جب آپ قبلہ کی سمت یا قریبی سفری مقامات طلب کرتے ہیں۔',
   };
   for (const [language, text] of Object.entries(expected)) {
     const strings = await repoFile(`ios/App/App/${language}.lproj/InfoPlist.strings`);
@@ -2591,7 +2591,7 @@ test('iOS app icon asset catalog references generated opaque master-derived file
   assert.equal(verifyScript.includes('hasAlpha:\\s*no'), true);
 });
 
-test('iOS launch screen uses emerald background and local SafarOne symbol', async () => {
+test('iOS launch screen uses emerald background and local SafarMate symbol', async () => {
   const storyboard = await repoFile('ios/App/App/Base.lproj/LaunchScreen.storyboard');
   const launchContents = await repoFile('ios/App/App/Assets.xcassets/LaunchLogo.imageset/Contents.json');
   assert.equal(storyboard.includes('image="LaunchLogo"'), true);
@@ -2630,7 +2630,7 @@ test('TestFlight and iOS privacy documentation are present and accurate', async 
   assert.equal(checklist.includes('https://planetearthkh-arch.github.io/muslim-travel-planner/privacy.html'), true);
   assert.equal(checklist.includes('Increment the build number'), true);
   assert.equal(checklist.includes('Do not bundle or download third-party Athan audio without clear permission.'), true);
-  assert.equal(beta.includes('Halal information is based on source data and is not guaranteed or certified by SafarOne.'), true);
+  assert.equal(beta.includes('Halal information is based on source data and is not guaranteed or certified by SafarMate.'), true);
   assert.equal(privacyNotes.includes('No tracking.'), true);
   assert.equal(privacyNotes.includes('Local Notifications permission is requested only after user action'), true);
 });

@@ -2,12 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CAPACITOR_DEBUG</key>
+	<key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>SafarOne</string>
+	<string>SafarMate</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>SafarMate</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,11 +29,11 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>SafarOne uses your location only when you request Qibla direction or nearby travel places.</string>
+	<string>SafarMate uses your location only when you request Qibla direction or nearby travel places.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>SafarOne uses your location only when you choose location features, to show nearby Muslim travel services such as prayer spaces, halal food, attractions, transport, weather, and Qibla direction.</string>
+	<string>SafarMate uses your location only when you choose location features, to show nearby Muslim travel services such as prayer spaces, halal food, attractions, transport, weather, and Qibla direction.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>SafarOne uses motion and compass data only when you start the live Qibla compass.</string>
+	<string>SafarMate uses motion and compass data only when you start the live Qibla compass.</string>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleLightContent</string>
 	<key>UISupportedInterfaceOrientations</key>

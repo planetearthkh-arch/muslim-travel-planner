@@ -1,5 +1,5 @@
 export const urduLabels: Record<string, string> = {
-  title: "SafarOne",
+  title: "SafarMate",
   subtitle: "مسلمان سفری منصوبہ ساز",
   tagline: "ایمان کے ساتھ منصوبہ بنائیں، سکون سے سفر کریں۔",
   prototype: "",

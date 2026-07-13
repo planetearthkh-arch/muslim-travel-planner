@@ -4,13 +4,13 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.planetearthkids.muslimtravelplanner',
-  appName: 'SafarOne',
+  appName: 'SafarMate',
   webDir: 'dist-native',
   android: {
     allowMixedContent: false,
   },
   ios: {
-    scheme: 'SafarOne',
+    scheme: 'SafarMate',
     contentInset: 'automatic',
   },
   plugins: {

@@ -27,7 +27,7 @@ export const nextLanguage = (language: Language): Language => {
 
 const baseLabels = {
   en: {
-    title: 'SafarOne',
+    title: 'SafarMate',
     subtitle: 'Muslim Travel Planner',
     tagline: 'Plan with faith. Travel with peace.',
     prototype: '',
@@ -885,7 +885,7 @@ const baseLabels = {
     toiletsLegend: 'Marker legend',
   },
   ar: {
-    title: 'SafarOne',
+    title: 'SafarMate',
     subtitle: 'مخطط سفر للمسلمين',
     tagline: 'خطّط بإيمان. وسافر بطمأنينة.',
     prototype: '',
@@ -1743,7 +1743,7 @@ const baseLabels = {
     toiletsLegend: 'مفتاح العلامات',
   },
   id: {
-    title: 'SafarOne',
+    title: 'SafarMate',
     subtitle: 'Perencana Perjalanan Muslim',
     tagline: 'Rencanakan dengan iman. Bepergian dengan tenang.',
     prototype: '',
@@ -2601,10 +2601,10 @@ const baseLabels = {
     toiletsLegend: 'Legenda marker',
   },
   ms: {
-    title: 'SafarOne',
+    title: 'SafarMate',
     subtitle: 'Perancang Perjalanan Muslim',
     tagline: 'Rancang dengan iman. Mengembara dengan tenang.',
-    prototype: 'SafarOne',
+    prototype: 'SafarMate',
     language: 'Bahasa',
     city: 'Bandar',
     cityAutocomplete: 'Lengkap automatik bandar',
@@ -3459,7 +3459,7 @@ const baseLabels = {
     toiletsLegend: 'Legenda marker',
   },
   tr: {
-    title: 'SafarOne',
+    title: 'SafarMate',
     subtitle: 'Müslüman Seyahat Planlayıcısı',
     tagline: 'İmanla planla. Huzurla seyahat et.',
     prototype: '',

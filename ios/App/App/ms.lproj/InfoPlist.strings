@@ -1,2 +1,4 @@
-"NSLocationWhenInUseUsageDescription" = "SafarOne menggunakan lokasi anda hanya apabila anda meminta arah kiblat atau tempat perjalanan berdekatan.";
-"NSLocationAlwaysAndWhenInUseUsageDescription" = "SafarOne menggunakan lokasi anda hanya apabila anda memilih ciri lokasi, untuk memaparkan perkhidmatan perjalanan Muslim berdekatan seperti ruang solat, makanan halal, tarikan, pengangkutan, cuaca dan arah kiblat.";
+"NSLocationWhenInUseUsageDescription" = "SafarMate menggunakan lokasi anda hanya apabila anda meminta arah kiblat atau tempat perjalanan berdekatan.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "SafarMate menggunakan lokasi anda hanya apabila anda memilih ciri lokasi, untuk memaparkan perkhidmatan perjalanan Muslim berdekatan seperti ruang solat, makanan halal, tarikan, pengangkutan, cuaca dan arah kiblat.";
+"CFBundleDisplayName" = "SafarMate";
+"CFBundleName" = "SafarMate";

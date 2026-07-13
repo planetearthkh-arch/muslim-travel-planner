@@ -74,7 +74,7 @@ const GPS_FRESH_MS = 120_000;
 const GPS_FUTURE_TOLERANCE_MS = 30_000;
 const LOW_ACCURACY_METERS = 5000;
 
-export const airportDataSource = 'Bundled compact airport index derived from public-domain OurAirports data; fields reduced for offline SafarOne flight preparation.';
+export const airportDataSource = 'Bundled compact airport index derived from public-domain OurAirports data; fields reduced for offline SafarMate flight preparation.';
 
 export const airports: FlightAirport[] = [
   { iata: 'JFK', ident: 'KJFK', name: 'John F Kennedy International Airport', municipality: 'New York', country: 'United States', latitude: 40.639801, longitude: -73.7789, elevationFeet: 13 },

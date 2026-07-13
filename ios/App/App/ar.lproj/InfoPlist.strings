@@ -1,2 +1,4 @@
-"NSLocationWhenInUseUsageDescription" = "يستخدم SafarOne موقعك فقط عندما تطلب اتجاه القبلة أو أماكن السفر القريبة.";
-"NSLocationAlwaysAndWhenInUseUsageDescription" = "يستخدم SafarOne موقعك فقط عندما تختار ميزات الموقع، لعرض خدمات سفر قريبة للمسلمين مثل أماكن الصلاة والطعام الحلال والمعالم والمواصلات والطقس واتجاه القبلة.";
+"NSLocationWhenInUseUsageDescription" = "يستخدم SafarMate موقعك فقط عندما تطلب اتجاه القبلة أو أماكن السفر القريبة.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "يستخدم SafarMate موقعك فقط عندما تختار ميزات الموقع، لعرض خدمات سفر قريبة للمسلمين مثل أماكن الصلاة والطعام الحلال والمعالم والمواصلات والطقس واتجاه القبلة.";
+"CFBundleDisplayName" = "SafarMate";
+"CFBundleName" = "SafarMate";
