@@ -80,7 +80,7 @@ const samplePageMarkup = `
           الم <span class="quran-ayah-number">١</span>
           ذَٰلِكَ الْكِتَابُ لَا رَيْبَ ۛ فِيهِ ۛ
           <span class="quran-difficult quran-tajweed-green">هُدًى</span>
-          لِّلْمُتَّقِينَ <span class="quran-ayah-number">٢</span>
+          <span class="quran-difficult">لِّلْمُتَّقِينَ</span> <span class="quran-ayah-number">٢</span>
         </p>
         <p>
           الَّذِينَ <span class="quran-difficult quran-tajweed-green">يُؤْمِنُونَ</span> بِالْغَيْبِ
@@ -96,7 +96,7 @@ const samplePageMarkup = `
         <p>
           <span class="quran-difficult">أُولَٰئِكَ</span> عَلَىٰ
           <span class="quran-difficult quran-tajweed-green">هُدًى</span> مِّن رَّبِّهِمْ ۖ
-          وَأُولَٰئِكَ هُمُ الْمُفْلِحُونَ <span class="quran-ayah-number">٥</span>
+          وَ<span class="quran-difficult">أُولَٰئِكَ</span> هُمُ الْمُفْلِحُونَ <span class="quran-ayah-number">٥</span>
         </p>
 
         <div class="quran-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
@@ -238,7 +238,7 @@ function installQuranReader() {
 
     if (!recognition) {
       recognition = new Recognition();
-      recognition.lang = 'ar-SA';
+      recognition.lang = document.documentElement.lang.toLowerCase().startsWith('en') ? 'en-US' : 'ar-SA';
       recognition.continuous = false;
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
