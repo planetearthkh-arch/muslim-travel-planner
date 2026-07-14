@@ -1,2 +1,4 @@
 "NSLocationWhenInUseUsageDescription" = "يستخدم SafarMate موقعك فقط عندما تطلب اتجاه القبلة أو أماكن السفر القريبة.";
 "NSLocationAlwaysAndWhenInUseUsageDescription" = "يستخدم SafarMate موقعك فقط عندما تختار ميزات الموقع، لعرض خدمات سفر قريبة للمسلمين مثل أماكن الصلاة والطعام الحلال والمعالم والمواصلات والطقس واتجاه القبلة.";
+"NSMicrophoneUsageDescription" = "يستخدم SafarMate الميكروفون فقط عندما تشغّل الأوامر الصوتية لقلب صفحات القرآن.";
+"NSSpeechRecognitionUsageDescription" = "يستخدم SafarMate التعرّف على الكلام فقط لفهم أوامر قارئ القرآن مثل الصفحة التالية والصفحة السابقة.";
