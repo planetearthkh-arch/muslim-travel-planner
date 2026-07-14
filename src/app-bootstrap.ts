@@ -3,6 +3,7 @@ import './prayer-search-bootstrap.js';
 
 async function startApp() {
   await import('./main.js');
+  await import('./quran-reader-bootstrap.js');
   await import('./halal-page-bootstrap.js');
   await import('./qibla-copy-bootstrap.js');
   await import('./prayer-status-bootstrap.js');
