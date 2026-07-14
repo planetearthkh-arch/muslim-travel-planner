@@ -1,2 +1,4 @@
 "NSLocationWhenInUseUsageDescription" = "SafarMate uses your location only when you request Qibla direction or nearby travel places.";
 "NSLocationAlwaysAndWhenInUseUsageDescription" = "SafarMate uses your location only when you choose location features, to show nearby Muslim travel services such as prayer spaces, halal food, attractions, transport, weather, and Qibla direction.";
+"NSMicrophoneUsageDescription" = "SafarMate uses the microphone only while you enable Quran voice page commands.";
+"NSSpeechRecognitionUsageDescription" = "SafarMate uses speech recognition only to understand Quran reader commands such as next page and previous page.";
