@@ -6,7 +6,8 @@ async function startApp() {
   await import('./halal-page-bootstrap.js');
   await import('./qibla-copy-bootstrap.js');
   await import('./prayer-status-bootstrap.js');
-  await import('./premium-bootstrap.js');
+  const { isPremiumPlatform } = await import('./premium.js');
+  if (isPremiumPlatform()) await import('./premium-bootstrap.js');
 }
 
 void startApp();
