@@ -83,11 +83,40 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run ios:sync
-      - name: Create complete SafarMate 1.1 project ZIP
+      - name: Create self-contained SafarMate 1.1 project ZIP
         run: |
+          set -euo pipefail
+          keep_dir="$(mktemp -d)"
+          for package in app browser clipboard filesystem geolocation local-notifications share; do
+            cp -R "node_modules/@capacitor/$package" "$keep_dir/$package"
+          done
+
           rm -rf node_modules dist-test build
+          mkdir -p node_modules/@capacitor
+          for package in app browser clipboard filesystem geolocation local-notifications share; do
+            mv "$keep_dir/$package" "node_modules/@capacitor/$package"
+            test -f "node_modules/@capacitor/$package/Package.swift"
+          done
+          rmdir "$keep_dir"
+
+          test -f ios/App/CapApp-SPM/Package.swift
+          for package in app browser clipboard filesystem geolocation local-notifications share; do
+            grep -q "../../../node_modules/@capacitor/$package" ios/App/CapApp-SPM/Package.swift
+          done
+
+          cat > OPEN_FIRST.txt <<'EOF'
+          SafarMate 1.1.0 — Build 155
+
+          Open this file in Xcode:
+          ios/App/App.xcodeproj
+
+          This package includes the local Capacitor Swift packages required by CapApp-SPM.
+          No npm command is required before opening Xcode.
+          EOF
+
           zip -qr SafarMate_1.1_BUILD_155_COMPLETE.zip . \
             -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_155_COMPLETE.zip'
+          unzip -tq SafarMate_1.1_BUILD_155_COMPLETE.zip
       - uses: actions/upload-artifact@v4
         with:
           name: SafarMate-1.1-Build-155-Complete
