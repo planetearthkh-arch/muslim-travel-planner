@@ -71,3 +71,26 @@ jobs:
           path: ios-archive-verify.log
           if-no-files-found: error
           retention-days: 7
+
+  package:
+    needs: [web, android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ios:sync
+      - name: Create complete SafarMate 1.1 project ZIP
+        run: |
+          rm -rf node_modules dist-test build
+          zip -qr SafarMate_1.1_BUILD_155_COMPLETE.zip . \
+            -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_155_COMPLETE.zip'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SafarMate-1.1-Build-155-Complete
+          path: SafarMate_1.1_BUILD_155_COMPLETE.zip
+          if-no-files-found: error
+          retention-days: 14
