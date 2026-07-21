@@ -61,4 +61,13 @@ jobs:
           path: ios-verify.log
           if-no-files-found: error
           retention-days: 7
-      - run: npm run ios:archive-verify
+      - name: Verify unsigned iOS device archive
+        run: npm run ios:archive-verify 2>&1 | tee ios-archive-verify.log
+      - name: Upload iOS archive diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-archive-diagnostics
+          path: ios-archive-verify.log
+          if-no-files-found: error
+          retention-days: 7
