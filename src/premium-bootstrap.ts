@@ -32,7 +32,7 @@ const copyByLanguage: Record<Language, PremiumCopy> = {
     included: 'Premium is active', legacy: 'Your early-supporter Premium access is included.', purchased: 'Premium unlocked. Thank you for supporting SafarMate.',
     restored: 'Your Premium purchase has been restored.', pending: 'Your purchase is pending approval.', cancelled: 'The purchase was cancelled.',
     unavailable: 'Purchases are temporarily unavailable. Please try again later.', error: 'We could not complete that request.',
-    features: ['Unlimited saved journeys', 'Share and export trip plans', 'Advanced in-flight prayer tools', 'Currency and advanced transport tools', 'Offline access to saved travel details', 'Future Lifetime Premium features'],
+    features: ['Advanced saved-trip management', 'Share and export trip plans', 'Advanced in-flight prayer tools', 'Currency and advanced transport tools', 'Offline access to saved travel details', 'Future Lifetime Premium features'],
     lockedFeature: 'This advanced travel tool is included with Lifetime Premium.',
   },
   ar: {
@@ -42,7 +42,7 @@ const copyByLanguage: Record<Language, PremiumCopy> = {
     included: 'بريميوم مفعّل', legacy: 'تم تضمين وصول بريميوم لك بصفتك من المستخدمين الأوائل.', purchased: 'تم فتح بريميوم. شكرًا لدعم سفر ميت.',
     restored: 'تمت استعادة شراء بريميوم.', pending: 'عملية الشراء بانتظار الموافقة.', cancelled: 'تم إلغاء الشراء.',
     unavailable: 'المشتريات غير متاحة مؤقتًا. حاول لاحقًا.', error: 'تعذر إكمال الطلب.',
-    features: ['رحلات محفوظة بلا حدود', 'مشاركة خطط الرحلات وتصديرها', 'أدوات متقدمة للصلاة أثناء الطيران', 'العملات وأدوات النقل المتقدمة', 'وصول دون إنترنت لتفاصيل الرحلات المحفوظة', 'ميزات بريميوم المستقبلية مدى الحياة'],
+    features: ['إدارة متقدمة للرحلات المحفوظة', 'مشاركة خطط الرحلات وتصديرها', 'أدوات متقدمة للصلاة أثناء الطيران', 'العملات وأدوات النقل المتقدمة', 'وصول دون إنترنت لتفاصيل الرحلات المحفوظة', 'ميزات بريميوم المستقبلية مدى الحياة'],
     lockedFeature: 'هذه الأداة المتقدمة متاحة ضمن بريميوم مدى الحياة.',
   },
   id: {
@@ -52,7 +52,7 @@ const copyByLanguage: Record<Language, PremiumCopy> = {
     included: 'Premium aktif', legacy: 'Akses Premium pendukung awal Anda sudah termasuk.', purchased: 'Premium berhasil dibuka. Terima kasih telah mendukung SafarMate.',
     restored: 'Pembelian Premium Anda telah dipulihkan.', pending: 'Pembelian Anda sedang menunggu persetujuan.', cancelled: 'Pembelian dibatalkan.',
     unavailable: 'Pembelian sementara tidak tersedia. Coba lagi nanti.', error: 'Permintaan tidak dapat diselesaikan.',
-    features: ['Perjalanan tersimpan tanpa batas', 'Bagikan dan ekspor rencana perjalanan', 'Alat salat dalam penerbangan tingkat lanjut', 'Mata uang dan alat transportasi tingkat lanjut', 'Akses offline ke detail perjalanan tersimpan', 'Fitur Premium Seumur Hidup mendatang'],
+    features: ['Pengelolaan perjalanan tersimpan tingkat lanjut', 'Bagikan dan ekspor rencana perjalanan', 'Alat salat dalam penerbangan tingkat lanjut', 'Mata uang dan alat transportasi tingkat lanjut', 'Akses offline ke detail perjalanan tersimpan', 'Fitur Premium Seumur Hidup mendatang'],
     lockedFeature: 'Alat perjalanan tingkat lanjut ini termasuk dalam Premium Seumur Hidup.',
   },
   ms: {
@@ -62,7 +62,7 @@ const copyByLanguage: Record<Language, PremiumCopy> = {
     included: 'Premium aktif', legacy: 'Akses Premium penyokong awal anda telah disertakan.', purchased: 'Premium telah dibuka. Terima kasih menyokong SafarMate.',
     restored: 'Pembelian Premium anda telah dipulihkan.', pending: 'Pembelian anda sedang menunggu kelulusan.', cancelled: 'Pembelian dibatalkan.',
     unavailable: 'Pembelian tidak tersedia buat sementara. Cuba lagi kemudian.', error: 'Permintaan tidak dapat diselesaikan.',
-    features: ['Perjalanan tersimpan tanpa had', 'Kongsi dan eksport pelan perjalanan', 'Alat solat dalam penerbangan lanjutan', 'Mata wang dan alat pengangkutan lanjutan', 'Akses luar talian kepada butiran perjalanan tersimpan', 'Ciri Premium Seumur Hidup akan datang'],
+    features: ['Pengurusan perjalanan tersimpan lanjutan', 'Kongsi dan eksport pelan perjalanan', 'Alat solat dalam penerbangan lanjutan', 'Mata wang dan alat pengangkutan lanjutan', 'Akses luar talian kepada butiran perjalanan tersimpan', 'Ciri Premium Seumur Hidup akan datang'],
     lockedFeature: 'Alat perjalanan lanjutan ini termasuk dalam Premium Seumur Hidup.',
   },
   tr: {
@@ -72,7 +72,7 @@ const copyByLanguage: Record<Language, PremiumCopy> = {
     included: 'Premium etkin', legacy: 'Erken destekçi Premium erişiminiz dahildir.', purchased: 'Premium açıldı. SafarMate’i desteklediğiniz için teşekkürler.',
     restored: 'Premium satın alımınız geri yüklendi.', pending: 'Satın alımınız onay bekliyor.', cancelled: 'Satın alma iptal edildi.',
     unavailable: 'Satın alımlar geçici olarak kullanılamıyor. Daha sonra tekrar deneyin.', error: 'İstek tamamlanamadı.',
-    features: ['Sınırsız kayıtlı seyahat', 'Seyahat planlarını paylaşma ve dışa aktarma', 'Gelişmiş uçuş içi namaz araçları', 'Döviz ve gelişmiş ulaşım araçları', 'Kayıtlı seyahat ayrıntılarına çevrimdışı erişim', 'Gelecekteki Ömür Boyu Premium özellikleri'],
+    features: ['Gelişmiş kayıtlı seyahat yönetimi', 'Seyahat planlarını paylaşma ve dışa aktarma', 'Gelişmiş uçuş içi namaz araçları', 'Döviz ve gelişmiş ulaşım araçları', 'Kayıtlı seyahat ayrıntılarına çevrimdışı erişim', 'Gelecekteki Ömür Boyu Premium özellikleri'],
     lockedFeature: 'Bu gelişmiş seyahat aracı Ömür Boyu Premium’a dahildir.',
   },
   fr: {
@@ -82,7 +82,7 @@ const copyByLanguage: Record<Language, PremiumCopy> = {
     included: 'Premium est actif', legacy: 'Votre accès Premium de soutien initial est inclus.', purchased: 'Premium est débloqué. Merci de soutenir SafarMate.',
     restored: 'Votre achat Premium a été restauré.', pending: 'Votre achat est en attente d’approbation.', cancelled: 'L’achat a été annulé.',
     unavailable: 'Les achats sont temporairement indisponibles. Réessayez plus tard.', error: 'Impossible de terminer cette demande.',
-    features: ['Voyages enregistrés illimités', 'Partage et exportation des itinéraires', 'Outils avancés de prière en vol', 'Devises et transports avancés', 'Accès hors ligne aux détails enregistrés', 'Futures fonctions Premium à vie'],
+    features: ['Gestion avancée des voyages enregistrés', 'Partage et exportation des itinéraires', 'Outils avancés de prière en vol', 'Devises et transports avancés', 'Accès hors ligne aux détails enregistrés', 'Futures fonctions Premium à vie'],
     lockedFeature: 'Cet outil de voyage avancé est inclus dans Premium à vie.',
   },
   ur: {
@@ -92,7 +92,7 @@ const copyByLanguage: Record<Language, PremiumCopy> = {
     included: 'پریمیم فعال ہے', legacy: 'ابتدائی صارف کے طور پر آپ کی پریمیم رسائی شامل ہے۔', purchased: 'پریمیم کھل گیا۔ سفرمیٹ کی حمایت کا شکریہ۔',
     restored: 'آپ کی پریمیم خریداری بحال ہوگئی۔', pending: 'آپ کی خریداری منظوری کی منتظر ہے۔', cancelled: 'خریداری منسوخ ہوگئی۔',
     unavailable: 'خریداری عارضی طور پر دستیاب نہیں۔ بعد میں کوشش کریں۔', error: 'درخواست مکمل نہیں ہو سکی۔',
-    features: ['لامحدود محفوظ سفر', 'سفری منصوبے شیئر اور ایکسپورٹ کریں', 'پرواز کے دوران نماز کے جدید اوزار', 'کرنسی اور جدید ٹرانسپورٹ اوزار', 'محفوظ سفری تفصیلات تک آف لائن رسائی', 'مستقبل کی تاحیات پریمیم خصوصیات'],
+    features: ['محفوظ سفروں کا جدید انتظام', 'سفری منصوبے شیئر اور ایکسپورٹ کریں', 'پرواز کے دوران نماز کے جدید اوزار', 'کرنسی اور جدید ٹرانسپورٹ اوزار', 'محفوظ سفری تفصیلات تک آف لائن رسائی', 'مستقبل کی تاحیات پریمیم خصوصیات'],
     lockedFeature: 'یہ جدید سفری آلہ تاحیات پریمیم میں شامل ہے۔',
   },
 };
