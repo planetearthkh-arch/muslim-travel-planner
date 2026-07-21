@@ -113,15 +113,29 @@ public class SafarMateStorePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func legacyPremiumStatus() async -> (grandfathered: Bool, originalAppVersion: String?) {
+        guard #available(iOS 16.0, *) else {
+            // AppTransaction is unavailable before iOS 16. Customers on iOS 15 can
+            // still unlock or restore Premium through the verified IAP entitlement.
+            return (false, nil)
+        }
+        return await legacyPremiumStatusForIOS16AndLater()
+    }
+
+    @available(iOS 16.0, *)
+    private func legacyPremiumStatusForIOS16AndLater() async -> (grandfathered: Bool, originalAppVersion: String?) {
         do {
             let verificationResult = try await AppTransaction.shared
             guard case .verified(let appTransaction) = verificationResult else {
                 return (false, nil)
             }
+
             let originalAppVersion = appTransaction.originalAppVersion
+            guard appTransaction.environment == .production else {
+                // Apple reports originalAppVersion as "1.0" in Sandbox and Xcode
+                // testing. Never grant legacy access in those environments.
+                return (false, originalAppVersion)
+            }
             guard let originalBuild = Int(originalAppVersion) else {
-                // StoreKit sandbox reports "1.0"; do not grant legacy access there,
-                // so purchase and restore can be tested correctly before release.
                 return (false, originalAppVersion)
             }
             return (originalBuild <= safarMateLegacyPremiumMaximumBuild, originalAppVersion)
