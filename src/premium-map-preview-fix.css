@@ -1,0 +1,108 @@
+.premium-map-preview-fix {
+  background: #eef8f5;
+  border: 1px solid rgba(7, 95, 80, .18);
+  border-radius: 24px;
+  box-shadow: 0 14px 34px rgba(6, 60, 52, .1);
+  margin: 1rem 0 1.25rem;
+  min-height: 390px;
+  overflow: hidden;
+  position: relative;
+}
+
+.premium-map-preview-fix-surface {
+  border-radius: 0 !important;
+  height: 390px !important;
+  margin: 0 !important;
+  min-height: 390px !important;
+  pointer-events: none;
+  width: 100% !important;
+}
+
+.premium-map-preview-fix-surface .maplibregl-ctrl-top-left,
+.premium-map-preview-fix-surface .maplibregl-ctrl-top-right,
+.premium-map-preview-fix-surface .maplibregl-ctrl-bottom-left > :not(.maplibregl-ctrl-attrib),
+.premium-map-preview-fix-surface .maplibregl-ctrl-bottom-right > :not(.maplibregl-ctrl-attrib) {
+  display: none !important;
+}
+
+.premium-map-preview-fix-overlay {
+  align-items: end;
+  background: linear-gradient(180deg, transparent 0%, rgba(4, 43, 37, .18) 32%, rgba(4, 43, 37, .94) 72%);
+  bottom: 0;
+  color: #fff;
+  display: grid;
+  gap: .85rem;
+  grid-template-columns: 1fr;
+  left: 0;
+  padding: 5.5rem 1rem 1rem;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  z-index: 4;
+}
+
+.premium-map-preview-fix-overlay > div > span {
+  background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.28);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: .72rem;
+  font-weight: 850;
+  margin-bottom: .45rem;
+  padding: .3rem .55rem;
+}
+
+.premium-map-preview-fix-overlay strong {
+  display: block;
+  font-size: 1.16rem;
+  line-height: 1.2;
+}
+
+.premium-map-preview-fix-overlay p {
+  color: rgba(255,255,255,.86);
+  font-size: .86rem;
+  line-height: 1.42;
+  margin: .35rem 0 0;
+}
+
+.premium-map-preview-fix-overlay button,
+.premium-map-preview-fix-action {
+  align-items: center;
+  background: linear-gradient(135deg, #0b7f68, #063c34);
+  border: 1px solid rgba(217, 182, 95, .68);
+  border-radius: 15px;
+  color: #fff;
+  display: flex;
+  font: inherit;
+  font-weight: 850;
+  gap: .55rem;
+  justify-content: center;
+  min-height: 48px;
+  padding: .75rem .9rem;
+  pointer-events: auto;
+  width: 100%;
+}
+
+.premium-map-preview-fix-overlay button > span,
+.premium-map-preview-fix-action > span:first-child {
+  color: #ffe6a4;
+}
+
+.premium-map-preview-fix-action {
+  margin-bottom: .2rem;
+}
+
+@media (min-width: 560px) {
+  .premium-map-preview-fix-overlay {
+    align-items: center;
+    grid-template-columns: 1fr minmax(190px, auto);
+  }
+}
+
+@media (max-width: 430px) {
+  .premium-map-preview-fix,
+  .premium-map-preview-fix-surface {
+    height: 350px !important;
+    min-height: 350px !important;
+  }
+}
