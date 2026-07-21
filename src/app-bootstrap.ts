@@ -4,6 +4,8 @@ import './prayer-search-bootstrap.js';
 async function startApp() {
   const { installNativeWeatherFetchBridge } = await import('./native-weather.js');
   installNativeWeatherFetchBridge();
+  const { installWeatherKitNotice } = await import('./weatherkit-notice.js');
+  installWeatherKitNotice();
   await import('./main.js');
   await import('./halal-page-bootstrap.js');
   await import('./qibla-copy-bootstrap.js');
