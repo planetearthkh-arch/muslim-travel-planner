@@ -51,5 +51,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run ios:verify
+      - name: Verify iOS simulator build
+        run: npm run ios:verify 2>&1 | tee ios-verify.log
+      - name: Upload iOS compiler diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-verify-diagnostics
+          path: ios-verify.log
+          if-no-files-found: error
+          retention-days: 7
       - run: npm run ios:archive-verify
