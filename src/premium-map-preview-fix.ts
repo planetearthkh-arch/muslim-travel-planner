@@ -18,17 +18,22 @@ const copyByLanguage: Record<Language, MapPreviewCopy> = {
   ur: { badge: 'مفت پیش نظارہ', title: 'نقشے کا پیش نظارہ', body: 'دو مفت پیش نظارہ مقامات یہاں دیکھیں۔ تمام نتائج، مکمل انٹرایکٹو نقشہ اور راستے کھولیں۔', action: 'نقشہ اور راستے کھولیں' },
 };
 
-const protectedMapSelector = '#prayer-map, #halal-map';
+const protectedMapSelector = '#prayer-map, #halal-map, #attractions-map';
+const protectedAttractionControlsSelector = '.attractions-app .segmented';
+const attractionViewSelector = '[data-attraction-view]';
 const mapLinkSelector = [
   '.prayer-place-card .map-link[href*="openstreetmap.org"]',
   '.prayer-place-card .map-link[href*="maps.apple.com"]',
   '.restaurant-card .map-link[href*="openstreetmap.org"]',
   '.restaurant-card .map-link[href*="maps.apple.com"]',
+  '.attraction-card .map-link[href*="openstreetmap.org"]',
+  '.attraction-card .map-link[href*="maps.apple.com"]',
 ].join(',');
 
 let entitled = premiumService.current().entitled;
 let scheduled = false;
 let observer: MutationObserver | null = null;
+let attractionUserSelectedNonMap = false;
 const originalRemove = Element.prototype.remove;
 
 function currentCopy() {
@@ -44,10 +49,15 @@ function openPremiumFrom(context: Element) {
   (personalized ?? premiumEntry)?.click();
 }
 
+function markerLimit(map: HTMLElement) {
+  return map.matches('#attractions-map') ? 2 : 3;
+}
+
 function limitMarkers(map: HTMLElement) {
   const apply = () => {
+    const limit = entitled ? Number.POSITIVE_INFINITY : markerLimit(map);
     const markers = Array.from(map.querySelectorAll<HTMLElement>('.maplibregl-marker'));
-    markers.forEach((marker, index) => { marker.hidden = index >= 3; });
+    markers.forEach((marker, index) => { marker.hidden = index >= limit; });
   };
   apply();
   if (map.dataset.premiumMarkerObserver === 'true') return;
@@ -78,7 +88,7 @@ function decorateMap(map: HTMLElement) {
 function replaceExternalMapLinks() {
   const cards = new Set<HTMLElement>();
   document.querySelectorAll<HTMLAnchorElement>(mapLinkSelector).forEach((link) => {
-    const card = link.closest<HTMLElement>('.prayer-place-card, .restaurant-card');
+    const card = link.closest<HTMLElement>('.prayer-place-card, .restaurant-card, .attraction-card');
     if (card) cards.add(card);
     link.remove();
   });
@@ -96,10 +106,30 @@ function replaceExternalMapLinks() {
   });
 }
 
+function hideAttractionMapControls() {
+  document.querySelectorAll<HTMLElement>('#attractions-search-this-area, #attractions-recentre, #attractions-fit-results').forEach((control) => {
+    control.hidden = true;
+    control.setAttribute('aria-hidden', 'true');
+  });
+}
+
+function ensureAttractionMapPreview() {
+  if (entitled) return;
+  const app = document.querySelector<HTMLElement>('#back-from-attractions')?.closest<HTMLElement>('main');
+  if (!app) {
+    attractionUserSelectedNonMap = false;
+    return;
+  }
+  if (app.querySelector('#attractions-map') || attractionUserSelectedNonMap) return;
+  app.querySelector<HTMLButtonElement>('[data-attraction-view="map"]')?.click();
+}
+
 function applyPreviewFix() {
   scheduled = false;
   if (entitled) return;
+  ensureAttractionMapPreview();
   document.querySelectorAll<HTMLElement>(protectedMapSelector).forEach(decorateMap);
+  hideAttractionMapControls();
   replaceExternalMapLinks();
 }
 
@@ -115,6 +145,7 @@ function restorePremiumExperience() {
     if (map) {
       map.classList.remove('premium-map-preview-fix-surface');
       map.removeAttribute('data-premium-preview-fixed');
+      map.querySelectorAll<HTMLElement>('.maplibregl-marker').forEach((marker) => { marker.hidden = false; });
       shell.before(map);
     }
     originalRemove.call(shell);
@@ -124,8 +155,8 @@ function restorePremiumExperience() {
 
 function protectEmbeddedPreviewMaps() {
   const guardedRemove = function guardedRemove(this: Element) {
-    if (!entitled && this instanceof HTMLElement && this.matches(protectedMapSelector)) {
-      decorateMap(this);
+    if (!entitled && this instanceof HTMLElement && (this.matches(protectedMapSelector) || this.matches(protectedAttractionControlsSelector))) {
+      if (this.matches(protectedMapSelector)) decorateMap(this);
       return;
     }
     originalRemove.call(this);
@@ -136,14 +167,30 @@ function protectEmbeddedPreviewMaps() {
 protectEmbeddedPreviewMaps();
 document.addEventListener('click', (event) => {
   if (entitled || !(event.target instanceof Element)) return;
+
+  const attractionView = event.target.closest<HTMLButtonElement>(attractionViewSelector);
+  if (attractionView) {
+    const nextView = attractionView.dataset.attractionView;
+    if (event.isTrusted) attractionUserSelectedNonMap = nextView !== 'map';
+    if (!event.isTrusted && nextView === 'photos' && document.querySelector('#attractions-map')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+  }
+
   const mapLink = event.target.closest<HTMLAnchorElement>(mapLinkSelector);
   if (!mapLink) return;
   event.preventDefault();
   event.stopImmediatePropagation();
   openPremiumFrom(mapLink);
 }, true);
-observer = new MutationObserver(schedulePreviewFix);
+observer = new MutationObserver(() => {
+  ensureAttractionMapPreview();
+  schedulePreviewFix();
+});
 observer.observe(document.documentElement, { childList: true, subtree: true });
+ensureAttractionMapPreview();
 schedulePreviewFix();
 
 window.addEventListener('safarmate-premium-state', (event) => {
@@ -159,9 +206,13 @@ window.addEventListener('safarmate-premium-state', (event) => {
   } else {
     protectEmbeddedPreviewMaps();
     if (!observer) {
-      observer = new MutationObserver(schedulePreviewFix);
+      observer = new MutationObserver(() => {
+        ensureAttractionMapPreview();
+        schedulePreviewFix();
+      });
       observer.observe(document.documentElement, { childList: true, subtree: true });
     }
+    ensureAttractionMapPreview();
     schedulePreviewFix();
   }
 });
