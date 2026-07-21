@@ -6,6 +6,7 @@ async function startApp() {
   await import('./halal-page-bootstrap.js');
   await import('./qibla-copy-bootstrap.js');
   await import('./prayer-status-bootstrap.js');
+  await import('./premium-bootstrap.js');
 }
 
 void startApp();
