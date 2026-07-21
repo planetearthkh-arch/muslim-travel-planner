@@ -19,7 +19,8 @@ const copyByLanguage: Record<Language, MapPreviewCopy> = {
 };
 
 const protectedMapSelector = '#prayer-map, #halal-map, #attractions-map';
-const protectedAttractionControlsSelector = '.attractions-app .segmented';
+const protectedDiscoveryControlsSelector = '.segmented, .prayer-filters';
+const protectedRadiusSelector = '#prayer-radius, #halal-radius, #attraction-radius';
 const attractionViewSelector = '[data-attraction-view]';
 const mapLinkSelector = [
   '.prayer-place-card .map-link[href*="openstreetmap.org"]',
@@ -153,9 +154,14 @@ function restorePremiumExperience() {
   document.querySelectorAll<HTMLElement>('[data-premium-map-preview-action]').forEach((button) => originalRemove.call(button));
 }
 
+function isProtectedDiscoveryControl(element: HTMLElement) {
+  if (element.matches(protectedDiscoveryControlsSelector)) return true;
+  return element.matches('label') && Boolean(element.querySelector(protectedRadiusSelector));
+}
+
 function protectEmbeddedPreviewMaps() {
   const guardedRemove = function guardedRemove(this: Element) {
-    if (!entitled && this instanceof HTMLElement && (this.matches(protectedMapSelector) || this.matches(protectedAttractionControlsSelector))) {
+    if (!entitled && this instanceof HTMLElement && (this.matches(protectedMapSelector) || isProtectedDiscoveryControl(this))) {
       if (this.matches(protectedMapSelector)) decorateMap(this);
       return;
     }
