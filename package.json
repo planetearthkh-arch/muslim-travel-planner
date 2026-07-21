@@ -1,7 +1,7 @@
 {
   "name": "muslim-travel-planner",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -23,7 +23,7 @@
     "android:sync": "npm run build:native && npx cap sync android",
     "android:open": "npx cap open android",
     "ios:version-verify": "node scripts/verify-ios-version.mjs",
-    "preios:sync": "npm run ios:version-verify"
+    "preios:sync": "node scripts/configure-ios-1-1.mjs && npm run ios:version-verify"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
