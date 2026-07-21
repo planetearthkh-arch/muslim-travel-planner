@@ -1,113 +1,25 @@
 import { languageDirection, parseLanguage, type Language } from './app-language.js';
 import { premiumService, type PremiumState, type PurchaseOutcome } from './premium.js';
+import { copyByLanguage, type PreviewKind } from './premium-copy.js';
 
-interface PremiumCopy {
-  premium: string;
-  lifetime: string;
-  eyebrow: string;
-  title: string;
-  subtitle: string;
-  once: string;
-  noSubscription: string;
-  purchase: string;
-  restore: string;
-  close: string;
-  included: string;
-  legacy: string;
-  purchased: string;
-  restored: string;
-  pending: string;
-  cancelled: string;
-  unavailable: string;
-  error: string;
-  features: string[];
-  lockedFeature: string;
-}
+type PaywallReason = '' | 'locked' | 'plan' | 'places';
 
-const copyByLanguage: Record<Language, PremiumCopy> = {
-  en: {
-    premium: 'Premium', lifetime: 'Lifetime', eyebrow: 'SafarMate Premium', title: 'Travel with every tool unlocked',
-    subtitle: 'One secure App Store purchase. Keep Premium forever on your Apple Account.', once: 'one-time purchase',
-    noSubscription: 'No subscription. No recurring charge.', purchase: 'Unlock Lifetime Premium', restore: 'Restore Purchases', close: 'Close',
-    included: 'Premium is active', legacy: 'Your early-supporter Premium access is included.', purchased: 'Premium unlocked. Thank you for supporting SafarMate.',
-    restored: 'Your Premium purchase has been restored.', pending: 'Your purchase is pending approval.', cancelled: 'The purchase was cancelled.',
-    unavailable: 'Purchases are temporarily unavailable. Please try again later.', error: 'We could not complete that request.',
-    features: ['Advanced saved-trip management', 'Share and export trip plans', 'Advanced in-flight prayer tools', 'Currency and advanced transport tools', 'Offline access to saved travel details', 'Future Lifetime Premium features'],
-    lockedFeature: 'This advanced travel tool is included with Lifetime Premium.',
-  },
-  ar: {
-    premium: 'بريميوم', lifetime: 'مدى الحياة', eyebrow: 'سفر ميت بريميوم', title: 'افتح جميع أدوات السفر',
-    subtitle: 'دفعة آمنة واحدة عبر App Store، واحتفظ ببريميوم مدى الحياة على حساب Apple.', once: 'دفعة واحدة',
-    noSubscription: 'دون اشتراك أو رسوم متكررة.', purchase: 'فتح بريميوم مدى الحياة', restore: 'استعادة المشتريات', close: 'إغلاق',
-    included: 'بريميوم مفعّل', legacy: 'تم تضمين وصول بريميوم لك بصفتك من المستخدمين الأوائل.', purchased: 'تم فتح بريميوم. شكرًا لدعم سفر ميت.',
-    restored: 'تمت استعادة شراء بريميوم.', pending: 'عملية الشراء بانتظار الموافقة.', cancelled: 'تم إلغاء الشراء.',
-    unavailable: 'المشتريات غير متاحة مؤقتًا. حاول لاحقًا.', error: 'تعذر إكمال الطلب.',
-    features: ['إدارة متقدمة للرحلات المحفوظة', 'مشاركة خطط الرحلات وتصديرها', 'أدوات متقدمة للصلاة أثناء الطيران', 'العملات وأدوات النقل المتقدمة', 'وصول دون إنترنت لتفاصيل الرحلات المحفوظة', 'ميزات بريميوم المستقبلية مدى الحياة'],
-    lockedFeature: 'هذه الأداة المتقدمة متاحة ضمن بريميوم مدى الحياة.',
-  },
-  id: {
-    premium: 'Premium', lifetime: 'Seumur Hidup', eyebrow: 'SafarMate Premium', title: 'Buka semua alat perjalanan',
-    subtitle: 'Satu pembelian aman melalui App Store. Nikmati Premium selamanya di Akun Apple Anda.', once: 'sekali bayar',
-    noSubscription: 'Tanpa langganan. Tanpa biaya berulang.', purchase: 'Buka Premium Seumur Hidup', restore: 'Pulihkan Pembelian', close: 'Tutup',
-    included: 'Premium aktif', legacy: 'Akses Premium pendukung awal Anda sudah termasuk.', purchased: 'Premium berhasil dibuka. Terima kasih telah mendukung SafarMate.',
-    restored: 'Pembelian Premium Anda telah dipulihkan.', pending: 'Pembelian Anda sedang menunggu persetujuan.', cancelled: 'Pembelian dibatalkan.',
-    unavailable: 'Pembelian sementara tidak tersedia. Coba lagi nanti.', error: 'Permintaan tidak dapat diselesaikan.',
-    features: ['Pengelolaan perjalanan tersimpan tingkat lanjut', 'Bagikan dan ekspor rencana perjalanan', 'Alat salat dalam penerbangan tingkat lanjut', 'Mata uang dan alat transportasi tingkat lanjut', 'Akses offline ke detail perjalanan tersimpan', 'Fitur Premium Seumur Hidup mendatang'],
-    lockedFeature: 'Alat perjalanan tingkat lanjut ini termasuk dalam Premium Seumur Hidup.',
-  },
-  ms: {
-    premium: 'Premium', lifetime: 'Seumur Hidup', eyebrow: 'SafarMate Premium', title: 'Buka semua alat perjalanan',
-    subtitle: 'Satu pembelian selamat melalui App Store. Kekalkan Premium selamanya pada Akaun Apple anda.', once: 'bayaran sekali',
-    noSubscription: 'Tiada langganan. Tiada caj berulang.', purchase: 'Buka Premium Seumur Hidup', restore: 'Pulihkan Pembelian', close: 'Tutup',
-    included: 'Premium aktif', legacy: 'Akses Premium penyokong awal anda telah disertakan.', purchased: 'Premium telah dibuka. Terima kasih menyokong SafarMate.',
-    restored: 'Pembelian Premium anda telah dipulihkan.', pending: 'Pembelian anda sedang menunggu kelulusan.', cancelled: 'Pembelian dibatalkan.',
-    unavailable: 'Pembelian tidak tersedia buat sementara. Cuba lagi kemudian.', error: 'Permintaan tidak dapat diselesaikan.',
-    features: ['Pengurusan perjalanan tersimpan lanjutan', 'Kongsi dan eksport pelan perjalanan', 'Alat solat dalam penerbangan lanjutan', 'Mata wang dan alat pengangkutan lanjutan', 'Akses luar talian kepada butiran perjalanan tersimpan', 'Ciri Premium Seumur Hidup akan datang'],
-    lockedFeature: 'Alat perjalanan lanjutan ini termasuk dalam Premium Seumur Hidup.',
-  },
-  tr: {
-    premium: 'Premium', lifetime: 'Ömür Boyu', eyebrow: 'SafarMate Premium', title: 'Tüm seyahat araçlarının kilidini açın',
-    subtitle: 'App Store üzerinden tek güvenli satın alma. Apple Hesabınızda Premium’u sonsuza kadar koruyun.', once: 'tek seferlik ödeme',
-    noSubscription: 'Abonelik yok. Tekrarlayan ücret yok.', purchase: 'Ömür Boyu Premium’u Aç', restore: 'Satın Alımları Geri Yükle', close: 'Kapat',
-    included: 'Premium etkin', legacy: 'Erken destekçi Premium erişiminiz dahildir.', purchased: 'Premium açıldı. SafarMate’i desteklediğiniz için teşekkürler.',
-    restored: 'Premium satın alımınız geri yüklendi.', pending: 'Satın alımınız onay bekliyor.', cancelled: 'Satın alma iptal edildi.',
-    unavailable: 'Satın alımlar geçici olarak kullanılamıyor. Daha sonra tekrar deneyin.', error: 'İstek tamamlanamadı.',
-    features: ['Gelişmiş kayıtlı seyahat yönetimi', 'Seyahat planlarını paylaşma ve dışa aktarma', 'Gelişmiş uçuş içi namaz araçları', 'Döviz ve gelişmiş ulaşım araçları', 'Kayıtlı seyahat ayrıntılarına çevrimdışı erişim', 'Gelecekteki Ömür Boyu Premium özellikleri'],
-    lockedFeature: 'Bu gelişmiş seyahat aracı Ömür Boyu Premium’a dahildir.',
-  },
-  fr: {
-    premium: 'Premium', lifetime: 'À vie', eyebrow: 'SafarMate Premium', title: 'Débloquez tous les outils de voyage',
-    subtitle: 'Un achat sécurisé sur l’App Store. Gardez Premium à vie sur votre compte Apple.', once: 'achat unique',
-    noSubscription: 'Aucun abonnement. Aucun paiement récurrent.', purchase: 'Débloquer Premium à vie', restore: 'Restaurer les achats', close: 'Fermer',
-    included: 'Premium est actif', legacy: 'Votre accès Premium de soutien initial est inclus.', purchased: 'Premium est débloqué. Merci de soutenir SafarMate.',
-    restored: 'Votre achat Premium a été restauré.', pending: 'Votre achat est en attente d’approbation.', cancelled: 'L’achat a été annulé.',
-    unavailable: 'Les achats sont temporairement indisponibles. Réessayez plus tard.', error: 'Impossible de terminer cette demande.',
-    features: ['Gestion avancée des voyages enregistrés', 'Partage et exportation des itinéraires', 'Outils avancés de prière en vol', 'Devises et transports avancés', 'Accès hors ligne aux détails enregistrés', 'Futures fonctions Premium à vie'],
-    lockedFeature: 'Cet outil de voyage avancé est inclus dans Premium à vie.',
-  },
-  ur: {
-    premium: 'پریمیم', lifetime: 'تاحیات', eyebrow: 'سفرمیٹ پریمیم', title: 'تمام سفری اوزار کھولیں',
-    subtitle: 'App Store کے ذریعے ایک محفوظ خریداری۔ اپنے Apple اکاؤنٹ پر پریمیم ہمیشہ رکھیں۔', once: 'ایک بار ادائیگی',
-    noSubscription: 'کوئی سبسکرپشن یا بار بار چارج نہیں۔', purchase: 'تاحیات پریمیم کھولیں', restore: 'خریداری بحال کریں', close: 'بند کریں',
-    included: 'پریمیم فعال ہے', legacy: 'ابتدائی صارف کے طور پر آپ کی پریمیم رسائی شامل ہے۔', purchased: 'پریمیم کھل گیا۔ سفرمیٹ کی حمایت کا شکریہ۔',
-    restored: 'آپ کی پریمیم خریداری بحال ہوگئی۔', pending: 'آپ کی خریداری منظوری کی منتظر ہے۔', cancelled: 'خریداری منسوخ ہوگئی۔',
-    unavailable: 'خریداری عارضی طور پر دستیاب نہیں۔ بعد میں کوشش کریں۔', error: 'درخواست مکمل نہیں ہو سکی۔',
-    features: ['محفوظ سفروں کا جدید انتظام', 'سفری منصوبے شیئر اور ایکسپورٹ کریں', 'پرواز کے دوران نماز کے جدید اوزار', 'کرنسی اور جدید ٹرانسپورٹ اوزار', 'محفوظ سفری تفصیلات تک آف لائن رسائی', 'مستقبل کی تاحیات پریمیم خصوصیات'],
-    lockedFeature: 'یہ جدید سفری آلہ تاحیات پریمیم میں شامل ہے۔',
-  },
-};
-
-const premiumHashes = new Set(['#flight-mode', '#money', '#car-rental', '#public-transport', '#taxi-services']);
+const FREE_DISCOVERY_PREVIEW_LIMIT = 2;
+const FREE_PLAN_PREVIEW_LIMIT = 2;
+const premiumHashes = new Set(['#saved-trips', '#flight-mode', '#money', '#car-rental', '#public-transport', '#taxi-services']);
 const premiumSelectors = [
-  '[data-share-trip]', '[data-copy-trip]', '[data-export-trip]', '[data-duplicate-trip]',
-  '#share-trip', '#copy-trip', '#export-trip', '#export-calendar',
+  '[data-share-trip]', '[data-copy-trip]', '[data-export-trip]', '[data-duplicate-trip]', '[data-premium-preview]',
+  '#open-saved-trips', '#save-trip', '#share-trip', '#copy-trip', '#export-trip', '#export-calendar', '#print-itinerary',
   '#open-flight-mode', '#open-money', '#open-car-rental', '#open-public-transport', '#open-taxi-services',
+  '[data-attraction-save]',
 ].join(',');
 
 let premiumState: PremiumState = premiumService.current();
 let dialog: HTMLElement | null = null;
 let statusMessage = '';
 let lastTrigger: HTMLElement | null = null;
+let lastPublishedSignature = '';
+let contentWasGated = false;
 
 function language(): Language {
   try { return parseLanguage(localStorage.getItem('mtp-language')) ?? 'en'; } catch { return 'en'; }
@@ -117,10 +29,14 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>\"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[character] ?? character);
 }
 
+function interpolate(template: string, values: Record<string, string | number>) {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''));
+}
+
 function currentCopy() { return copyByLanguage[language()]; }
 function displayPrice() { return premiumState.displayPrice || '$3.99'; }
 
-function paywallMarkup(reason = '') {
+function paywallMarkup(reason: PaywallReason = '') {
   const lang = language();
   const copy = copyByLanguage[lang];
   const dir = languageDirection(lang);
@@ -129,7 +45,7 @@ function paywallMarkup(reason = '') {
   const featureItems = copy.features.map((feature) => `<li><span aria-hidden="true">✓</span><span>${escapeHtml(feature)}</span></li>`).join('');
   const message = statusMessage || (reason ? copy.lockedFeature : '') || (premiumState.grandfathered ? copy.legacy : '');
   return `<div class="premium-backdrop" data-premium-close></div>
-    <section class="premium-sheet" role="dialog" aria-modal="true" aria-labelledby="premium-title" dir="${dir}">
+    <section class="premium-sheet" role="dialog" aria-modal="true" aria-labelledby="premium-title" dir="${dir}" tabindex="-1">
       <div class="premium-grabber" aria-hidden="true"></div>
       <button class="premium-close" type="button" data-premium-close aria-label="${escapeHtml(copy.close)}">×</button>
       <div class="premium-mark" aria-hidden="true"><span>✦</span></div>
@@ -147,22 +63,153 @@ function paywallMarkup(reason = '') {
     </section>`;
 }
 
+function previewCardMarkup(title: string, body: string, button: string, reason: 'plan' | 'places', detail: string) {
+  return `<section class="premium-preview-card" aria-label="${escapeHtml(title)}">
+    <div class="premium-preview-icon" aria-hidden="true">✦</div>
+    <div class="premium-preview-copy"><p class="premium-preview-label">SafarMate Premium</p><h3>${escapeHtml(title)}</h3><p>${escapeHtml(body)}</p><p class="premium-preview-detail">${escapeHtml(detail)}</p></div>
+    <button type="button" data-premium-preview="${reason}">${escapeHtml(button)} <span>${escapeHtml(displayPrice())}</span></button>
+  </section>`;
+}
+
+function hydratePreviewCards() {
+  if (premiumState.entitled) return;
+  const copy = currentCopy();
+  document.querySelectorAll<HTMLElement>('[data-premium-plan-preview]').forEach((element) => {
+    if (element.dataset.premiumHydrated === 'true') return;
+    const days = Number(element.dataset.totalDays || 0);
+    const stops = Number(element.dataset.totalStops || 0);
+    const visible = Number(element.dataset.visibleStops || 0);
+    const body = interpolate(copy.planPreviewBody, { days, stops, visible });
+    element.innerHTML = previewCardMarkup(copy.planPreviewTitle, body, copy.unlockPlan, 'plan', copy.noSubscription);
+    element.dataset.premiumHydrated = 'true';
+  });
+  document.querySelectorAll<HTMLElement>('[data-premium-results-preview]').forEach((element) => {
+    if (element.dataset.premiumHydrated === 'true') return;
+    const kind = (element.dataset.kind || 'landmarks') as PreviewKind;
+    const total = Number(element.dataset.total || 0);
+    const visible = Number(element.dataset.visible || 0);
+    const kindLabel = copy.placeKinds[kind] ?? copy.placeKinds.landmarks;
+    const title = interpolate(copy.placesPreviewTitle, { kind: kindLabel });
+    const body = interpolate(copy.placesPreviewBody, { total, visible });
+    element.innerHTML = previewCardMarkup(title, body, copy.unlockPlaces, 'places', copy.noSubscription);
+    element.dataset.premiumHydrated = 'true';
+  });
+}
+
+function removeElements(root: ParentNode, selector: string) {
+  root.querySelectorAll<HTMLElement>(selector).forEach((element) => element.remove());
+}
+
+function appendPreviewPlaceholder(host: HTMLElement, attributes: Record<string, string | number>) {
+  if (host.querySelector(':scope > [data-premium-plan-preview], :scope > [data-premium-results-preview]')) return;
+  const element = document.createElement('div');
+  Object.entries(attributes).forEach(([key, value]) => { element.dataset[key] = String(value); });
+  host.append(element);
+}
+
+function gatePlannerPreview() {
+  const results = document.querySelector<HTMLElement>('#planner-results');
+  if (!results) return;
+  const itineraryDays = Array.from(results.querySelectorAll<HTMLElement>('.itinerary-day'));
+  const allCards = Array.from(results.querySelectorAll<HTMLElement>('.itinerary-card'));
+  if (!itineraryDays.length || !allCards.length) return;
+  if (results.querySelector('[data-premium-plan-preview]')) return;
+
+  const totalDays = itineraryDays.length;
+  const totalStops = allCards.length;
+  itineraryDays.slice(1).forEach((day) => day.remove());
+  const firstDay = itineraryDays[0];
+  const firstDayCards = Array.from(firstDay.querySelectorAll<HTMLElement>('.itinerary-card'));
+  firstDayCards.slice(FREE_PLAN_PREVIEW_LIMIT).forEach((card) => card.remove());
+  firstDay.querySelectorAll<HTMLElement>('[data-replan]').forEach((button) => button.remove());
+
+  removeElements(results, '.travel-details-section, .athan-panel, .map-panel');
+  const tripActions = results.querySelector<HTMLElement>('.trip-actions');
+  tripActions?.querySelectorAll<HTMLElement>(':scope > *').forEach((element) => {
+    if (element.id !== 'edit-plan') element.remove();
+  });
+
+  appendPreviewPlaceholder(results, {
+    premiumPlanPreview: '',
+    totalDays,
+    totalStops,
+    visibleStops: Math.min(FREE_PLAN_PREVIEW_LIMIT, firstDayCards.length),
+  });
+  contentWasGated = true;
+}
+
+function gateDiscoveryPreview(pageMarker: string, cardSelector: string, kind: PreviewKind) {
+  const app = document.querySelector<HTMLElement>(pageMarker)?.closest<HTMLElement>('main');
+  if (!app) return;
+  if (app.querySelector('[data-premium-results-preview]')) return;
+  if (kind === 'landmarks' && app.querySelector('#attractions-map')) {
+    app.querySelector<HTMLButtonElement>('[data-attraction-view="photos"]')?.click();
+    contentWasGated = true;
+    return;
+  }
+
+  removeElements(app, '.segmented, .prayer-filters, #prayer-map, #halal-map, #attractions-map, .saved-attractions, .attraction-detail');
+  removeElements(app, '#search-this-area, #halal-search-this-area, #halal-recentre, #halal-fit-results, #attractions-search-this-area, #attractions-recentre, #attractions-fit-results');
+  ['#prayer-radius', '#halal-radius', '#attraction-radius'].forEach((selector) => app.querySelector(selector)?.closest('label')?.remove());
+
+  const cards = Array.from(app.querySelectorAll<HTMLElement>(cardSelector));
+  if (!cards.length) {
+    contentWasGated = true;
+    return;
+  }
+  cards.slice(FREE_DISCOVERY_PREVIEW_LIMIT).forEach((card) => card.remove());
+  cards.slice(0, FREE_DISCOVERY_PREVIEW_LIMIT).forEach((card) => {
+    removeElements(card, '[data-attraction-detail], [data-attraction-save], [data-copy-restaurant]');
+  });
+
+  const list = cards[0]?.parentElement;
+  if (!(list instanceof HTMLElement)) return;
+  const holder = document.createElement('div');
+  holder.dataset.premiumResultsPreview = '';
+  holder.dataset.kind = kind;
+  holder.dataset.total = String(cards.length);
+  holder.dataset.visible = String(Math.min(FREE_DISCOVERY_PREVIEW_LIMIT, cards.length));
+  list.insertAdjacentElement('afterend', holder);
+  contentWasGated = true;
+}
+
+function applyContentGating() {
+  if (premiumState.entitled) return;
+  gatePlannerPreview();
+  gateDiscoveryPreview('#back-from-prayer', '.prayer-place-card', 'mosques');
+  gateDiscoveryPreview('#back-from-halal', '.restaurant-card', 'halal');
+  gateDiscoveryPreview('#back-from-attractions', '.attraction-card', 'landmarks');
+  hydratePreviewCards();
+}
+
+function rerenderCurrentView() {
+  window.setTimeout(() => window.dispatchEvent(new Event('hashchange')), 0);
+}
+
 function closePaywall() {
   if (!dialog) return;
   dialog.remove();
   dialog = null;
   document.documentElement.classList.remove('premium-open');
   document.querySelector('#root')?.removeAttribute('inert');
-  lastTrigger?.focus();
+  lastTrigger?.focus({ preventScroll: true });
 }
 
-function renderPaywall(reason = '') {
+function resetPaywallScroll() {
+  const sheet = dialog?.querySelector<HTMLElement>('.premium-sheet');
+  if (!sheet) return;
+  sheet.scrollTop = 0;
+  window.requestAnimationFrame(() => { sheet.scrollTop = 0; });
+}
+
+function renderPaywall(reason: PaywallReason = '') {
   if (!dialog) return;
   dialog.innerHTML = paywallMarkup(reason);
   bindPaywall(reason);
+  resetPaywallScroll();
 }
 
-function openPaywall(reason = '', trigger?: HTMLElement | null) {
+function openPaywall(reason: PaywallReason = '', trigger?: HTMLElement | null) {
   lastTrigger = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   statusMessage = '';
   if (dialog) dialog.remove();
@@ -173,7 +220,8 @@ function openPaywall(reason = '', trigger?: HTMLElement | null) {
   document.documentElement.classList.add('premium-open');
   document.querySelector('#root')?.setAttribute('inert', '');
   bindPaywall(reason);
-  dialog.querySelector<HTMLElement>('[data-premium-buy], [data-premium-close]')?.focus();
+  resetPaywallScroll();
+  dialog.querySelector<HTMLElement>('[data-premium-close]')?.focus({ preventScroll: true });
 }
 
 function outcomeMessage(outcome: PurchaseOutcome, restored = false) {
@@ -184,7 +232,7 @@ function outcomeMessage(outcome: PurchaseOutcome, restored = false) {
   return premiumState.error ? `${copy.error} ${premiumState.error}` : copy.unavailable;
 }
 
-function bindPaywall(reason: string) {
+function bindPaywall(reason: PaywallReason) {
   if (!dialog) return;
   dialog.querySelectorAll<HTMLElement>('[data-premium-close]').forEach((element) => element.addEventListener('click', closePaywall));
   dialog.querySelector<HTMLButtonElement>('[data-premium-buy]')?.addEventListener('click', async () => {
@@ -216,6 +264,7 @@ function ensurePremiumEntry() {
   if (existing) {
     existing.innerHTML = `<span aria-hidden="true">✦</span><span>${escapeHtml(label)}</span>`;
     existing.classList.toggle('is-active', premiumState.entitled);
+    applyContentGating();
     return;
   }
   const host = root.querySelector<HTMLElement>('.hero') ?? root.querySelector<HTMLElement>('main');
@@ -227,10 +276,15 @@ function ensurePremiumEntry() {
   button.innerHTML = `<span aria-hidden="true">✦</span><span>${escapeHtml(label)}</span>`;
   button.addEventListener('click', () => openPaywall('', button));
   host.append(button);
+  applyContentGating();
+}
+
+function actionableTarget(target: HTMLElement) {
+  return target.closest<HTMLElement>('a, button, [role="button"]');
 }
 
 function targetRequiresPremium(target: HTMLElement): boolean {
-  const actionable = target.closest<HTMLElement>('a, button, [role="button"]');
+  const actionable = actionableTarget(target);
   if (!actionable || actionable.matches('[data-premium-entry], [data-premium-buy], [data-premium-restore], [data-premium-close]')) return false;
   if (actionable.matches(premiumSelectors)) return true;
   const href = actionable instanceof HTMLAnchorElement ? actionable.getAttribute('href') : null;
@@ -239,12 +293,28 @@ function targetRequiresPremium(target: HTMLElement): boolean {
   return premiumHashes.has(hash);
 }
 
+function reasonForTarget(target: HTMLElement): PaywallReason {
+  const actionable = actionableTarget(target);
+  const preview = actionable?.dataset.premiumPreview;
+  if (preview === 'plan') return 'plan';
+  if (preview === 'places') return 'places';
+  return 'locked';
+}
+
+function publishStateToApp() {
+  const signature = `${premiumState.entitled}:${premiumState.grandfathered}:${premiumState.loading}:${premiumState.available}:${premiumState.displayPrice ?? ''}`;
+  if (signature === lastPublishedSignature) return;
+  lastPublishedSignature = signature;
+  window.dispatchEvent(new CustomEvent('safarmate-premium-state', { detail: premiumState }));
+}
+
 function bindGlobalGating() {
   document.addEventListener('click', (event) => {
     if (premiumState.entitled || !(event.target instanceof HTMLElement) || !targetRequiresPremium(event.target)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    openPaywall('locked', event.target.closest<HTMLElement>('a, button, [role="button"]'));
+    const actionable = actionableTarget(event.target);
+    openPaywall(reasonForTarget(event.target), actionable);
   }, true);
   window.addEventListener('hashchange', () => {
     if (premiumState.entitled || !premiumHashes.has(window.location.hash)) return;
@@ -257,14 +327,26 @@ function bindGlobalGating() {
 
 export async function startPremiumExperience() {
   premiumService.subscribe((state) => {
+    const unlockedNow = state.entitled && !premiumState.entitled;
     premiumState = state;
+    publishStateToApp();
+    if (unlockedNow && contentWasGated) {
+      contentWasGated = false;
+      rerenderCurrentView();
+    } else {
+      applyContentGating();
+    }
     ensurePremiumEntry();
     if (dialog) renderPaywall();
   });
   bindGlobalGating();
   const root = document.querySelector('#root');
-  if (root) new MutationObserver(() => ensurePremiumEntry()).observe(root, { childList: true, subtree: false });
+  if (root) new MutationObserver(() => {
+    ensurePremiumEntry();
+    applyContentGating();
+  }).observe(root, { childList: true, subtree: false });
   ensurePremiumEntry();
+  applyContentGating();
   await premiumService.refresh();
 }
 
