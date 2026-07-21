@@ -105,7 +105,7 @@ jobs:
           done
 
           cat > OPEN_FIRST.txt <<'EOF'
-          SafarMate 1.1.0 — Build 155
+          SafarMate 1.1.0 — Build 156
 
           Open this file in Xcode:
           ios/App/App.xcodeproj
@@ -114,12 +114,12 @@ jobs:
           No npm command is required before opening Xcode.
           EOF
 
-          zip -qr SafarMate_1.1_BUILD_155_COMPLETE.zip . \
-            -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_155_COMPLETE.zip'
-          unzip -tq SafarMate_1.1_BUILD_155_COMPLETE.zip
+          zip -qr SafarMate_1.1_BUILD_156_COMPLETE.zip . \
+            -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_156_COMPLETE.zip'
+          unzip -tq SafarMate_1.1_BUILD_156_COMPLETE.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: SafarMate-1.1-Build-155-Complete
-          path: SafarMate_1.1_BUILD_155_COMPLETE.zip
+          name: SafarMate-1.1-Build-156-Complete
+          path: SafarMate_1.1_BUILD_156_COMPLETE.zip
           if-no-files-found: error
           retention-days: 14
