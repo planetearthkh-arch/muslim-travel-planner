@@ -3,6 +3,13 @@ import { premiumService, type PremiumState, type PurchaseOutcome } from './premi
 import { copyByLanguage, type PreviewKind } from './premium-copy.js';
 
 type PaywallReason = '' | 'locked' | 'plan' | 'places';
+type PaywallContext = {
+  days?: number;
+  stops?: number;
+  visible?: number;
+  total?: number;
+  kind?: PreviewKind;
+};
 
 const FREE_DISCOVERY_PREVIEW_LIMIT = 2;
 const FREE_PLAN_PREVIEW_LIMIT = 2;
@@ -20,6 +27,7 @@ let statusMessage = '';
 let lastTrigger: HTMLElement | null = null;
 let lastPublishedSignature = '';
 let contentWasGated = false;
+let paywallContext: PaywallContext = {};
 
 function language(): Language {
   try { return parseLanguage(localStorage.getItem('mtp-language')) ?? 'en'; } catch { return 'en'; }
@@ -36,38 +44,105 @@ function interpolate(template: string, values: Record<string, string | number>) 
 function currentCopy() { return copyByLanguage[language()]; }
 function displayPrice() { return premiumState.displayPrice || '$3.99'; }
 
+function featureList(items: string[], className: string) {
+  const rows = items.map((feature) => `<li><span aria-hidden="true">✓</span><span>${escapeHtml(feature)}</span></li>`).join('');
+  return `<ul class="${className}">${rows}</ul>`;
+}
+
+function paywallHeading(reason: PaywallReason) {
+  const copy = currentCopy();
+  if (premiumState.entitled) {
+    return {
+      title: copy.included,
+      subtitle: premiumState.grandfathered ? copy.legacy : copy.purchased,
+    };
+  }
+  if (reason === 'plan' && paywallContext.days && paywallContext.stops) {
+    return {
+      title: interpolate(copy.planPaywallTitle, { days: paywallContext.days }),
+      subtitle: interpolate(copy.planPaywallSubtitle, {
+        visible: paywallContext.visible ?? FREE_PLAN_PREVIEW_LIMIT,
+        stops: paywallContext.stops,
+      }),
+    };
+  }
+  if (reason === 'places' && paywallContext.total && paywallContext.kind) {
+    const kind = copy.placeKinds[paywallContext.kind] ?? copy.placeKinds.landmarks;
+    return {
+      title: interpolate(copy.placesPaywallTitle, { total: paywallContext.total, kind }),
+      subtitle: interpolate(copy.placesPaywallSubtitle, {
+        visible: paywallContext.visible ?? FREE_DISCOVERY_PREVIEW_LIMIT,
+      }),
+    };
+  }
+  return { title: copy.title, subtitle: copy.subtitle };
+}
+
+function comparisonMarkup() {
+  const copy = currentCopy();
+  return `<div class="premium-comparison-wrap">
+    <h3>${escapeHtml(copy.comparisonTitle)}</h3>
+    <div class="premium-comparison">
+      <section class="premium-tier premium-tier-free">
+        <div class="premium-tier-heading"><span class="premium-tier-dot" aria-hidden="true"></span><strong>${escapeHtml(copy.freeLabel)}</strong></div>
+        ${featureList(copy.freeFeatures, 'premium-tier-list')}
+      </section>
+      <section class="premium-tier premium-tier-paid">
+        <div class="premium-tier-heading"><span class="premium-tier-star" aria-hidden="true">✦</span><strong>${escapeHtml(copy.premiumLabel)}</strong></div>
+        ${featureList(copy.premiumFeatures, 'premium-tier-list')}
+      </section>
+    </div>
+  </div>`;
+}
+
 function paywallMarkup(reason: PaywallReason = '') {
   const lang = language();
   const copy = copyByLanguage[lang];
   const dir = languageDirection(lang);
   const active = premiumState.entitled;
   const price = escapeHtml(displayPrice());
-  const featureItems = copy.features.map((feature) => `<li><span aria-hidden="true">✓</span><span>${escapeHtml(feature)}</span></li>`).join('');
-  const message = statusMessage || (reason ? copy.lockedFeature : '') || (premiumState.grandfathered ? copy.legacy : '');
+  const heading = paywallHeading(reason);
+  const message = statusMessage || (!active && reason ? copy.lockedFeature : '');
+  const benefits = active
+    ? `<div class="premium-active-benefits">${featureList(copy.premiumFeatures, 'premium-features')}</div>`
+    : comparisonMarkup();
+  const actions = active
+    ? `<button class="premium-primary premium-primary-centered" type="button" data-premium-close>${escapeHtml(copy.close)}</button>`
+    : `<button class="premium-primary" type="button" data-premium-buy ${premiumState.loading || !premiumState.available ? 'disabled' : ''}><span>${escapeHtml(copy.purchase)}</span><strong>${price}</strong></button>
+       <button class="premium-restore" type="button" data-premium-restore ${premiumState.loading ? 'disabled' : ''}>${escapeHtml(copy.restore)}</button>`;
+
   return `<div class="premium-backdrop" data-premium-close></div>
     <section class="premium-sheet" role="dialog" aria-modal="true" aria-labelledby="premium-title" dir="${dir}" tabindex="-1">
       <div class="premium-grabber" aria-hidden="true"></div>
       <button class="premium-close" type="button" data-premium-close aria-label="${escapeHtml(copy.close)}">×</button>
       <div class="premium-mark" aria-hidden="true"><span>✦</span></div>
       <p class="premium-eyebrow">${escapeHtml(copy.eyebrow)}</p>
-      <h2 id="premium-title">${escapeHtml(active ? copy.included : copy.title)}</h2>
-      <p class="premium-subtitle">${escapeHtml(active ? (premiumState.grandfathered ? copy.legacy : copy.purchased) : copy.subtitle)}</p>
+      <h2 id="premium-title">${escapeHtml(heading.title)}</h2>
+      <p class="premium-subtitle">${escapeHtml(heading.subtitle)}</p>
       <div class="premium-price" ${active ? 'hidden' : ''}><strong>${price}</strong><span>${escapeHtml(copy.once)}</span></div>
       <p class="premium-no-subscription" ${active ? 'hidden' : ''}>${escapeHtml(copy.noSubscription)}</p>
-      <ul class="premium-features">${featureItems}</ul>
+      ${benefits}
       <p class="premium-status" role="status" aria-live="polite">${escapeHtml(message)}</p>
-      <div class="premium-actions">
-        ${active ? `<button class="premium-primary" type="button" data-premium-close>${escapeHtml(copy.close)}</button>` : `<button class="premium-primary" type="button" data-premium-buy ${premiumState.loading || !premiumState.available ? 'disabled' : ''}><span>${escapeHtml(copy.purchase)}</span><strong>${price}</strong></button>`}
-        <button class="premium-restore" type="button" data-premium-restore ${premiumState.loading ? 'disabled' : ''}>${escapeHtml(copy.restore)}</button>
-      </div>
+      <div class="premium-actions">${actions}</div>
     </section>`;
 }
 
-function previewCardMarkup(title: string, body: string, button: string, reason: 'plan' | 'places', detail: string) {
+function dataAttributes(values: Record<string, string | number>) {
+  return Object.entries(values).map(([key, value]) => ` data-${key}="${escapeHtml(String(value))}"`).join('');
+}
+
+function previewCardMarkup(
+  title: string,
+  body: string,
+  button: string,
+  reason: 'plan' | 'places',
+  detail: string,
+  context: Record<string, string | number>,
+) {
   return `<section class="premium-preview-card" aria-label="${escapeHtml(title)}">
     <div class="premium-preview-icon" aria-hidden="true">✦</div>
     <div class="premium-preview-copy"><p class="premium-preview-label">SafarMate Premium</p><h3>${escapeHtml(title)}</h3><p>${escapeHtml(body)}</p><p class="premium-preview-detail">${escapeHtml(detail)}</p></div>
-    <button type="button" data-premium-preview="${reason}">${escapeHtml(button)} <span>${escapeHtml(displayPrice())}</span></button>
+    <button type="button" data-premium-preview="${reason}"${dataAttributes(context)}><span>${escapeHtml(button)}</span><strong>${escapeHtml(displayPrice())}</strong></button>
   </section>`;
 }
 
@@ -80,7 +155,7 @@ function hydratePreviewCards() {
     const stops = Number(element.dataset.totalStops || 0);
     const visible = Number(element.dataset.visibleStops || 0);
     const body = interpolate(copy.planPreviewBody, { days, stops, visible });
-    element.innerHTML = previewCardMarkup(copy.planPreviewTitle, body, copy.unlockPlan, 'plan', copy.noSubscription);
+    element.innerHTML = previewCardMarkup(copy.planPreviewTitle, body, copy.unlockPlan, 'plan', copy.noSubscription, { days, stops, visible });
     element.dataset.premiumHydrated = 'true';
   });
   document.querySelectorAll<HTMLElement>('[data-premium-results-preview]').forEach((element) => {
@@ -91,7 +166,7 @@ function hydratePreviewCards() {
     const kindLabel = copy.placeKinds[kind] ?? copy.placeKinds.landmarks;
     const title = interpolate(copy.placesPreviewTitle, { kind: kindLabel });
     const body = interpolate(copy.placesPreviewBody, { total, visible });
-    element.innerHTML = previewCardMarkup(title, body, copy.unlockPlaces, 'places', copy.noSubscription);
+    element.innerHTML = previewCardMarkup(copy.placesPreviewTitle.includes('{kind}') ? title : copy.placesPreviewTitle, body, copy.unlockPlaces, 'places', copy.noSubscription, { kind, total, visible });
     element.dataset.premiumHydrated = 'true';
   });
 }
@@ -112,8 +187,7 @@ function gatePlannerPreview() {
   if (!results) return;
   const itineraryDays = Array.from(results.querySelectorAll<HTMLElement>('.itinerary-day'));
   const allCards = Array.from(results.querySelectorAll<HTMLElement>('.itinerary-card'));
-  if (!itineraryDays.length || !allCards.length) return;
-  if (results.querySelector('[data-premium-plan-preview]')) return;
+  if (!itineraryDays.length || !allCards.length || results.querySelector('[data-premium-plan-preview]')) return;
 
   const totalDays = itineraryDays.length;
   const totalStops = allCards.length;
@@ -140,8 +214,7 @@ function gatePlannerPreview() {
 
 function gateDiscoveryPreview(pageMarker: string, cardSelector: string, kind: PreviewKind) {
   const app = document.querySelector<HTMLElement>(pageMarker)?.closest<HTMLElement>('main');
-  if (!app) return;
-  if (app.querySelector('[data-premium-results-preview]')) return;
+  if (!app || app.querySelector('[data-premium-results-preview]')) return;
   if (kind === 'landmarks' && app.querySelector('#attractions-map')) {
     app.querySelector<HTMLButtonElement>('[data-attraction-view="photos"]')?.click();
     contentWasGated = true;
@@ -190,6 +263,7 @@ function closePaywall() {
   if (!dialog) return;
   dialog.remove();
   dialog = null;
+  paywallContext = {};
   document.documentElement.classList.remove('premium-open');
   document.querySelector('#root')?.removeAttribute('inert');
   lastTrigger?.focus({ preventScroll: true });
@@ -202,6 +276,20 @@ function resetPaywallScroll() {
   window.requestAnimationFrame(() => { sheet.scrollTop = 0; });
 }
 
+function contextFromTrigger(trigger?: HTMLElement | null): PaywallContext {
+  const button = trigger?.closest<HTMLElement>('[data-premium-preview]') ?? trigger;
+  if (!button) return {};
+  const kindValue = button.dataset.kind;
+  const kind = kindValue === 'mosques' || kindValue === 'halal' || kindValue === 'landmarks' ? kindValue : undefined;
+  return {
+    days: Number(button.dataset.days || 0) || undefined,
+    stops: Number(button.dataset.stops || 0) || undefined,
+    visible: Number(button.dataset.visible || 0) || undefined,
+    total: Number(button.dataset.total || 0) || undefined,
+    kind,
+  };
+}
+
 function renderPaywall(reason: PaywallReason = '') {
   if (!dialog) return;
   dialog.innerHTML = paywallMarkup(reason);
@@ -211,6 +299,7 @@ function renderPaywall(reason: PaywallReason = '') {
 
 function openPaywall(reason: PaywallReason = '', trigger?: HTMLElement | null) {
   lastTrigger = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  paywallContext = contextFromTrigger(trigger);
   statusMessage = '';
   if (dialog) dialog.remove();
   dialog = document.createElement('div');
@@ -294,8 +383,7 @@ function targetRequiresPremium(target: HTMLElement): boolean {
 }
 
 function reasonForTarget(target: HTMLElement): PaywallReason {
-  const actionable = actionableTarget(target);
-  const preview = actionable?.dataset.premiumPreview;
+  const preview = actionableTarget(target)?.dataset.premiumPreview;
   if (preview === 'plan') return 'plan';
   if (preview === 'places') return 'places';
   return 'locked';
