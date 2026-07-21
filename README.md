@@ -32,6 +32,7 @@ SafarMate is a Muslim travel planner for prayer-aware itineraries, saved trips, 
 
 - Maps use bundled MapLibre code and configured open map tile/style services.
 - OpenStreetMap attribution is displayed visibly on the map.
+- Free iPhone users see two mosque or halal results together with a clean in-app preview map; full interaction, all results and directions require Lifetime Premium.
 - Nearby-place searches use bounded OpenStreetMap/Overpass requests and display exact mapped coordinates where the source provides them.
 - The app does not bulk-download, prefetch, or manually cache map tiles, does not use paid map APIs, Google Maps, Mapbox, API keys, or background location tracking.
 - If map data or map services fail to load, the page shows graceful fallback text instead of blocking itinerary planning.
@@ -59,7 +60,7 @@ npm run ios:sync
 npm run ios:open
 ```
 
-The sync step configures SafarMate 1.1.0 build 155 and the WeatherKit entitlement before opening Xcode. The Apple Developer App ID must also have WeatherKit enabled before signing the release archive.
+The sync step configures SafarMate 1.1.0 build 156 and the WeatherKit entitlement before opening Xcode. The Apple Developer App ID must also have WeatherKit enabled before signing the release archive.
 
 ## Quality checks
 
