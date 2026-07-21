@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 export const SAFARMATE_PREMIUM_PRODUCT_ID = 'com.planetearthkh.safarmate.premium.lifetime';
 export const LEGACY_PREMIUM_MAX_BUILD = 154;
 
-export type PremiumSource = 'purchase' | 'legacy' | 'none' | 'cached' | 'unavailable';
+export type PremiumSource = 'purchase' | 'legacy' | 'none' | 'unavailable';
 export type PurchaseOutcome = 'purchased' | 'pending' | 'cancelled' | 'failed';
 
 export interface NativePremiumStatus {
@@ -34,30 +34,21 @@ interface SafarMateStorePlugin {
 }
 
 const nativeStore = registerPlugin<SafarMateStorePlugin>('SafarMateStore');
-const CACHE_KEY = 'safarmate-premium-verified-v1';
+
+export function isPremiumPlatform(): boolean {
+  return Capacitor.getPlatform() === 'ios';
+}
 
 const defaultState: PremiumState = {
-  available: Capacitor.isNativePlatform(),
+  available: isPremiumPlatform(),
   entitled: false,
   grandfathered: false,
   productId: SAFARMATE_PREMIUM_PRODUCT_ID,
   displayPrice: '$3.99',
-  source: Capacitor.isNativePlatform() ? 'none' : 'unavailable',
+  source: isPremiumPlatform() ? 'none' : 'unavailable',
   loading: true,
   error: '',
 };
-
-function safeStorage(): Storage | undefined {
-  try {
-    const storage = window.localStorage;
-    const testKey = '__safarmate_premium_test__';
-    storage.setItem(testKey, '1');
-    storage.removeItem(testKey);
-    return storage;
-  } catch {
-    return undefined;
-  }
-}
 
 export function parseOriginalBuild(value: string | undefined): number | null {
   if (!value || !/^\d+$/.test(value.trim())) return null;
@@ -84,44 +75,6 @@ function normalizeStatus(status: NativePremiumStatus): PremiumState {
     loading: false,
     error: '',
   };
-}
-
-function readVerifiedCache(): PremiumState | null {
-  const storage = safeStorage();
-  if (!storage) return null;
-  try {
-    const parsed = JSON.parse(storage.getItem(CACHE_KEY) ?? 'null') as Partial<PremiumState> | null;
-    if (!parsed?.entitled || parsed.productId !== SAFARMATE_PREMIUM_PRODUCT_ID) return null;
-    return {
-      ...defaultState,
-      ...parsed,
-      entitled: true,
-      loading: false,
-      error: '',
-      source: 'cached',
-    };
-  } catch {
-    return null;
-  }
-}
-
-function cacheVerifiedEntitlement(state: PremiumState) {
-  if (!state.entitled) return;
-  const storage = safeStorage();
-  if (!storage) return;
-  try {
-    storage.setItem(CACHE_KEY, JSON.stringify({
-      available: state.available,
-      entitled: true,
-      grandfathered: state.grandfathered,
-      productId: state.productId,
-      displayPrice: state.displayPrice,
-      originalAppVersion: state.originalAppVersion,
-      source: state.source,
-    }));
-  } catch {
-    // StoreKit remains the source of truth; caching is only an offline convenience.
-  }
 }
 
 export class PremiumService {
@@ -152,17 +105,13 @@ export class PremiumService {
   }
 
   private async loadStatus(): Promise<PremiumState> {
-    if (!Capacitor.isNativePlatform()) {
+    if (!isPremiumPlatform()) {
       return this.publish({ ...defaultState, available: false, loading: false, source: 'unavailable' });
     }
     this.publish({ ...this.state, loading: true, error: '' });
     try {
-      const next = normalizeStatus(await nativeStore.getStatus());
-      cacheVerifiedEntitlement(next);
-      return this.publish(next);
+      return this.publish(normalizeStatus(await nativeStore.getStatus()));
     } catch (error) {
-      const cached = readVerifiedCache();
-      if (cached) return this.publish(cached);
       return this.publish({
         ...defaultState,
         available: false,
@@ -174,13 +123,11 @@ export class PremiumService {
   }
 
   async purchase(): Promise<{ state: PremiumState; outcome: PurchaseOutcome }> {
-    if (!Capacitor.isNativePlatform()) return { state: this.current(), outcome: 'failed' };
+    if (!isPremiumPlatform()) return { state: this.current(), outcome: 'failed' };
     this.publish({ ...this.state, loading: true, error: '' });
     try {
       const result = await nativeStore.purchase();
-      const next = normalizeStatus(result);
-      cacheVerifiedEntitlement(next);
-      return { state: this.publish(next), outcome: result.outcome };
+      return { state: this.publish(normalizeStatus(result)), outcome: result.outcome };
     } catch (error) {
       const next = this.publish({
         ...this.state,
@@ -192,13 +139,11 @@ export class PremiumService {
   }
 
   async restore(): Promise<{ state: PremiumState; outcome: PurchaseOutcome }> {
-    if (!Capacitor.isNativePlatform()) return { state: this.current(), outcome: 'failed' };
+    if (!isPremiumPlatform()) return { state: this.current(), outcome: 'failed' };
     this.publish({ ...this.state, loading: true, error: '' });
     try {
       const result = await nativeStore.restore();
-      const next = normalizeStatus(result);
-      cacheVerifiedEntitlement(next);
-      return { state: this.publish(next), outcome: result.outcome };
+      return { state: this.publish(normalizeStatus(result)), outcome: result.outcome };
     } catch (error) {
       const next = this.publish({
         ...this.state,
