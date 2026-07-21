@@ -3,7 +3,7 @@
 ## Release identity
 
 - App version: **1.1.0**
-- iOS build: **156**
+- iOS build: **157**
 - Download price: **Free**
 - In-App Purchase: **SafarMate Premium Lifetime**
 - Product type: **Non-consumable**
@@ -18,6 +18,7 @@
 - Verified entitlement checks at launch and when the app returns to the foreground.
 - Automatic Premium access for verified production customers whose original App Store build is 154 or earlier.
 - Free discovery previews show two results and a clean in-app preview map; full interactive maps, directions, all results, and external map actions require Premium.
+- Mosque and prayer-space, halal restaurant, and attraction view selectors, filters, and search-radius choices remain available in the free preview, matching the useful controls in Public Toilets.
 - Premium gating for advanced in-flight prayer tools, currency tools, car rental, public transport, taxi tools, trip sharing, itinerary copying, calendar export, and trip duplication.
 - English, Arabic, Bahasa Indonesia, Bahasa Melayu, Turkish, French, and Urdu Premium copy, including RTL layout.
 - Native Apple WeatherKit transport for the commercial iPhone build, while preserving SafarMate’s existing weather UI and cache format.
@@ -33,7 +34,7 @@ Before signing the App Store archive:
 4. In Xcode, confirm **Signing & Capabilities → WeatherKit** is present.
 5. Allow Xcode to refresh the provisioning profile.
 
-The project’s `npm run ios:sync` step configures `App/App.entitlements`, version 1.1.0, and build 156.
+The project’s `npm run ios:sync` step configures `App/App.entitlements`, version 1.1.0, and build 157.
 
 ## Required StoreKit tests on a physical iPhone
 
@@ -57,8 +58,8 @@ Use Sandbox/TestFlight and verify:
 - Confirm the paywall scrolls, closes, restores focus, and respects Reduce Motion.
 - Confirm free features still work normally.
 - Confirm each Premium entry point opens the same paywall.
-- Confirm the two free mosque and halal results remain visible with their in-app preview maps.
-- Confirm external map and direction actions open the Premium offer for free users and work normally after purchase.
+- Confirm free mosque/prayer-space, halal restaurant, and attraction previews retain their view selectors, filters, radius choices, and in-app preview maps.
+- Confirm the preview still limits visible results and map markers while external map and direction actions open the Premium offer.
 - Confirm existing saved trips are preserved after updating from version 1.0.
 - Test WeatherKit on a real device after the capability is enabled.
 
@@ -66,14 +67,14 @@ Use Sandbox/TestFlight and verify:
 
 1. Finish the In-App Purchase metadata and $3.99 pricing.
 2. Upload a real screenshot of the in-app Premium sheet to **Review Information**.
-3. Upload build 156.
+3. Upload build 157.
 4. Create the SafarMate 1.1 App Store version.
 5. Attach **SafarMate Premium Lifetime** to the 1.1 submission.
 6. Submit the app version and the first non-consumable together.
 
 ## Suggested App Review note
 
-> SafarMate remains free to download. The app offers one optional non-consumable purchase, SafarMate Premium Lifetime (`com.planetearthkh.safarmate.premium.lifetime`). Open the app and tap the Premium badge in the main header. The sheet shows the localized App Store price, the permanent features included, the purchase button, and Restore Purchases. Free users can see two mosque or halal results and an in-app preview map. Full interactive maps, all results and directions unlock with Premium. Existing production customers whose verified original App Store build is 154 or earlier are granted Premium automatically. StoreKit Sandbox installations remain eligible to test the purchase normally.
+> SafarMate remains free to download. The app offers one optional non-consumable purchase, SafarMate Premium Lifetime (`com.planetearthkh.safarmate.premium.lifetime`). Open the app and tap the Premium badge in the main header. The sheet shows the localized App Store price, the permanent features included, the purchase button, and Restore Purchases. Free users can use the normal view selectors, filters, and search-radius choices in Mosque & Prayer Spaces, Halal Restaurants, and Attractions, while seeing a limited in-app preview. Full interactive maps, all results, external map actions, and directions unlock with Premium. Existing production customers whose verified original App Store build is 154 or earlier are granted Premium automatically. StoreKit Sandbox installations remain eligible to test the purchase normally.
 
 ## Release gate
 
