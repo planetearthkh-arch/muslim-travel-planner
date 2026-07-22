@@ -22,6 +22,8 @@
     "android:setup": "npm run build:native && node scripts/setup-android.mjs",
     "android:sync": "npm run build:native && npx cap sync android",
     "android:open": "npx cap open android",
+    "android:verify": "npm run android:setup && cd android && ./gradlew :app:verifySafarMateReleaseConfig lintDebug testDebugUnitTest assembleDebug bundleRelease --stacktrace",
+    "android:bundle": "npm run android:setup && cd android && ./gradlew :app:verifySafarMateReleaseConfig bundleRelease --stacktrace",
     "ios:version-verify": "node scripts/verify-ios-version.mjs",
     "preios:sync": "node scripts/configure-ios-1-1.mjs && npm run ios:version-verify"
   },
