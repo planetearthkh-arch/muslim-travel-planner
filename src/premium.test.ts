@@ -5,10 +5,17 @@ import {
   SAFARMATE_PREMIUM_PRODUCT_ID,
   parseOriginalBuild,
   qualifiesForLegacyPremium,
+  supportsPremiumPlatform,
 } from './premium.js';
 
-test('uses the App Store Connect lifetime product identifier', () => {
+test('uses the same lifetime product identifier in both native stores', () => {
   assert.equal(SAFARMATE_PREMIUM_PRODUCT_ID, 'com.planetearthkh.safarmate.premium.lifetime');
+});
+
+test('supports native Premium on iOS and Android only', () => {
+  assert.equal(supportsPremiumPlatform('ios'), true);
+  assert.equal(supportsPremiumPlatform('android'), true);
+  assert.equal(supportsPremiumPlatform('web'), false);
 });
 
 test('grandfathers production iOS builds released before the premium transition', () => {
