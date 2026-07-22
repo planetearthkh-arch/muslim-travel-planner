@@ -1,0 +1,52 @@
+def safarMateVersionCode = 157
+def safarMateVersionName = "1.1.0"
+def safarMateBillingVersion = "9.1.0"
+
+def releaseKeystorePath = System.getenv("SAFARMATE_ANDROID_KEYSTORE_PATH")
+def releaseKeystorePassword = System.getenv("SAFARMATE_ANDROID_KEYSTORE_PASSWORD")
+def releaseKeyAlias = System.getenv("SAFARMATE_ANDROID_KEY_ALIAS")
+def releaseKeyPassword = System.getenv("SAFARMATE_ANDROID_KEY_PASSWORD")
+def hasReleaseSigning = [
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+].every { value -> value != null && !value.trim().isEmpty() }
+
+android {
+    compileSdkVersion 36
+
+    defaultConfig {
+        targetSdkVersion 36
+        versionCode safarMateVersionCode
+        versionName safarMateVersionName
+    }
+}
+
+dependencies {
+    implementation "com.android.billingclient:billing:${safarMateBillingVersion}"
+}
+
+if (hasReleaseSigning) {
+    def safarMateRelease = android.signingConfigs.maybeCreate("safarMateRelease")
+    safarMateRelease.storeFile = file(releaseKeystorePath)
+    safarMateRelease.storePassword = releaseKeystorePassword
+    safarMateRelease.keyAlias = releaseKeyAlias
+    safarMateRelease.keyPassword = releaseKeyPassword
+    android.buildTypes.getByName("release").signingConfig = safarMateRelease
+}
+
+tasks.register("verifySafarMateReleaseConfig") {
+    doLast {
+        if (android.defaultConfig.versionCode != safarMateVersionCode) {
+            throw new GradleException("SafarMate Android versionCode must be ${safarMateVersionCode}.")
+        }
+        if (android.defaultConfig.versionName != safarMateVersionName) {
+            throw new GradleException("SafarMate Android versionName must be ${safarMateVersionName}.")
+        }
+        println "SafarMate Android ${safarMateVersionName} (${safarMateVersionCode}), target API 36, Play Billing ${safarMateBillingVersion}."
+        if (!hasReleaseSigning) {
+            println "Release signing credentials are not set; Gradle will produce an unsigned verification bundle."
+        }
+    }
+}
