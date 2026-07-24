@@ -105,21 +105,21 @@ jobs:
           done
 
           cat > OPEN_FIRST.txt <<'EOF'
-          SafarMate 1.1.0 — Build 157
+          SafarMate 1.1.0 — Build 160
 
           Open this file in Xcode:
           ios/App/App.xcodeproj
 
-          This package includes the local Capacitor Swift packages required by CapApp-SPM.
+          This package includes the current native web assets, the Apple Weather attribution verification guard, and the local Capacitor Swift packages required by CapApp-SPM.
           No npm command is required before opening Xcode.
           EOF
 
-          zip -qr SafarMate_1.1_BUILD_157_COMPLETE.zip . \
-            -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_157_COMPLETE.zip'
-          unzip -tq SafarMate_1.1_BUILD_157_COMPLETE.zip
+          zip -qr SafarMate_1.1_BUILD_160_COMPLETE.zip . \
+            -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_160_COMPLETE.zip'
+          unzip -tq SafarMate_1.1_BUILD_160_COMPLETE.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: SafarMate-1.1-Build-157-Complete
-          path: SafarMate_1.1_BUILD_157_COMPLETE.zip
+          name: SafarMate-1.1-Build-160-Complete
+          path: SafarMate_1.1_BUILD_160_COMPLETE.zip
           if-no-files-found: error
           retention-days: 14
