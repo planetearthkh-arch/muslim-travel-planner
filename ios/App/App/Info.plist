@@ -28,7 +28,8 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
-	<!-- NSLocationAlwaysAndWhenInUseUsageDescription is intentionally omitted; SafarMate uses foreground location only. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SafarMate uses your location only when you request Qibla direction or nearby travel places.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SafarMate uses your location only when you request Qibla direction or nearby travel places.</string>
 	<key>NSMotionUsageDescription</key>
