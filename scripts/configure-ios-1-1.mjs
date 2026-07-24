@@ -101,8 +101,24 @@ if (!plist.includes('<key>CFBundleVersion</key>') || !plist.includes('<string>$(
   throw new Error('Info.plist must inherit CFBundleVersion from CURRENT_PROJECT_VERSION.');
 }
 
+const alwaysLocationPurpose = plist.match(
+  /<key>NSLocationAlwaysAndWhenInUseUsageDescription<\/key>\s*<string>([^<]+)<\/string>/,
+)?.[1].trim();
+const whenInUseLocationPurpose = plist.match(
+  /<key>NSLocationWhenInUseUsageDescription<\/key>\s*<string>([^<]+)<\/string>/,
+)?.[1].trim();
+if (!alwaysLocationPurpose || alwaysLocationPurpose.length < 20) {
+  throw new Error('Info.plist must contain a clear NSLocationAlwaysAndWhenInUseUsageDescription purpose string.');
+}
+if (!whenInUseLocationPurpose || whenInUseLocationPurpose.length < 20) {
+  throw new Error('Info.plist must contain a clear NSLocationWhenInUseUsageDescription purpose string.');
+}
+if (alwaysLocationPurpose !== whenInUseLocationPurpose) {
+  throw new Error('The two iOS location purpose strings must describe the same foreground-only SafarMate use.');
+}
+
 await Promise.all([
   writeFile(projectUrl, project),
   writeFile(plistUrl, plist),
 ]);
-console.log('Configured SafarMate iOS 1.1.0 (160) with verified Apple Weather web assets.');
+console.log('Configured SafarMate iOS 1.1.0 (160) with verified Apple Weather assets and location purpose strings.');
