@@ -49,3 +49,22 @@ test('iOS WeatherKit bridge exposes official marks and the UI renders a dedicate
   assert.deepEqual(buildVersions, [159, 159]);
   assert.equal(plist.includes('<string>$(CURRENT_PROJECT_VERSION)</string>'), true);
 });
+
+test('iOS release preparation upgrades to build 160 and rejects stale copied web assets', async () => {
+  const [configure, verifier, packageJson, workflow] = await Promise.all([
+    repoFile('scripts/configure-ios-1-1.mjs'),
+    repoFile('scripts/verify-ios-web-assets.sh'),
+    repoFile('package.json'),
+    repoFile('.github/workflows/ci.yml'),
+  ]);
+
+  assert.equal(configure.includes('CURRENT_PROJECT_VERSION = 160;'), true);
+  assert.equal(configure.includes('Verify Native Web Assets'), true);
+  assert.equal(configure.includes('requires iOS build 160'), true);
+  assert.equal(verifier.includes('data-weather-attribution'), true);
+  assert.equal(verifier.includes('Weather data sources and legal attribution'), true);
+  assert.equal(verifier.includes('X-SafarMate-Weather-Provider'), true);
+  assert.equal(packageJson.includes('ios:web-assets-verify'), true);
+  assert.equal(packageJson.includes('npx cap sync ios && npm run ios:web-assets-verify'), true);
+  assert.equal(workflow.includes('SafarMate_1.1_BUILD_160_COMPLETE.zip'), true);
+});
