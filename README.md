@@ -39,7 +39,7 @@ SafarMate is a Muslim travel planner for prayer-aware itineraries, saved trips, 
 
 ## Weather provider
 
-- The commercial iPhone build routes weather requests through native Apple WeatherKit and displays Apple Weather attribution and the legal source link.
+- The commercial iPhone build routes weather requests through native Apple WeatherKit and displays Apple Weather attribution and the legal source link in the separate Weather section under Muslim Essentials.
 - WeatherKit requires iOS 16 or later and the WeatherKit capability on the production App ID and Xcode target.
 - The non-iOS prototype can continue using Open-Meteo only in accordance with the selected Open-Meteo licence and plan.
 - API secrets must never be committed to GitHub.
@@ -60,7 +60,7 @@ npm run ios:sync
 npm run ios:open
 ```
 
-The sync step configures SafarMate 1.1.0 build 159 and the WeatherKit entitlement before opening Xcode. The Apple Developer App ID must also have WeatherKit enabled before signing the release archive.
+The sync step builds and copies the current native web bundle, configures SafarMate 1.1.0 build 160, verifies that the Apple Weather attribution UI is present in the copied iOS assets, and refreshes the WeatherKit-enabled Xcode project. Always run `npm run ios:sync` before creating an archive. Xcode also blocks the build if stale web assets are detected. The Apple Developer App ID must have WeatherKit enabled before signing the release archive.
 
 ## Quality checks
 
