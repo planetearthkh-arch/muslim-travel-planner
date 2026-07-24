@@ -20,7 +20,16 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - run: npm test
+      - name: Run web tests
+        run: npm test 2>&1 | tee web-test.log
+      - name: Upload web test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-test-diagnostics
+          path: web-test.log
+          if-no-files-found: error
+          retention-days: 7
       - run: npm run lint
       - run: npm run test:browser-smoke
 
