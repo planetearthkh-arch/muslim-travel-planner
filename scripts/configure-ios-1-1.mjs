@@ -7,13 +7,13 @@ let [project, plist] = await Promise.all([
   readFile(plistUrl, 'utf8'),
 ]);
 
-project = project
-  .replaceAll('CURRENT_PROJECT_VERSION = 154;', 'CURRENT_PROJECT_VERSION = 159;')
-  .replaceAll('CURRENT_PROJECT_VERSION = 155;', 'CURRENT_PROJECT_VERSION = 159;')
-  .replaceAll('CURRENT_PROJECT_VERSION = 156;', 'CURRENT_PROJECT_VERSION = 159;')
-  .replaceAll('CURRENT_PROJECT_VERSION = 157;', 'CURRENT_PROJECT_VERSION = 159;')
-  .replaceAll('CURRENT_PROJECT_VERSION = 158;', 'CURRENT_PROJECT_VERSION = 159;')
-  .replaceAll('MARKETING_VERSION = 1.0.0;', 'MARKETING_VERSION = 1.1.0;');
+for (const previousBuild of [154, 155, 156, 157, 158, 159]) {
+  project = project.replaceAll(
+    `CURRENT_PROJECT_VERSION = ${previousBuild};`,
+    'CURRENT_PROJECT_VERSION = 160;',
+  );
+}
+project = project.replaceAll('MARKETING_VERSION = 1.0.0;', 'MARKETING_VERSION = 1.1.0;');
 
 plist = plist.replace(
   /(<key>CFBundleVersion<\/key>\s*<string>)[^<]+(<\/string>)/,
@@ -31,18 +31,70 @@ if (!project.includes('CODE_SIGN_ENTITLEMENTS = App/App.entitlements;')) {
   );
 }
 
+const verificationPhaseReference = 'B00101002D2D000000000001 /* Verify Native Web Assets */';
+if (!project.includes('name = "Verify Native Web Assets";')) {
+  const buildPhasesAnchor = [
+    '\t\t\tbuildPhases = (',
+    '\t\t\t\t504EC3001FED79650016851F /* Sources */,',
+  ].join('\n');
+  if (!project.includes(buildPhasesAnchor)) {
+    throw new Error('Could not locate the App target build phases.');
+  }
+  project = project.replace(
+    buildPhasesAnchor,
+    [
+      '\t\t\tbuildPhases = (',
+      `\t\t\t\t${verificationPhaseReference},`,
+      '\t\t\t\t504EC3001FED79650016851F /* Sources */,',
+    ].join('\n'),
+  );
+
+  const sourcesSectionAnchor = '/* Begin PBXSourcesBuildPhase section */';
+  if (!project.includes(sourcesSectionAnchor)) {
+    throw new Error('Could not locate the Xcode sources build phase section.');
+  }
+  const verificationPhase = [
+    '/* Begin PBXShellScriptBuildPhase section */',
+    `\t\t${verificationPhaseReference} = {`,
+    '\t\t\tisa = PBXShellScriptBuildPhase;',
+    '\t\t\talwaysOutOfDate = 1;',
+    '\t\t\tbuildActionMask = 2147483647;',
+    '\t\t\tfiles = (',
+    '\t\t\t);',
+    '\t\t\tinputPaths = (',
+    '\t\t\t\t"$(SRCROOT)/../../scripts/verify-ios-web-assets.sh",',
+    '\t\t\t\t"$(SRCROOT)/App/public",',
+    '\t\t\t);',
+    '\t\t\tname = "Verify Native Web Assets";',
+    '\t\t\toutputPaths = (',
+    '\t\t\t);',
+    '\t\t\trunOnlyForDeploymentPostprocessing = 0;',
+    '\t\t\tshellPath = /bin/sh;',
+    '\t\t\tshellScript = "/bin/sh \\\"${SCRIPT_INPUT_FILE_0}\\\"\\n";',
+    '\t\t\tshowEnvVarsInLog = 0;',
+    '\t\t};',
+    '/* End PBXShellScriptBuildPhase section */',
+    '',
+  ].join('\n');
+  project = project.replace(sourcesSectionAnchor, `${verificationPhase}${sourcesSectionAnchor}`);
+}
+
 const buildNumbers = [...project.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map((match) => Number(match[1]));
 const marketingVersions = [...project.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]);
 const entitlementReferences = (project.match(/CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements;/g) ?? []).length;
+const verificationPhaseReferences = (project.match(/Verify Native Web Assets/g) ?? []).length;
 
-if (buildNumbers.length !== 2 || buildNumbers.some((value) => value !== 159)) {
-  throw new Error(`SafarMate 1.1 requires iOS build 159; found ${buildNumbers.join(', ')}.`);
+if (buildNumbers.length !== 2 || buildNumbers.some((value) => value !== 160)) {
+  throw new Error(`SafarMate 1.1 requires iOS build 160; found ${buildNumbers.join(', ')}.`);
 }
 if (marketingVersions.length !== 2 || marketingVersions.some((value) => value !== '1.1.0')) {
   throw new Error(`SafarMate 1.1 requires marketing version 1.1.0; found ${marketingVersions.join(', ')}.`);
 }
 if (entitlementReferences !== 2) {
   throw new Error(`Expected WeatherKit entitlements in both target configurations; found ${entitlementReferences}.`);
+}
+if (verificationPhaseReferences < 2) {
+  throw new Error('The Xcode project must run the native web asset verification phase before compiling.');
 }
 
 if (!plist.includes('<key>CFBundleVersion</key>') || !plist.includes('<string>$(CURRENT_PROJECT_VERSION)</string>')) {
@@ -53,4 +105,4 @@ await Promise.all([
   writeFile(projectUrl, project),
   writeFile(plistUrl, plist),
 ]);
-console.log('Configured SafarMate iOS 1.1.0 (159) with WeatherKit attribution support.');
+console.log('Configured SafarMate iOS 1.1.0 (160) with verified Apple Weather web assets.');
