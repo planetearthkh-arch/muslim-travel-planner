@@ -65,6 +65,6 @@ test('iOS release preparation upgrades to build 160 and rejects stale copied web
   assert.equal(verifier.includes('Weather data sources and legal attribution'), true);
   assert.equal(verifier.includes('X-SafarMate-Weather-Provider'), true);
   assert.equal(packageJson.includes('ios:web-assets-verify'), true);
-  assert.equal(packageJson.includes('npx cap sync ios && npm run ios:web-assets-verify'), true);
+  assert.equal(packageJson.includes('"postios:sync": "npm run ios:web-assets-verify"'), true);
   assert.equal(workflow.includes('SafarMate_1.1_BUILD_160_COMPLETE.zip'), true);
 });
