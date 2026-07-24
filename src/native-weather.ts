@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { WeatherForecast, WeatherUnits } from './weather.js';
+import { WEATHERKIT_SAFETY_NOTICE } from './weatherkit-notice.js';
 
 interface NativeWeatherRequest {
   latitude: number;
@@ -10,14 +11,15 @@ interface NativeWeatherRequest {
   precipitationUnit: WeatherUnits['precipitation'];
 }
 
-interface NativeWeatherAttribution {
+export interface NativeWeatherAttribution {
   serviceName: string;
   legalPageURL: string;
-  markURL: string;
+  lightMarkURL: string;
+  darkMarkURL: string;
 }
 
 interface NativeWeatherForecast extends WeatherForecast {
-  attribution?: NativeWeatherAttribution;
+  attribution: NativeWeatherAttribution;
 }
 
 interface SafarMateWeatherPlugin {
@@ -67,6 +69,30 @@ function validDay(value: unknown): boolean {
     && finite(day.windDirectionDominant);
 }
 
+function isSecureUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function validateNativeWeatherAttribution(value: unknown): NativeWeatherAttribution {
+  if (!value || typeof value !== 'object') throw new Error('Malformed Apple Weather attribution');
+  const details = value as Partial<NativeWeatherAttribution>;
+  if (
+    typeof details.serviceName !== 'string'
+    || details.serviceName.trim().length === 0
+    || !isSecureUrl(details.legalPageURL)
+    || !isSecureUrl(details.lightMarkURL)
+    || !isSecureUrl(details.darkMarkURL)
+  ) {
+    throw new Error('Malformed Apple Weather attribution');
+  }
+  return details as NativeWeatherAttribution;
+}
+
 export function validateNativeWeatherForecast(value: unknown): NativeWeatherForecast {
   if (!value || typeof value !== 'object') throw new Error('Malformed Apple Weather response');
   const forecast = value as Partial<NativeWeatherForecast>;
@@ -75,12 +101,7 @@ export function validateNativeWeatherForecast(value: unknown): NativeWeatherFore
   if (!validPoint(forecast.current)) throw new Error('Malformed Apple current weather');
   if (!Array.isArray(forecast.hourly) || forecast.hourly.length < 1 || !forecast.hourly.every(validPoint)) throw new Error('Malformed Apple hourly weather');
   if (!Array.isArray(forecast.daily) || forecast.daily.length < 7 || !forecast.daily.every(validDay)) throw new Error('Malformed Apple daily weather');
-  if (forecast.attribution) {
-    const details = forecast.attribution as Partial<NativeWeatherAttribution>;
-    if (typeof details.serviceName !== 'string' || typeof details.legalPageURL !== 'string' || typeof details.markURL !== 'string') {
-      throw new Error('Malformed Apple Weather attribution');
-    }
-  }
+  forecast.attribution = validateNativeWeatherAttribution(forecast.attribution);
   return forecast as NativeWeatherForecast;
 }
 
@@ -194,24 +215,48 @@ function aborted(init?: RequestInit): boolean {
 
 function updateWeatherAttribution() {
   if (!attribution) return;
-  const host = document.querySelector<HTMLElement>('.weather-app .map-status');
-  if (!host || host.dataset.provider === 'apple-weather') return;
+  const host = document.querySelector<HTMLElement>('.weather-app [data-weather-attribution]');
+  if (!host || host.dataset.attributionKey === attribution.legalPageURL) return;
+
+  host.hidden = false;
   host.dataset.provider = 'apple-weather';
+  host.dataset.attributionKey = attribution.legalPageURL;
   host.replaceChildren();
-  const link = document.createElement('a');
-  link.href = attribution.legalPageURL;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  link.setAttribute('aria-label', `${attribution.serviceName} legal attribution`);
+
+  const heading = document.createElement('div');
+  heading.className = 'weather-attribution-heading';
+
+  const label = document.createElement('span');
+  label.className = 'weather-attribution-label';
+  label.textContent = 'Weather data provided by';
+
+  const markLink = document.createElement('a');
+  markLink.className = 'weather-attribution-mark-link';
+  markLink.href = attribution.legalPageURL;
+  markLink.target = '_blank';
+  markLink.rel = 'noopener noreferrer';
+  markLink.setAttribute('aria-label', `${attribution.serviceName} weather data sources and legal attribution`);
+
   const mark = document.createElement('img');
-  mark.src = attribution.markURL;
+  mark.className = 'weather-attribution-mark';
+  mark.src = attribution.lightMarkURL;
   mark.alt = attribution.serviceName;
-  mark.loading = 'lazy';
-  mark.style.maxHeight = '24px';
-  mark.style.maxWidth = '160px';
-  mark.style.verticalAlign = 'middle';
-  link.append(mark);
-  host.append(link, document.createTextNode(' · Weather data may not be accurate.'));
+  mark.decoding = 'async';
+  markLink.append(mark);
+  heading.append(label, markLink);
+
+  const legalLink = document.createElement('a');
+  legalLink.className = 'weather-attribution-legal-link';
+  legalLink.href = attribution.legalPageURL;
+  legalLink.target = '_blank';
+  legalLink.rel = 'noopener noreferrer';
+  legalLink.textContent = 'Weather data sources and legal attribution';
+
+  const notice = document.createElement('p');
+  notice.className = 'weather-attribution-notice';
+  notice.textContent = WEATHERKIT_SAFETY_NOTICE;
+
+  host.append(heading, legalLink, notice);
 }
 
 export function installNativeWeatherFetchBridge() {
