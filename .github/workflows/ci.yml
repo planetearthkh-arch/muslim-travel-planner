@@ -20,7 +20,16 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - run: npm test
+      - name: Run web tests
+        run: npm test 2>&1 | tee web-test.log
+      - name: Upload web test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-test-diagnostics
+          path: web-test.log
+          if-no-files-found: error
+          retention-days: 7
       - run: npm run lint
       - run: npm run test:browser-smoke
 
@@ -105,21 +114,21 @@ jobs:
           done
 
           cat > OPEN_FIRST.txt <<'EOF'
-          SafarMate 1.1.0 — Build 157
+          SafarMate 1.1.0 — Build 160
 
           Open this file in Xcode:
           ios/App/App.xcodeproj
 
-          This package includes the local Capacitor Swift packages required by CapApp-SPM.
+          This package includes the current native web assets, the Apple Weather attribution verification guard, and the local Capacitor Swift packages required by CapApp-SPM.
           No npm command is required before opening Xcode.
           EOF
 
-          zip -qr SafarMate_1.1_BUILD_157_COMPLETE.zip . \
-            -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_157_COMPLETE.zip'
-          unzip -tq SafarMate_1.1_BUILD_157_COMPLETE.zip
+          zip -qr SafarMate_1.1_BUILD_160_COMPLETE.zip . \
+            -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_160_COMPLETE.zip'
+          unzip -tq SafarMate_1.1_BUILD_160_COMPLETE.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: SafarMate-1.1-Build-157-Complete
-          path: SafarMate_1.1_BUILD_157_COMPLETE.zip
+          name: SafarMate-1.1-Build-160-Complete
+          path: SafarMate_1.1_BUILD_160_COMPLETE.zip
           if-no-files-found: error
           retention-days: 14
