@@ -102,6 +102,7 @@ import {
   type WeatherPoint,
   type WeatherUnits,
 } from './weather.js';
+import { isNativeWeatherPlatform } from './native-weather.js';
 import {
   buildAttractionOverpassBatches,
   categoryExplanation,
@@ -3682,7 +3683,9 @@ function weatherPage() {
         <p class="prayer-status ${weatherStatus}" role="status">${weatherStatusMessage(copy)}</p>
         <div class="destination-box"><h2>${esc(location.label)}</h2><p>${copy.weatherLocalTime}: ${formatCurrentWeatherLocalTime(location, forecast)}</p><p>${copy.weatherTimezone}: ${forecast?.timezone ?? location.timezone ?? ''}</p><p>${copy.weatherCoordinates}: ${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}</p></div>
         ${forecast ? `<section class="card weather-current" aria-label="${copy.weatherCurrent}"><div class="card-top"><span>${copy.weatherCurrent}</span><span class="badge ${forecast.cached ? 'unverified' : 'verified'}">${forecast.cached ? copy.weatherCached : copy.weatherUpdated}</span></div><h2>${formatTemperature(forecast.current.temperature, weatherUnits, copy.weatherValueUnavailable)}</h2>${weatherRows(forecast, copy)}</section><section><div class="result-header"><h2>${copy.weatherHourly}</h2><button type="button" class="ghost" id="toggle-weather-hours">${weatherHours === 24 ? copy.weatherExpand48 : copy.weatherShow24}</button></div>${hourlyWeatherList(forecast, copy)}</section><section><h2>${copy.weatherDaily}</h2>${dailyWeatherList(forecast, copy)}</section>${travelWeatherSection(forecast, copy)}${prayerWeatherSection(forecast, copy)}` : `<div class="empty-actions"><button type="button" id="retry-weather" class="ghost">${copy.weatherRetry}</button><button type="button" id="another-weather-city">${copy.weatherSearchAnother}</button></div>`}
-        <p class="map-status"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">${copy.weatherAttribution}</a> · <a href="${OPEN_METEO_FORECAST_URL}" target="_blank" rel="noopener noreferrer">Open-Meteo API</a></p>
+        ${isNativeWeatherPlatform()
+          ? '<aside class="weather-attribution" data-weather-attribution aria-label="Apple Weather attribution" hidden></aside>'
+          : `<aside class="weather-attribution weather-attribution-web" data-weather-attribution aria-label="${copy.weatherAttribution}"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">${copy.weatherAttribution}</a><span aria-hidden="true"> · </span><a href="${OPEN_METEO_FORECAST_URL}" target="_blank" rel="noopener noreferrer">Open-Meteo API</a></aside>`}
       </section>
     </main>`;
   bindWeatherPage();

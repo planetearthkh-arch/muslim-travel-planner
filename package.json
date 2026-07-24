@@ -1,7 +1,7 @@
 {
   "name": "muslim-travel-planner",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -10,11 +10,13 @@
     "build:deploy": "npm run prayer:snapshot && npm run build",
     "build:native": "npm run typecheck && npm run icon:verify && vite build --config vite.native.config.ts",
     "icon:verify": "node scripts/verify-app-icon.mjs",
+    "ios:web-assets-verify": "sh scripts/verify-ios-web-assets.sh",
     "ios:sync": "npm run build:native && npx cap sync ios",
+    "postios:sync": "npm run ios:web-assets-verify",
     "ios:open": "npx cap open ios",
     "ios:run": "npm run ios:sync && npx cap run ios",
-    "ios:verify": "npm run ios:sync && xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
-    "ios:archive-verify": "xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath build/SafarMate.xcarchive CODE_SIGNING_ALLOWED=NO archive",
+    "ios:verify": "npm run ios:sync && xcodebuild -quiet -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+    "ios:archive-verify": "npm run ios:web-assets-verify && xcodebuild -quiet -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath build/SafarMate.xcarchive CODE_SIGNING_ALLOWED=NO archive",
     "lint": "npm run typecheck && eslint eslint.config.js \"scripts/**/*.mjs\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node scripts/run-tests.mjs",
@@ -23,7 +25,7 @@
     "android:sync": "npm run build:native && npx cap sync android",
     "android:open": "npx cap open android",
     "ios:version-verify": "node scripts/verify-ios-version.mjs",
-    "preios:sync": "npm run ios:version-verify"
+    "preios:sync": "node scripts/configure-ios-1-1.mjs && npm run ios:version-verify"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",

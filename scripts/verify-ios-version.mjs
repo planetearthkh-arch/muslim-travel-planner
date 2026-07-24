@@ -6,8 +6,8 @@ const [project, plist] = await Promise.all([
 ]);
 
 const projectVersions = [...project.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map((match) => Number(match[1]));
-if (projectVersions.length < 2 || projectVersions.some((version) => !Number.isInteger(version) || version < 119) || new Set(projectVersions).size !== 1) {
-  console.error('iOS project build numbers must match and must be at least 119.', projectVersions);
+if (projectVersions.length !== 2 || projectVersions.some((version) => version !== 160)) {
+  console.error('SafarMate 1.1 requires matching iOS project build numbers of 160.', projectVersions);
   process.exit(1);
 }
 
@@ -22,8 +22,8 @@ const effectiveBuildNumber = configuredBundleVersion === '$(CURRENT_PROJECT_VERS
   ? projectVersions[0]
   : Number(configuredBundleVersion);
 
-if (!Number.isInteger(effectiveBuildNumber) || effectiveBuildNumber < 153) {
-  console.error('The effective iOS bundle build number must be at least 153.', effectiveBuildNumber);
+if (effectiveBuildNumber !== 160) {
+  console.error('The effective SafarMate iOS bundle build number must be 160.', effectiveBuildNumber);
   process.exit(1);
 }
 

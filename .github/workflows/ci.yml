@@ -20,7 +20,16 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - run: npm test
+      - name: Run web tests
+        run: npm test 2>&1 | tee web-test.log
+      - name: Upload web test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-test-diagnostics
+          path: web-test.log
+          if-no-files-found: error
+          retention-days: 7
       - run: npm run lint
       - run: npm run test:browser-smoke
 
@@ -51,5 +60,75 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run ios:verify
-      - run: npm run ios:archive-verify
+      - name: Verify iOS simulator build
+        run: npm run ios:verify 2>&1 | tee ios-verify.log
+      - name: Upload iOS compiler diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-verify-diagnostics
+          path: ios-verify.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Verify unsigned iOS device archive
+        run: npm run ios:archive-verify 2>&1 | tee ios-archive-verify.log
+      - name: Upload iOS archive diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-archive-diagnostics
+          path: ios-archive-verify.log
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    needs: [web, android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ios:sync
+      - name: Create self-contained SafarMate 1.1 project ZIP
+        run: |
+          set -euo pipefail
+          keep_dir="$(mktemp -d)"
+          for package in app browser clipboard filesystem geolocation local-notifications share; do
+            cp -R "node_modules/@capacitor/$package" "$keep_dir/$package"
+          done
+
+          rm -rf node_modules dist-test build
+          mkdir -p node_modules/@capacitor
+          for package in app browser clipboard filesystem geolocation local-notifications share; do
+            mv "$keep_dir/$package" "node_modules/@capacitor/$package"
+            test -f "node_modules/@capacitor/$package/Package.swift"
+          done
+          rmdir "$keep_dir"
+
+          test -f ios/App/CapApp-SPM/Package.swift
+          for package in app browser clipboard filesystem geolocation local-notifications share; do
+            grep -q "../../../node_modules/@capacitor/$package" ios/App/CapApp-SPM/Package.swift
+          done
+
+          cat > OPEN_FIRST.txt <<'EOF'
+          SafarMate 1.1.0 — Build 160
+
+          Open this file in Xcode:
+          ios/App/App.xcodeproj
+
+          This package includes the current native web assets, the Apple Weather attribution verification guard, and the local Capacitor Swift packages required by CapApp-SPM.
+          No npm command is required before opening Xcode.
+          EOF
+
+          zip -qr SafarMate_1.1_BUILD_160_COMPLETE.zip . \
+            -x '.git/*' '.github/*' 'SafarMate_1.1_BUILD_160_COMPLETE.zip'
+          unzip -tq SafarMate_1.1_BUILD_160_COMPLETE.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SafarMate-1.1-Build-160-Complete
+          path: SafarMate_1.1_BUILD_160_COMPLETE.zip
+          if-no-files-found: error
+          retention-days: 14
