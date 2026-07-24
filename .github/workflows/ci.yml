@@ -36,11 +36,28 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Install Android API 36
+        run: sdkmanager "platforms;android-36"
       - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
-      - run: npm run android:setup
-      - run: ./gradlew lintDebug testDebugUnitTest assembleDebug assembleRelease --stacktrace
-        working-directory: android
+      - name: Verify Android app and Google Play Billing
+        run: npm run android:verify 2>&1 | tee android-verify.log
+      - name: Upload Android diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-verify-diagnostics
+          path: android-verify.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload unsigned Android App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: SafarMate-Android-1.1.0-157-Unsigned
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
 
   ios:
     runs-on: macos-latest

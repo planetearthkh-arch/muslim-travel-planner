@@ -35,8 +35,12 @@ interface SafarMateStorePlugin {
 
 const nativeStore = registerPlugin<SafarMateStorePlugin>('SafarMateStore');
 
+export function supportsPremiumPlatform(platform: string): boolean {
+  return platform === 'ios' || platform === 'android';
+}
+
 export function isPremiumPlatform(): boolean {
-  return Capacitor.getPlatform() === 'ios';
+  return supportsPremiumPlatform(Capacitor.getPlatform());
 }
 
 const defaultState: PremiumState = {
