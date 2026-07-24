@@ -60,7 +60,7 @@ npm run ios:sync
 npm run ios:open
 ```
 
-The sync step configures SafarMate 1.1.0 build 156 and the WeatherKit entitlement before opening Xcode. The Apple Developer App ID must also have WeatherKit enabled before signing the release archive.
+The sync step configures SafarMate 1.1.0 build 159 and the WeatherKit entitlement before opening Xcode. The Apple Developer App ID must also have WeatherKit enabled before signing the release archive.
 
 ## Quality checks
 

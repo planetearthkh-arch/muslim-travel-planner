@@ -2526,7 +2526,7 @@ test('iOS project is configured for SafarMate TestFlight preparation without har
   const info = await repoFile('ios/App/App/Info.plist');
   const privacy = await repoFile('ios/App/App/PrivacyInfo.xcprivacy');
   assert.equal(pbx.includes('PRODUCT_BUNDLE_IDENTIFIER = com.planetearthkids.muslimtravelplanner;'), true);
-  assert.equal(pbx.includes('MARKETING_VERSION = 1.0.0;'), true);
+  assert.equal(pbx.includes('MARKETING_VERSION = 1.1.0;'), true);
   const buildVersions = [...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map((match) => Number(match[1]));
   assert.equal(buildVersions.length >= 2, true);
   assert.equal(new Set(buildVersions).size, 1);
@@ -2646,5 +2646,4 @@ test('attraction search source supports fallback endpoints and stable non-blocki
   assert.equal(source.includes("attractionStatus = 'timeout';"), false);
   assert.equal(source.includes('attractionsTimedOut'), false);
 });
-
 

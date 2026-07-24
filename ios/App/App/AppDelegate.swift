@@ -298,7 +298,8 @@ public class SafarMateWeatherPlugin: CAPPlugin, CAPBridgedPlugin {
             "attribution": [
                 "serviceName": weatherAttribution.serviceName,
                 "legalPageURL": weatherAttribution.legalPageURL.absoluteString,
-                "markURL": weatherAttribution.combinedMarkDarkURL.absoluteString
+                "lightMarkURL": weatherAttribution.combinedMarkLightURL.absoluteString,
+                "darkMarkURL": weatherAttribution.combinedMarkDarkURL.absoluteString
             ]
         ]
     }
